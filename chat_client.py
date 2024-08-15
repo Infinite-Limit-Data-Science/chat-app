@@ -6,7 +6,7 @@ class ChatClient:
     _instance = None
 
     @classmethod
-    def instance(cls):
+    def instance(cls) -> 'ChatClient':
         if cls._instance is None:
             cls._instance = cls()
         return cls._instance
