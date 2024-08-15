@@ -70,10 +70,12 @@ class ConversationFacade:
     
     @classmethod
     async def find(cls, id: int) -> ConversationModel:
+        """"Find a conversation"""
         await cls.get_collection().find_one({"_id": ObjectId(id)})
 
     @classmethod
-    async def update(cls, id: int, conversation: UpdateConversationModel) -> ConversationModel | None:
+    async def update(cls, id: int, conversation: UpdateConversationModel) -> Optional[ConversationModel]:
+        """"Update a conversation"""
         conversation = {
             k: v for k, v in conversation.model_dump(by_alias=True).items() if v is not None
         }
@@ -83,6 +85,15 @@ class ConversationFacade:
                 {"$set": conversation},
                 return_document=ReturnDocument.AFTER,
             )
-        if update_result:
-            return update_result
-        return None
+            if update_result is not None:
+                return update_result
+            else:
+                return None
+    
+    @classmethod
+    async def delete(cls, id: str) -> bool:
+        """"Delete a conversation"""
+        delete_result = await cls.get_collection().delete_one({"_id": ObjectId(id)})
+        if delete_result.deleted_count == 1:
+            return True
+        return False

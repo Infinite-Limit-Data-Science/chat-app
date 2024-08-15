@@ -1,4 +1,5 @@
-from fastapi import APIRouter, status, Body, HTTPException
+from typing import Optional
+from fastapi import APIRouter, status, Body, HTTPException, Response
 from models.conversation import (
     ConversationModel, 
     ConversationCollection, 
@@ -35,7 +36,7 @@ async def create_conversation(conversation: ConversationModel = Body(...)):
     response_model=ConversationModel,
     response_model_by_alias=False,
 )
-async def update_conversation(id: str):
+async def get_conversation(id: str):
     """Get the record for a specific conversation"""
     if (
         conversation := await Conversation.find(id)
@@ -51,13 +52,16 @@ async def update_conversation(id: str):
 )
 async def update_conversation(id: int, conversation: UpdateConversationModel = Body(...)):
     """Update individual fields of an existing conversation record."""
-    conversation = await Conversation.update(id, conversation)
-    if not conversation:
+    conversation: Optional[ConversationModel] = await Conversation.update(id, conversation)
+    if conversation is None:
         raise HTTPException(status_code=404, detail=f"Conversation {id} not found")
     return conversation
     
-
-@router.delete('/conversations/{id}/delete')
+    
+@router.delete('/conversations/{id}', response_description='Delete a conversation')
 async def delete_conversation(id: int):
-    pass
-    # NOT YET IMPLEMENTED
+    """Remove a single conversation record from the database."""
+    deleted = await Conversation.delete(id)
+    if deleted:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    raise HTTPException(status_code=404, detail=f"Student {id} not found")
