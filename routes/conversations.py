@@ -16,9 +16,9 @@ router = APIRouter(prefix='/conversations', tags=['conversation'])
     response_model_by_alias=False,
     tags=['conversation']
 )
-async def conversations(page: int = Query(1, description="record offset", alias='offset'), page_size: int = Query(20, description="record limit", alias='limit')):
-    """List conversations paginated by a page and page size integer"""
-    return ConversationCollection(conversations=await Conversation.all(page, page_size))
+async def conversations(record_offset: int = Query(0, description='record offset', alias='offset'), record_limit: int = Query(20, description="record limit", alias='limit')):
+    """List conversations by an offset and limit"""
+    return ConversationCollection(conversations=await Conversation.all(record_offset, record_limit))
 
 @router.post(
     '/',
@@ -40,7 +40,7 @@ async def create_conversation(conversation: ConversationModel = Body(...)):
     tags=['conversation']
 )
 async def get_conversation(id: str, response: Response):
-    """Get conversation record from configured database by conversation id"""
+    """Get conversation record from configured database by session id"""
     if (
         conversation := await Conversation.find(id)
     ) is not None:

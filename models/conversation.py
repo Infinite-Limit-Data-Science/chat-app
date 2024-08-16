@@ -14,12 +14,12 @@ class ConversationModel(BaseModel):
     # rootMessageId: str = Field(description='the root message of the list of messages')
     messages: List[MessageModel] = Field(description='list of messages associated with conversation')
     model: str = Field(description='LLM model name')
-    preprompt: Optional[str] = Field(description='preprompt to send to LLM')
+    preprompt: Optional[str] = Field(description='preprompt to send to LLM', default=None)
     createdAt: datetime = Field(default_factory=datetime.now)
     updatedAt: datetime = Field(default_factory=datetime.now)
     userAgent: Optional[str] = Field(description='browser user agent', default=None)
     embeddingModel: Optional[str] = Field(description='embedding model name', default=None)
-    sessionId: str = Field(description='downcased alphanumeric session id (cannot be all numbers)')
+    sessionId: str = Field(description='downcased alphanumeric session id')
 
     class Config:
         from_attributes = True
@@ -49,7 +49,7 @@ class ConversationFacade:
         return client.instance().db().get_collection('conversations')
 
     @classmethod
-    async def all(cls, limit: int, offset: int) -> List[ConversationModel]:
+    async def all(cls, offset: int, limit: int) -> List[ConversationModel]:
         """Fetch all conversations in database filtered by a limit and offset"""
         return await cls.get_collection().find().skip(offset).limit(limit).to_list(limit)
 
@@ -66,8 +66,8 @@ class ConversationFacade:
     
     @classmethod
     async def find(cls, id: int) -> ConversationModel:
-        """"Find a conversation"""
-        await cls.get_collection().find_one({"_id": ObjectId(id)})
+        """"Find a conversation by token"""
+        await cls.get_collection().find_one({"sessionId": id})
 
     @classmethod
     async def update(cls, id: int, conversation: UpdateConversationModel) -> Optional[ConversationModel]:
