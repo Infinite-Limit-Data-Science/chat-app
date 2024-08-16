@@ -1,5 +1,4 @@
 from datetime import datetime
-import re
 from typing import List, Optional
 from pydantic import BaseModel, Field, field_validator
 from motor.motor_asyncio import AsyncIOMotorCollection
@@ -7,36 +6,33 @@ from bson import ObjectId
 from pymongo import ReturnDocument
 from chat_client import ChatClient as client
 from models.bsonid import PyObjectId
-from models.message import Message
+from models.message import MessageModel
 
 class ConversationModel(BaseModel):
     id: Optional[PyObjectId] = Field(alias="_id", description='bson object id', default=None)
     title: str = Field(description='title of conversation')
-    rootMessageId: str = Field(description='the root message of the list of messages')
-    messages: List[Message] = Field(description='list of messages associated with conversation')
+    # rootMessageId: str = Field(description='the root message of the list of messages')
+    messages: List[MessageModel] = Field(description='list of messages associated with conversation')
     model: str = Field(description='LLM model name')
     preprompt: Optional[str] = Field(description='preprompt to send to LLM')
-    createdAt: datetime
-    updatedAt: datetime
+    createdAt: datetime = Field(default_factory=datetime.now)
+    updatedAt: datetime = Field(default_factory=datetime.now)
     userAgent: Optional[str] = Field(description='browser user agent', default=None)
     embeddingModel: Optional[str] = Field(description='embedding model name', default=None)
-    sessionId: str = Field(pre=lambda x: x.lower(), description='downcased alphanumeric session id (cannot be all numbers)')
+    sessionId: str = Field(description='downcased alphanumeric session id (cannot be all numbers)')
 
     class Config:
-        orm_mode = True
+        from_attributes = True
         populate_by_name = True
         arbitrary_types_allowed = True
 
     @field_validator('sessionId')
-    def sessionId_validator(cls, value):
-        """Validate sessionId is alphanumeric and not all numbers"""
-        if not re.match('^(?=.*[a-zA-Z])[a-zA-Z0-9]+$', value):
-            raise ValueError('Invalid pattern')
-        return value
+    def downcase_session_id(cls, value: str):
+        return value.lower()
     
 class UpdateConversationModel(BaseModel):
     title: Optional[str] = None
-    messages: Optional[Message] = None
+    messages: Optional[MessageModel] = None
     updatedAt: datetime
     
     class Config:

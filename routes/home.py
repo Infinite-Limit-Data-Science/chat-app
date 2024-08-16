@@ -1,9 +1,17 @@
 from fastapi import APIRouter
-from models.conversation import ConversationFacade as Conversation
+from models.conversation import (
+    ConversationCollection,
+    ConversationFacade as Conversation
+)
 
 router = APIRouter()
 
-@router.get('/')
+@router.get(
+    '/',
+    response_description='List all conversations on dashboard',
+    response_model=ConversationCollection,
+    response_model_by_alias=False,
+)
 async def home():
-    conversations = await Conversation.all(1, 20)
-    return conversations
+    """List conversations"""
+    return ConversationCollection(conversations=await Conversation.all(1, 20))

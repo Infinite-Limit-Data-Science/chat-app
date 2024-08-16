@@ -1,32 +1,34 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, status, Path, Query, Body
 from typing import Optional
+from models.conversation import (
+    ConversationFacade as Conversation
+)
+from models.message import (
+    MessageModel,
+    MessageCollection,
+    MessageFacade as Message
+)
 
-router = APIRouter()
+router = APIRouter(prefix='/conversations', tags=['conversation'])
 
-@router.get('/conversations/{id}/messages')
-async def conversation_messages(id: int, page: int = 1, page_size: Optional[int] = 20):
-    return { 'message': '' }
+@router.get(
+    '/{id}/messages',
+    response_description="Get all messages per conversation",
+    response_model=MessageCollection,
+    response_model_by_alias=False,
+    tags=['message']
+)
+async def conversation_messages(id: int = Path(description='conversation id'), page: int = Query(1, description="record offset", alias='offset'), page_size: int = Query(20, description="record limit", alias='limit')):
+    return await Message.find(id)
 
-@router.get('/conversations/{id}/messages/new')
-async def conversation_new_message(id: int):
-    return { 'message': '' }
-
-@router.post('/conversations/{id}/messages/create')
-async def conversation_create_message(id: int):
-    return { 'message': '' }
-
-@router.get('/conversations/{id}/messages/{message_id}/show')
-async def conversation_show_message(id: int, message_id: int):
-    return { 'message': '' }
-
-@router.get('/conversations/{id}/messages/{message_id}/edit')
-async def conversation_edit_message(id: int, message_id: int):
-    return { 'message': '' }
-
-@router.put('/conversations/{id}/messages/{message_id}/update')
-async def conversation_update_message(id: int, message_id: int):
-    return { 'message': '' }
-
-@router.delete('/conversations/{id}/messages/{message_id}/delete')
-async def conversation_delete_message(id: int, message_id: int):
-    return { 'message': '' }
+@router.post(
+    '/{id}/message',
+    response_description="Add new message",
+    response_model=MessageModel,
+    status_code=status.HTTP_201_CREATED,
+    response_model_by_alias=False,
+    tags=['message'],
+)
+async def create_message(id: str = Path(description='conversation id'), message: MessageModel = Body(...)):
+    """Insert new message record in configured database, returning resource created"""
+    return await Message.create(message)
