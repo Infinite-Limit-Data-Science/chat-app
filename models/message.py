@@ -2,11 +2,12 @@ from datetime import datetime
 from typing import List, Dict, Union, Optional
 from pydantic import BaseModel, Field
 from motor.motor_asyncio import AsyncIOMotorDatabase, AsyncIOMotorCollection
+from bson import ObjectId
 from chat_client import ChatClient as client
 from models.bsonid import PyObjectId
 
 class MessageModel(BaseModel):
-    id: Optional[PyObjectId] = Field(alias="_id", description='bson object id', default=None)
+    id: Optional[PyObjectId] = Field(alias="_id", description='bson object id', default_factory=ObjectId)
     content: str = Field(description='the prompt sent to LLM')
     modelDetail: Dict[str, Union[str, Dict[str, str]]]
     files: Optional[List[str]] = Field(description='file upload data', default=None)

@@ -1,4 +1,3 @@
-from typing import Optional
 from fastapi import APIRouter, status, Response, Query, Body, logger
 from models.conversation import (
     ConversationModel, 
@@ -28,9 +27,14 @@ async def conversations(record_offset: int = Query(0, description='record offset
     response_model_by_alias=False,
     tags=['conversation']
 )
-async def create_conversation(conversation: ConversationModel = Body(...)):
+async def create_conversation(response: Response, conversation: ConversationModel = Body(...)):
     """Insert new conversation record in configured database, returning resource created"""
-    return await Conversation.create(conversation)
+    if (
+        created_conversation := await Conversation.create(conversation)
+    ) is not None:
+        return created_conversation
+    response.status_code = status.HTTP_400_BAD_REQUEST
+    return {'error': f'Conversation not created'}
 
 @router.get(
     '/{id}',
