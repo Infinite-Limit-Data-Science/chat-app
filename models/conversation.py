@@ -29,7 +29,10 @@ class ConversationModel(BaseModel):
     @field_validator('sessionId')
     def downcase_session_id(cls, value: str):
         return value.lower()
-    
+
+class ConversationIdModel(BaseModel):
+    id: PyObjectId = Field(alias="_id", description='bson object id')
+
 class UpdateConversationModel(BaseModel):
     title: Optional[str] = None
     messages: Optional[MessageModel] = None
@@ -59,18 +62,15 @@ class ConversationFacade:
         new_conversation = await cls.get_collection().insert_one(
             conversation.model_dump(by_alias=True)        
         )
-        created_conversation = await cls.get_collection().find_one(
-            {"_id": new_conversation.inserted_id}
-        )
-        return created_conversation
+        return new_conversation.inserted_id
     
     @classmethod
-    async def find(cls, sessionId: str) -> ConversationModel:
-        """"Find a conversation by token"""
-        return await cls.get_collection().find_one({"sessionId": sessionId})
+    async def find(cls, id: str) -> ConversationModel:
+        """"Find a conversation by id"""
+        return await cls.get_collection().find_one({"_id": ObjectId(id)})
 
     @classmethod
-    async def update(cls, sessionId: str, conversation: UpdateConversationModel) -> Optional[ConversationModel]:
+    async def update(cls, id: str, conversation: UpdateConversationModel) -> Optional[ConversationModel]:
         """"Update a conversation"""
         update_result = None
         conversation = {
@@ -78,16 +78,16 @@ class ConversationFacade:
         }
         if len(conversation) >= 1:
             update_result = await cls.get_collection().find_one_and_update(
-                {"sessionId": sessionId},
+                {"_id": ObjectId(id)},
                 {"$set": conversation},
                 return_document=ReturnDocument.AFTER,
             )
         return update_result
     
     @classmethod
-    async def delete(cls, sessionId: str) -> bool:
+    async def delete(cls, id: str) -> bool:
         """"Delete a conversation"""
-        delete_result = await cls.get_collection().delete_one({"sessionId": sessionId})
+        delete_result = await cls.get_collection().delete_one({"_id": ObjectId(id)})
         if delete_result.deleted_count == 1:
             return True
         return False

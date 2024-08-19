@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import List, Dict, Union, Optional
 from pydantic import BaseModel, Field
+from pymongo import ReturnDocument
 from motor.motor_asyncio import AsyncIOMotorDatabase, AsyncIOMotorCollection
 from bson import ObjectId
 from chat_client import ChatClient as client
@@ -19,6 +20,9 @@ class MessageModel(BaseModel):
         populate_by_name = True
         arbitrary_types_allowed = True
 
+class MessageIdModel(BaseModel):
+    id: PyObjectId = Field(alias="_id", description='bson object id')
+
 class UpdateMessageModel(BaseModel):
     content: Optional[str] = None
     updatedAt: datetime = Field(default_factory=datetime.now)
@@ -34,9 +38,14 @@ class MessageFacade:
     @staticmethod
     def get_collection() -> AsyncIOMotorCollection:
         """Get the collection associated with Pydantic model"""
-        return client.instance().db().get_collection('messages')
+        return client.instance().db().get_collection('conversations')
     
     @classmethod
-    async def all(cls, conversation_id: str, limit: int, offset: int) -> List[MessageModel]:
-        """Fetch all messages by conversation in database filtered by a limit and offset"""
-        return await cls.get_collection().find({conversation_id}).skip(offset).limit(limit).to_list(limit)
+    async def create(cls, conversation_id: str, message: MessageModel):
+        """"Create a new message"""
+        update_result = await cls.get_collection('conversations').updateOne(
+            { "_id": ObjectId(conversation_id) },
+            { "$push": { "messages": message } },
+            return_document=ReturnDocument.AFTER
+        )
+        return update_result
