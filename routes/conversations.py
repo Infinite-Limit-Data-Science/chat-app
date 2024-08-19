@@ -1,32 +1,77 @@
-from fastapi import APIRouter
 from typing import Optional
+from fastapi import APIRouter, status, Response, Query, Body
+from models.conversation import (
+    ConversationModel, 
+    ConversationCollection, 
+    UpdateConversationModel, 
+    ConversationFacade as Conversation
+)
 
-router = APIRouter()
+router = APIRouter(prefix='/conversations', tags=['conversation'])
 
-@router.get('/conversations')
-async def conversations(page: int = 1, page_size: Optional[int] = 20):
-    return { 'message': f'{page_size} conversations on page {page}'}
+@router.get(
+    '/',
+    response_description='List all conversations',
+    response_model=ConversationCollection,
+    response_model_by_alias=False,
+    tags=['conversation']
+)
+async def conversations(record_offset: int = Query(0, description='record offset', alias='offset'), record_limit: int = Query(20, description="record limit", alias='limit')):
+    """List conversations by an offset and limit"""
+    return ConversationCollection(conversations=await Conversation.all(record_offset, record_limit))
 
-@router.get('/conversations/new')
-async def new_conversation():
-    return { 'message': '' }
+@router.post(
+    '/',
+    response_description="Add new conversation",
+    response_model=ConversationModel,
+    status_code=status.HTTP_201_CREATED,
+    response_model_by_alias=False,
+    tags=['conversation']
+)
+async def create_conversation(conversation: ConversationModel = Body(...)):
+    """Insert new conversation record in configured database, returning resource created"""
+    return await Conversation.create(conversation)
 
-@router.post('/conversations/create')
-async def create_conversation():
-    return { 'message': '' }
+@router.get(
+    '/{id}',
+    response_description="Get a single conversation",
+    response_model=ConversationModel,
+    response_model_by_alias=False,
+    tags=['conversation']
+)
+async def get_conversation(id: str, response: Response):
+    """Get conversation record from configured database by session id"""
+    if (
+        conversation := await Conversation.find(id)
+    ) is not None:
+        return conversation
+    response.status_code = status.HTTP_404_NOT_FOUND
+    return {'error': f'Conversation {id} not found'}
 
-@router.get('/conversations/{id}/show')
-async def show_conversation(id: int):
-    return { 'message': '' }
-
-@router.get('/conversations/{id}/edit')
-async def edit_conversation(id: int):
-    return { 'message': '' }
-
-@router.put('/conversations/{id}/update')
-async def update_conversation(id: int):
-    return { 'message': '' }
-
-@router.delete('/conversations/{id}/delete')
-async def delete_conversation(id: int):
-    return { 'message': '' }
+@router.put(
+    "/{id}",
+    response_description="Update a single conversation",
+    response_model=ConversationModel,
+    response_model_by_alias=False,
+    tags=['conversation']
+)
+async def update_conversation(id: int, response: Response, conversation: UpdateConversationModel = Body(...)):
+    """Update individual fields of an existing conversation record and return modified fields to client."""
+    conversation: Optional[ConversationModel] = await Conversation.update(id, conversation)
+    if conversation is None:
+        response.status_code = status.HTTP_404_NOT_FOUND
+        return {'error': f'Conversation {id} not found'}
+    return conversation
+    
+@router.delete(
+    '/{id}', 
+    response_description='Delete a conversation',
+    tags=['conversation']
+)
+async def delete_conversation(id: int, response: Response):
+    """Remove a single conversation record from the database."""
+    deleted = await Conversation.delete(id)
+    if deleted:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    response.status_code = status.HTTP_404_NOT_FOUND
+    return { 'error': f'Conversation {id} not found'}
