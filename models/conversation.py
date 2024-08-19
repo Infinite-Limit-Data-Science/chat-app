@@ -33,7 +33,7 @@ class ConversationModel(BaseModel):
 class UpdateConversationModel(BaseModel):
     title: Optional[str] = None
     messages: Optional[MessageModel] = None
-    updatedAt: datetime
+    updatedAt: datetime = Field(default_factory=datetime.now)
     
     class Config:
         populate_by_name = True
@@ -65,31 +65,29 @@ class ConversationFacade:
         return created_conversation
     
     @classmethod
-    async def find(cls, id: int) -> ConversationModel:
+    async def find(cls, sessionId: str) -> ConversationModel:
         """"Find a conversation by token"""
-        await cls.get_collection().find_one({"sessionId": id})
+        return await cls.get_collection().find_one({"sessionId": sessionId})
 
     @classmethod
-    async def update(cls, id: int, conversation: UpdateConversationModel) -> Optional[ConversationModel]:
+    async def update(cls, sessionId: str, conversation: UpdateConversationModel) -> Optional[ConversationModel]:
         """"Update a conversation"""
+        update_result = None
         conversation = {
             k: v for k, v in conversation.model_dump(by_alias=True).items() if v is not None
         }
         if len(conversation) >= 1:
             update_result = await cls.get_collection().find_one_and_update(
-                {"_id": ObjectId(id)},
+                {"sessionId": sessionId},
                 {"$set": conversation},
                 return_document=ReturnDocument.AFTER,
             )
-            if update_result is not None:
-                return update_result
-            else:
-                return None
+        return update_result
     
     @classmethod
-    async def delete(cls, id: str) -> bool:
+    async def delete(cls, sessionId: str) -> bool:
         """"Delete a conversation"""
-        delete_result = await cls.get_collection().delete_one({"_id": ObjectId(id)})
+        delete_result = await cls.get_collection().delete_one({"sessionId": sessionId})
         if delete_result.deleted_count == 1:
             return True
         return False

@@ -1,5 +1,5 @@
 from typing import Optional
-from fastapi import APIRouter, status, Response, Query, Body
+from fastapi import APIRouter, status, Response, Query, Body, logger
 from models.conversation import (
     ConversationModel, 
     ConversationCollection, 
@@ -39,14 +39,15 @@ async def create_conversation(conversation: ConversationModel = Body(...)):
     response_model_by_alias=False,
     tags=['conversation']
 )
-async def get_conversation(id: str, response: Response):
+async def get_conversation(sessionId: str, response: Response):
     """Get conversation record from configured database by session id"""
     if (
-        conversation := await Conversation.find(id)
+        conversation := await Conversation.find(sessionId)
     ) is not None:
+        # ConversationModel(**conversation)
         return conversation
     response.status_code = status.HTTP_404_NOT_FOUND
-    return {'error': f'Conversation {id} not found'}
+    return {'error': f'Conversation {sessionId} not found'}
 
 @router.put(
     "/{id}",
@@ -55,23 +56,25 @@ async def get_conversation(id: str, response: Response):
     response_model_by_alias=False,
     tags=['conversation']
 )
-async def update_conversation(id: int, response: Response, conversation: UpdateConversationModel = Body(...)):
+async def update_conversation(sessionId: str, response: Response, conversation: UpdateConversationModel = Body(...)):
     """Update individual fields of an existing conversation record and return modified fields to client."""
-    conversation: Optional[ConversationModel] = await Conversation.update(id, conversation)
-    if conversation is None:
-        response.status_code = status.HTTP_404_NOT_FOUND
-        return {'error': f'Conversation {id} not found'}
-    return conversation
+    if (
+        updated_conversation := await Conversation.update(sessionId, conversation)
+    ) is not None:
+        return updated_conversation
+    response.status_code = status.HTTP_404_NOT_FOUND
+    return {'error': f'Conversation {sessionId} not found'}
     
 @router.delete(
     '/{id}', 
     response_description='Delete a conversation',
     tags=['conversation']
 )
-async def delete_conversation(id: int, response: Response):
+async def delete_conversation(sessionId: str, response: Response):
     """Remove a single conversation record from the database."""
-    deleted = await Conversation.delete(id)
-    if deleted:
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    if (
+        deleted_conversation := await Conversation.delete(sessionId)
+    ) is not None:
+        return deleted_conversation  
     response.status_code = status.HTTP_404_NOT_FOUND
-    return { 'error': f'Conversation {id} not found'}
+    return { 'error': f'Conversation {sessionId} not found'}
