@@ -45,7 +45,7 @@ async def create_conversation(response: Response, conversation: ConversationMode
     tags=['conversation']
 )
 async def get_conversation(id: str, response: Response):
-    """Get conversation record from configured database by session id"""
+    """Get conversation record from configured database by id"""
     if (
         conversation := await Conversation.find(id)
     ) is not None:

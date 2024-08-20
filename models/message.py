@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import List, Dict, Union, Optional
 from pydantic import BaseModel, Field
 from pymongo import ReturnDocument
-from motor.motor_asyncio import AsyncIOMotorDatabase, AsyncIOMotorCollection
+from motor.motor_asyncio import AsyncIOMotorCollection
 from bson import ObjectId
 from chat_client import ChatClient as client
 from models.bsonid import PyObjectId
@@ -25,6 +25,7 @@ class MessageIdModel(BaseModel):
 
 class UpdateMessageModel(BaseModel):
     content: Optional[str] = None
+    modelDetail: Dict[str, Union[str, Dict[str, str]]] = None
     updatedAt: datetime = Field(default_factory=datetime.now)
     
     class Config:
@@ -43,9 +44,54 @@ class MessageFacade:
     @classmethod
     async def create(cls, conversation_id: str, message: MessageModel):
         """"Create a new message"""
-        update_result = await cls.get_collection('conversations').updateOne(
+        message.id = ObjectId()
+        update_result = await cls.get_collection().update_one(
             { "_id": ObjectId(conversation_id) },
-            { "$push": { "messages": message } },
-            return_document=ReturnDocument.AFTER
+            { "$push": { "messages": message.model_dump(by_alias=True) } }
         )
-        return update_result
+        if update_result.modified_count > 0:
+            return message.id
+        return None
+    
+    @classmethod
+    async def find(cls, conversation_id: str, id: str) -> MessageModel:
+        """"Find a message by id"""
+        conversation = await cls.get_collection().find_one(
+            {"_id": ObjectId(conversation_id)},
+            { "messages": { "$elemMatch": { "_id": ObjectId(id) } } }
+        )
+        if conversation:
+            return conversation['messages'][0]
+        return None
+
+    @classmethod
+    async def update(cls, conversation_id: str, id: str, message: UpdateMessageModel) -> Optional[MessageModel]:
+        """"Update a message"""
+        message = {
+            k: v for k, v in message.model_dump(by_alias=True).items() if v is not None
+        }
+        if len(message) >= 1:
+            conversation = await cls.get_collection().find_one_and_update(
+                {"_id": ObjectId(conversation_id)},
+                {
+                    "$set": {
+                        f"messages.$[message].{k}": v
+                        for k, v in message.items()
+                    }
+                },
+                array_filters=[{"message._id": ObjectId(id)}],
+                return_document=ReturnDocument.AFTER,
+            )
+            updated_message = next((msg for msg in conversation["messages"] if msg["_id"] == ObjectId(id)), None)
+            return updated_message
+        
+    @classmethod
+    async def delete(cls, conversation_id: str, id: str) -> bool:
+        """"Delete a message"""
+        delete_result = await cls.get_collection().update_one(
+            {"_id": ObjectId(conversation_id)},
+            {"$pull": {"messages": {"_id": ObjectId(id)}}}
+        )
+        if delete_result.modified_count == 1:
+            return True
+        return False

@@ -73,6 +73,7 @@ class ConversationFacade:
     async def update(cls, id: str, conversation: UpdateConversationModel) -> Optional[ConversationModel]:
         """"Update a conversation"""
         update_result = None
+        # keep only fields with values
         conversation = {
             k: v for k, v in conversation.model_dump(by_alias=True).items() if v is not None
         }
