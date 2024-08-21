@@ -1,4 +1,4 @@
-from fastapi import APIRouter, status, Response, Query, Body, logger
+from fastapi import APIRouter, status, Response, Query, Body
 from models.message import (
     MessageModel,
     MessageIdModel,
