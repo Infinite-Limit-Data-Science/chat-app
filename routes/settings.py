@@ -1,13 +1,13 @@
 from fastapi import APIRouter, status, Response, Query, Body
 from models.setting import (
     SettingModel, 
-    SettingCollection, 
-    UpdateSettingModel,
     SettingIdModel,
     SettingFacade as Setting
 )
 
-router = APIRouter(prefix='/settings', tags=['setting'])
+router = APIRouter(
+    prefix='/settings', tags=['setting']
+)
 
 @router.post(
     '/',
@@ -15,7 +15,6 @@ router = APIRouter(prefix='/settings', tags=['setting'])
     response_model=SettingIdModel,
     status_code=status.HTTP_201_CREATED,
     response_model_by_alias=False,
-    tags=['setting']
 )
 async def create_setting(response: Response, setting: SettingModel = Body(...)):
     """Insert new setting record in configured database, returning resource created"""

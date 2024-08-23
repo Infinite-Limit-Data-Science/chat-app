@@ -1,4 +1,5 @@
-from fastapi import APIRouter, status, Response, Query, Body
+from fastapi import APIRouter, status, Request, Response, Query, Body, Depends
+from auth.bearer_authentication import get_current_user
 from models.message import (
     MessageModel,
     MessageIdModel,
@@ -6,7 +7,11 @@ from models.message import (
     MessageFacade as Message
 )
 
-router = APIRouter(prefix='/conversations', tags=['conversation'])
+router = APIRouter(
+    prefix='/conversations', 
+    tags=['conversation'],
+    dependencies=[Depends(get_current_user)]
+)
 
 @router.post(
     '/{conversation_id}/message',
@@ -32,10 +37,10 @@ async def create_message(response: Response, conversation_id: str, message: Mess
     response_model_by_alias=False,
     tags=['message']
 )
-async def get_message(conversation_id: str, id: str, response: Response):
+async def get_message(request: Request, conversation_id: str, id: str, response: Response):
     """Get message record from configured database by id"""
     if (
-        message := await Message.find(conversation_id, id)
+        message := await Message.find(request.state.uuid, conversation_id, id)
     ) is not None:
         return message
     response.status_code = status.HTTP_404_NOT_FOUND
@@ -48,10 +53,10 @@ async def get_message(conversation_id: str, id: str, response: Response):
     response_model_by_alias=False,
     tags=['message']
 )
-async def update_message(conversation_id: str, id: str, response: Response, message: UpdateMessageModel = Body(...)):
+async def update_message(request: Request, response: Response, conversation_id: str, id: str, message: UpdateMessageModel = Body(...)):
     """Update individual fields of an existing message record and return modified fields to client."""
     if (
-        updated_message := await Message.update(conversation_id, id, message)
+        updated_message := await Message.update(request.state.uuid, conversation_id, id, message)
     ) is not None:
         return updated_message
     response.status_code = status.HTTP_404_NOT_FOUND
@@ -62,10 +67,10 @@ async def update_message(conversation_id: str, id: str, response: Response, mess
     response_description='Delete a message',
     tags=['message']
 )
-async def delete_message(conversation_id: str, id: str, response: Response):
+async def delete_message(request: Request, response: Response, conversation_id: str, id: str):
     """Remove a single message record from the database."""
     if (
-        deleted_message := await Message.delete(conversation_id, id)
+        deleted_message := await Message.delete(request.state.uuid, conversation_id, id)
     ) is not None:
         return deleted_message  
     response.status_code = status.HTTP_404_NOT_FOUND

@@ -12,13 +12,13 @@ class SettingModel(BaseModel):
     sessionId: str = Field(description='downcased alphanumeric session id')
     activeModel: str = Field(description='active model of user')
     customPrompts: Optional[Dict[str,str]] = Field(description='custom templates per model', default_factory=dict)
-    hideEmojiOnSidebar: Optional[bool] = Field(description='custom templates per model', default=False)
+    hideEmojiOnSidebar: Optional[bool] = Field(description='hide emoji on sidebar', default=False)
     ethicsModalAcceptedAt: datetime = Field(default_factory=datetime.now)
     createdAt: datetime = Field(default_factory=datetime.now)
     updatedAt: datetime = Field(default_factory=datetime.now)
 
     class Config:
-        orm_mode = True
+        from_attributes = True
         populate_by_name = True
         arbitrary_types_allowed = True
 

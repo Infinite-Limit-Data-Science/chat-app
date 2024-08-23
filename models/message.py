@@ -54,10 +54,10 @@ class MessageFacade:
         return None
     
     @classmethod
-    async def find(cls, conversation_id: str, id: str) -> MessageModel:
+    async def find(cls, uuid: str, conversation_id: str, id: str) -> MessageModel:
         """"Find a message by id"""
         conversation = await cls.get_collection().find_one(
-            {"_id": ObjectId(conversation_id)},
+            {"_id": ObjectId(conversation_id), 'sessionId': uuid},
             { "messages": { "$elemMatch": { "_id": ObjectId(id) } } }
         )
         if conversation:
@@ -65,14 +65,14 @@ class MessageFacade:
         return None
 
     @classmethod
-    async def update(cls, conversation_id: str, id: str, message: UpdateMessageModel) -> Optional[MessageModel]:
+    async def update(cls, uuid: str, conversation_id: str, id: str, message: UpdateMessageModel) -> Optional[MessageModel]:
         """"Update a message"""
         message = {
             k: v for k, v in message.model_dump(by_alias=True).items() if v is not None
         }
         if len(message) >= 1:
             conversation = await cls.get_collection().find_one_and_update(
-                {"_id": ObjectId(conversation_id)},
+                {"_id": ObjectId(conversation_id), 'sessionId': uuid},
                 {
                     "$set": {
                         f"messages.$[message].{k}": v
@@ -86,10 +86,10 @@ class MessageFacade:
             return updated_message
         
     @classmethod
-    async def delete(cls, conversation_id: str, id: str) -> bool:
+    async def delete(cls, uuid: str, conversation_id: str, id: str) -> bool:
         """"Delete a message"""
         delete_result = await cls.get_collection().update_one(
-            {"_id": ObjectId(conversation_id)},
+            {"_id": ObjectId(conversation_id), 'sessionId': uuid},
             {"$pull": {"messages": {"_id": ObjectId(id)}}}
         )
         if delete_result.modified_count == 1:

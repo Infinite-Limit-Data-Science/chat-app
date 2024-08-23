@@ -8,6 +8,7 @@ uvicorn = "*"
 motor = "*"
 python-dotenv = "*"
 fastapi = {extras = ["standard"], version = "*"}
+pyjwt = "*"
 
 [dev-packages]
 

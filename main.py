@@ -2,7 +2,7 @@ import os
 import logging
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request, Response, status, logger
+from fastapi import FastAPI, Request, Response, status, logger, Depends
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from chat_client import ChatClient as chat_client
