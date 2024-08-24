@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Dict, Optional
+from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 from pymongo import ReturnDocument
 from motor.motor_asyncio import AsyncIOMotorCollection
@@ -45,29 +45,27 @@ class SettingFacade:
         return client.instance().db().get_collection('settings')
     
     @classmethod
-    async def create(cls, setting: SettingModel):
+    async def create(cls, uuid: str, setting: SettingModel):
         """"Create a new setting"""
-        new_setting = await cls.get_collection().insert_one(
-            setting.model_dump(by_alias=True)        
-        )
+        session_data = {**setting.model_dump(by_alias=True), 'sessionId': uuid}
+        new_setting = await cls.get_collection().insert_one(session_data)
         return new_setting.inserted_id
     
     @classmethod
-    async def find(cls, id: str) -> SettingModel:
+    async def find(cls, uuid: str, id: str) -> Dict[str, Any]:
         """"Find a setting by id"""
-        return await cls.get_collection().find_one({"_id": ObjectId(id)})
+        return await cls.get_collection().find_one({"_id": ObjectId(id), 'sessionId': uuid})
     
     @classmethod
-    async def update(cls, id: str, setting: UpdateSettingModel) -> Optional[UpdateSettingModel]:
+    async def update(cls, uuid: str, id: str, setting: UpdateSettingModel) -> Dict[str, Any]:
         """"Update a setting"""
-        update_result = None
         # keep only fields with values
         setting = {
             k: v for k, v in setting.model_dump(by_alias=True).items() if v is not None
         }
         if len(setting) >= 1:
             update_result = await cls.get_collection().find_one_and_update(
-                {"_id": ObjectId(id)},
+                {"_id": ObjectId(id), 'sessionId': uuid},
                 {"$set": setting},
                 return_document=ReturnDocument.AFTER,
             )

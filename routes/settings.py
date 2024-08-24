@@ -1,12 +1,16 @@
-from fastapi import APIRouter, status, Response, Query, Body
+from fastapi import APIRouter, Request, Response, status, Query, Body, Depends
+from auth.bearer_authentication import get_current_user
 from models.setting import (
     SettingModel, 
     SettingIdModel,
+    UpdateSettingModel,
     SettingFacade as Setting
 )
 
 router = APIRouter(
-    prefix='/settings', tags=['setting']
+    prefix='/settings', 
+    tags=['setting'],
+    dependencies=[Depends(get_current_user)]
 )
 
 @router.post(
@@ -16,14 +20,13 @@ router = APIRouter(
     status_code=status.HTTP_201_CREATED,
     response_model_by_alias=False,
 )
-async def create_setting(response: Response, setting: SettingModel = Body(...)):
+async def create_setting(request: Request, setting: SettingModel = Body(...)):
     """Insert new setting record in configured database, returning resource created"""
     if (
-        created_setting_id := await Setting.create(setting)
+        created_setting_id := await Setting.create(request.state.uuid, setting)
     ) is not None:
         return { "_id": created_setting_id }
-    response.status_code = status.HTTP_400_BAD_REQUEST
-    return {'error': f'Setting not created'}
+    return {'error': f'Setting not created'}, 400
 
 @router.get(
     '/{id}',
@@ -32,11 +35,25 @@ async def create_setting(response: Response, setting: SettingModel = Body(...)):
     response_model_by_alias=False,
     tags=['setting']
 )
-async def get_setting(id: str, response: Response):
+async def get_setting(request: Request, id: str):
     """Get setting record from configured database by id"""
     if (
-        setting := await Setting.find(id)
+        setting := await Setting.find(request.state.uuid, id)
     ) is not None:
         return setting
-    response.status_code = status.HTTP_404_NOT_FOUND
-    return {'error': f'Setting {id} not found'}
+    return {'error': f'Setting {id} not found'}, 404
+
+@router.put(
+    '/{id}',
+    response_description="update a single setting",
+    response_model=SettingModel,
+    response_model_by_alias=False,
+    tags=['setting']
+)
+async def update_setting(request: Request, id: str, setting: UpdateSettingModel = Body(...)):
+    """Get setting record from configured database by id"""
+    if (
+        setting := await Setting.update(request.state.uuid, id, setting)
+    ) is not None:
+        return setting
+    return {'error': f'Setting {id} not found'}, 404

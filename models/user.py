@@ -24,7 +24,7 @@ class UserFacade:
     def get_collection() -> AsyncIOMotorCollection:
         """Get the collection associated with Pydantic model"""
         return client.instance().db().get_collection('users')
-    
+
     @classmethod
     async def find_or_create_by_uuid(cls, token: Token) -> UserModel:
         """Find or create a User by uuid attribute of LDAP User Entry and return it"""
@@ -33,4 +33,11 @@ class UserFacade:
         if user_attributes is None:
             await collection.insert_one(UserModel(uuid=token.sub, roles=token.roles).model_dump(by_alias=True) )
             user_attributes = await collection.find_one({ 'sessionId': token.sub })
-        return UserModel(**user_attributes)
+        return UserModel(**cls.grandfather(user_attributes))
+    
+    def grandfather(attributes):
+        """Ensure historic data complies with new validations by adding missing attributes."""
+        required_attributes = ['roles', 'createdAt', 'updatedAt']
+        for attr in required_attributes:
+            attributes.setdefault(attr, [] if attr == 'roles' else datetime.now())
+        return attributes

@@ -9,6 +9,8 @@ motor = "*"
 python-dotenv = "*"
 fastapi = {extras = ["standard"], version = "*"}
 pyjwt = "*"
+langchain = "*"
+langchain-community = "*"
 
 [dev-packages]
 

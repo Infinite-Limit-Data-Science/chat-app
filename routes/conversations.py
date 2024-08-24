@@ -32,14 +32,13 @@ async def conversations(request: Request, record_offset: int = Query(0, descript
     status_code=status.HTTP_201_CREATED,
     response_model_by_alias=False,
 )
-async def create_conversation(request: Request, response: Response, conversation: CreateConversationModel = Body(...)):
+async def create_conversation(request: Request, conversation: CreateConversationModel = Body(...)):
     """Insert new conversation record in configured database, returning resource created"""
     if (
         created_conversation_id := await Conversation.create(request.state.uuid, conversation)
     ) is not None:
         return { "_id": created_conversation_id }
-    response.status_code = status.HTTP_400_BAD_REQUEST
-    return {'error': f'Conversation not created'}
+    return {'error': f'Conversation not created'}, 400
 
 @router.get(
     '/{id}',
@@ -47,14 +46,13 @@ async def create_conversation(request: Request, response: Response, conversation
     response_model=ConversationModel,
     response_model_by_alias=False,
 )
-async def get_conversation(request: Request, id: str, response: Response):
+async def get_conversation(request: Request, id: str):
     """Get conversation record from configured database by id"""
     if (
         conversation := await Conversation.find(request.state.uuid, id)
     ) is not None:
         return conversation
-    response.status_code = status.HTTP_404_NOT_FOUND
-    return {'error': f'Conversation {id} not found'}
+    return {'error': f'Conversation {id} not found'}, 404
 
 @router.put(
     "/{id}",
@@ -62,24 +60,22 @@ async def get_conversation(request: Request, id: str, response: Response):
     response_model=ConversationModel,
     response_model_by_alias=False,
 )
-async def update_conversation(request: Request, response: Response, id: str, conversation: UpdateConversationModel = Body(...)):
+async def update_conversation(request: Request, id: str, conversation: UpdateConversationModel = Body(...)):
     """Update individual fields of an existing conversation record and return modified fields to client."""
     if (
         updated_conversation := await Conversation.update(request.state.uuid, id, conversation)
     ) is not None:
         return updated_conversation
-    response.status_code = status.HTTP_404_NOT_FOUND
-    return {'error': f'Conversation {id} not found'}
+    return {'error': f'Conversation {id} not found'}, 404
     
 @router.delete(
     '/{id}', 
     response_description='Delete a conversation',
 )
-async def delete_conversation(request: Request, id: str, response: Response):
+async def delete_conversation(request: Request, id: str):
     """Remove a single conversation record from the database."""
     if (
         deleted_conversation := await Conversation.delete(request.state.uuid, id)
     ) is not None:
         return deleted_conversation  
-    response.status_code = status.HTTP_404_NOT_FOUND
-    return { 'error': f'Conversation {id} not found'}
+    return { 'error': f'Conversation {id} not found'}, 404
