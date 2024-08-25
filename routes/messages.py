@@ -2,6 +2,7 @@ import os
 import shutil
 from typing import Dict, Any, Optional
 from fastapi import APIRouter, status, Request, Body, Depends, File, UploadFile, logger
+from fastapi.responses import StreamingResponse
 from auth.bearer_authentication import get_current_user
 from models.message import (
     MessageModel,
@@ -9,6 +10,7 @@ from models.message import (
     UpdateMessageModel,
     MessageFacade as Message
 )
+from orchestrators.chat.chat_bot import ChatBot
 from orchestrators.doc.document_ingestor import DocumentIngestor
 
 router = APIRouter(
@@ -20,19 +22,24 @@ router = APIRouter(
 @router.post(
     '/{conversation_id}/message',
     response_description="Add new message",
-    response_model=MessageIdModel,
     status_code=status.HTTP_201_CREATED,
-    response_model_by_alias=False,
     tags=['message']
 )
-async def create_message(conversation_id: str, message: MessageModel = Body(...)):
+async def create_message(request: Request, conversation_id: str, message: MessageModel = Body(...)):
     """Insert new message record in configured database, returning resource created"""
     if (
         created_message_id := await Message.create(conversation_id, message)
     ) is not None:
-        # query retrieval and check if conversation has a message with file
-
-        return { "_id": created_message_id }
+        chat_bot = ChatBot(message.content)
+        docs = chat_bot.retrieve()
+        if "application/json" in request.headers.get("Accept"):
+            return { 'docs': [doc.page_content for doc in docs]}
+        if 'text/event-stream' in request.headers.get("Accept"):
+            async def stream_response():
+                for doc in docs:
+                    logger.logging.warning(f'DOC PAGE CONTENT {doc.page_content}')
+                    yield doc.page_content.encode("utf-8")
+            return StreamingResponse(stream_response())
     return {'error': f'Conversation not created'}, 400
 
 @router.get(
