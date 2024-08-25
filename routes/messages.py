@@ -1,6 +1,6 @@
 import os
 import shutil
-from fastapi import APIRouter, status, Request, Body, Depends, File, UploadFile
+from fastapi import APIRouter, status, Request, Body, Depends, File, UploadFile, logger
 from auth.bearer_authentication import get_current_user
 from models.message import (
     MessageModel,
@@ -77,15 +77,21 @@ async def delete_message(request: Request, conversation_id: str, id: str):
 @router.post(
     '/{conversation_id}/message/{id}/upload',
     response_description='Upload a file',
+    response_model=MessageModel,
     tags=['message']
 )
 async def upload(request: Request, conversation_id: str, id: str, upload_file: UploadFile = File(...)):
-    path = f'files/{request.state.uuid}/conversations/{conversation_id}/messages/{id}/{upload_file.filename}'
-    dir_path = os.path.dirname(path)
+    uuid = request.state.uuid
+    if (
+        message_dict := await Message.find(uuid, conversation_id, id)
+    ) is not None:
+        path = f'files/{uuid}/conversations/{conversation_id}/messages/{id}/{upload_file.filename}'
+        dir_path = os.path.dirname(path)
+        if not os.path.exists(dir_path):
+            os.makedirs(dir_path)
 
-    if not os.path.exists(dir_path):
-        os.makedirs(dir_path)
-
-    with open(path, 'wb') as f:
-       shutil.copyfileobj(upload_file.file, f)
-    return { 'file': f'{upload_file.filename} uploaded successful' }
+        with open(path, 'wb') as f:
+            shutil.copyfileobj(upload_file.file, f)
+        merged_files = ([] if message_dict['files'] is None else message_dict['files']) + [path]
+        return await Message.update(uuid, conversation_id, id, UpdateMessageModel(files=merged_files))
+    return {'error': f'Message {id} not found'}, 404

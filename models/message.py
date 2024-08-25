@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Dict, Union, Optional
+from typing import List, Dict, Any, Union, Optional
 from pydantic import BaseModel, Field
 from pymongo import ReturnDocument
 from motor.motor_asyncio import AsyncIOMotorCollection
@@ -25,7 +25,8 @@ class MessageIdModel(BaseModel):
 
 class UpdateMessageModel(BaseModel):
     content: Optional[str] = None
-    modelDetail: Dict[str, Union[str, Dict[str, str]]] = None
+    modelDetail: Optional[Dict[str, Union[str, Dict[str, str]]]] = None
+    files: Optional[List[str]] = None
     updatedAt: datetime = Field(default_factory=datetime.now)
     
     class Config:
@@ -54,7 +55,7 @@ class MessageFacade:
         return None
     
     @classmethod
-    async def find(cls, uuid: str, conversation_id: str, id: str) -> MessageModel:
+    async def find(cls, uuid: str, conversation_id: str, id: str) -> Dict[str, Any]:
         """"Find a message by id"""
         conversation = await cls.get_collection().find_one(
             {"_id": ObjectId(conversation_id), 'sessionId': uuid},

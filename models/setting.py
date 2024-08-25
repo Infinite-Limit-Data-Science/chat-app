@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 from pydantic import BaseModel, Field
 from pymongo import ReturnDocument
 from motor.motor_asyncio import AsyncIOMotorCollection
@@ -57,7 +57,7 @@ class SettingFacade:
         return await cls.get_collection().find_one({"_id": ObjectId(id), 'sessionId': uuid})
     
     @classmethod
-    async def update(cls, uuid: str, id: str, setting: UpdateSettingModel) -> Dict[str, Any]:
+    async def update(cls, uuid: str, id: str, setting: UpdateSettingModel) -> Optional[Dict[str, Any]]:
         """"Update a setting"""
         # keep only fields with values
         setting = {
@@ -69,7 +69,7 @@ class SettingFacade:
                 {"$set": setting},
                 return_document=ReturnDocument.AFTER,
             )
-        return update_result
+            return update_result
     
     @classmethod
     async def delete(cls, id: str) -> bool:
