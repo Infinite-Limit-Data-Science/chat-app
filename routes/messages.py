@@ -1,5 +1,6 @@
 import os
 import shutil
+from typing import Dict, Any, Optional
 from fastapi import APIRouter, status, Request, Body, Depends, File, UploadFile, logger
 from auth.bearer_authentication import get_current_user
 from models.message import (
@@ -8,6 +9,7 @@ from models.message import (
     UpdateMessageModel,
     MessageFacade as Message
 )
+from orchestrators.doc.document_ingestor import DocumentIngestor
 
 router = APIRouter(
     prefix='/conversations', 
@@ -74,13 +76,8 @@ async def delete_message(request: Request, conversation_id: str, id: str):
         return deleted_message  
     return { 'error': f'Conversation {id} not found'}, 404
 
-@router.post(
-    '/{conversation_id}/message/{id}/upload',
-    response_description='Upload a file',
-    response_model=MessageModel,
-    tags=['message']
-)
-async def upload(request: Request, conversation_id: str, id: str, upload_file: UploadFile = File(...)):
+
+async def upload_file(request: Request, conversation_id: str, id: str, upload_file: UploadFile = File(...)) -> Optional[Dict[str,Any]]:
     uuid = request.state.uuid
     if (
         message_dict := await Message.find(uuid, conversation_id, id)
@@ -94,4 +91,18 @@ async def upload(request: Request, conversation_id: str, id: str, upload_file: U
             shutil.copyfileobj(upload_file.file, f)
         merged_files = ([] if message_dict['files'] is None else message_dict['files']) + [path]
         return await Message.update(uuid, conversation_id, id, UpdateMessageModel(files=merged_files))
-    return {'error': f'Message {id} not found'}, 404
+
+@router.post(
+    '/{conversation_id}/message/{id}/upload',
+    response_model=MessageModel,
+    response_description='Upload a file',
+    tags=['message']
+)
+async def upload(request: Request, conversation_id: str, id: str, upload_file: UploadFile = File(...), message: Optional[Dict[str,Any]] = Depends(upload_file)):
+    if not message:
+        return {'error': f'Message {id} not found'}, 404
+    ingestor = DocumentIngestor(f'files/{request.state.uuid}/conversations/{conversation_id}/messages/{id}/{upload_file.filename}', request.state.uuid, conversation_id, id)
+    # TODO: make asynchronous
+    embedded_ids = ingestor.ingest()
+    logger.logging.warning(f'EMBEDDED IDs: {len(embedded_ids)}')
+    return message

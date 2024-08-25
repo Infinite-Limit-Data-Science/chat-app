@@ -66,7 +66,7 @@ class MessageFacade:
         return None
 
     @classmethod
-    async def update(cls, uuid: str, conversation_id: str, id: str, message: UpdateMessageModel) -> Optional[MessageModel]:
+    async def update(cls, uuid: str, conversation_id: str, id: str, message: UpdateMessageModel) -> Optional[Dict[str,Any]]:
         """"Update a message"""
         message = {
             k: v for k, v in message.model_dump(by_alias=True).items() if v is not None

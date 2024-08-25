@@ -11,6 +11,11 @@ fastapi = {extras = ["standard"], version = "*"}
 pyjwt = "*"
 langchain = "*"
 langchain-community = "*"
+pypdf = "*"
+langchain-text-splitters = "*"
+sentence-transformers = "*"
+langchain-redis = "*"
+langchain-huggingface = "*"
 
 [dev-packages]
 
