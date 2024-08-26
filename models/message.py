@@ -9,7 +9,7 @@ from models.bsonid import PyObjectId
 
 class MessageModel(BaseModel):
     id: Optional[PyObjectId] = Field(alias="_id", description='bson object id', default_factory=ObjectId)
-    content: str = Field(description='the prompt sent to LLM')
+    content: str = Field(description='message content')
     modelDetail: Dict[str, Union[str, Dict[str, str]]]
     files: Optional[List[str]] = Field(description='file upload data', default=None)
     createdAt: datetime = Field(default_factory=datetime.now)
@@ -20,8 +20,8 @@ class MessageModel(BaseModel):
         populate_by_name = True
         arbitrary_types_allowed = True
 
-class MessageIdModel(BaseModel):
-    id: PyObjectId = Field(alias="_id", description='bson object id')
+# class MessageIdModel(BaseModel):
+#     id: PyObjectId = Field(alias="_id", description='bson object id')
 
 class UpdateMessageModel(BaseModel):
     content: Optional[str] = None
@@ -51,7 +51,7 @@ class MessageFacade:
             { "$push": { "messages": message.model_dump(by_alias=True) } }
         )
         if update_result.modified_count > 0:
-            return message.id
+            return message
         return None
     
     @classmethod

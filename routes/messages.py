@@ -6,7 +6,6 @@ from fastapi.responses import StreamingResponse
 from auth.bearer_authentication import get_current_user
 from models.message import (
     MessageModel,
-    MessageIdModel,
     UpdateMessageModel,
     MessageFacade as Message
 )
@@ -28,16 +27,16 @@ router = APIRouter(
 async def create_message(request: Request, conversation_id: str, message: MessageModel = Body(...)):
     """Insert new message record in configured database, returning resource created"""
     if (
-        created_message_id := await Message.create(conversation_id, message)
+        user_message := await Message.create(conversation_id, message)
     ) is not None:
-        chat_bot = ChatBot(message.content)
-        docs = chat_bot.retrieve()
+        chat_bot = ChatBot()
+        docs = chat_bot.retrieve(user_message.content)
+        await Message.create(conversation_id, MessageModel(content=str(chat_bot), modelDetail=user_message.modelDetail))
         if "application/json" in request.headers.get("Accept"):
             return { 'docs': [doc.page_content for doc in docs]}
         if 'text/event-stream' in request.headers.get("Accept"):
             async def stream_response():
                 for doc in docs:
-                    logger.logging.warning(f'DOC PAGE CONTENT {doc.page_content}')
                     yield doc.page_content.encode("utf-8")
             return StreamingResponse(stream_response())
     return {'error': f'Conversation not created'}, 400
