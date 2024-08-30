@@ -1,8 +1,6 @@
 from datetime import datetime
 from typing import List, Dict, Any, Union, Optional
-from pymongo import ReturnDocument
 from models.abstract_model import AbstractModel
-from models.message import MessageSchema
 from models.mongo_schema import (
     ChatSchema,
     PrimaryKeyMixinSchema,
@@ -17,7 +15,7 @@ class Message(AbstractModel):
     def get_collection_name(cls):
         return cls.__modelname__
 
-class MessageSchema(ChatSchema, PrimaryKeyMixinSchema, TimestampMixinSchema):
+class MessageSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):
     content: str = Field(description='message content')
     modelDetail: Dict[str, Union[str, Dict[str, str]]]
     files: Optional[List[str]] = Field(description='file upload data', default=None)

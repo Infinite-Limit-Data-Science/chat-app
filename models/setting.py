@@ -16,7 +16,7 @@ class Setting(AbstractModel):
     def get_collection_name(cls):
         return cls.__modelname__
 
-class SettingSchema(ChatSchema, PrimaryKeyMixinSchema, TimestampMixinSchema):
+class SettingSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):
     sessionId: str = Field(description='downcased alphanumeric session id')
     activeModel: str = Field(description='active model of user')
     customPrompts: Optional[Dict[str,str]] = Field(description='custom templates per model', default_factory=dict)

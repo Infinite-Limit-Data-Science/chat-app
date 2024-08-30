@@ -17,7 +17,7 @@ class Conversation(AbstractModel):
     def get_collection_name(cls):
         return cls.__modelname__
 
-class ConversationSchema(ChatSchema, PrimaryKeyMixinSchema, TimestampMixinSchema):
+class ConversationSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):
     title: str = Field(description='title of conversation')
     # rootMessageId: str = Field(description='the root message of the list of messages')
     messages: List[MessageSchema] = Field(description='list of messages associated with conversation')

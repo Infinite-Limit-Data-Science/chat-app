@@ -1,8 +1,8 @@
 from abc import ABC, abstractmethod
 
 class AbstractModel(ABC):
-    @abstractmethod
     @classmethod
+    @abstractmethod
     def get_model_name():
         """Get model by name"""
         pass
