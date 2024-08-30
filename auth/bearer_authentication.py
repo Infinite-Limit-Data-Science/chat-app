@@ -1,7 +1,8 @@
 from fastapi import Request, Depends, logger
 from fastapi.security import HTTPBearer
 from jwt import decode, DecodeError
-from models.user import UserModel, UserFacade as User
+from models.user import UserSchema
+from repositories.user_mongo_repository import UserMongoRepository as UserRepo
 from models.ldap_token import LdapToken as Token
 
 security = HTTPBearer()
@@ -22,7 +23,7 @@ def validate_jwt(authorization: str = Depends(security)) -> Token:
         return {'error': 'Invalid Token, decoding failed'}, 401
     return token
 
-async def get_current_user(request: Request, token: Token = Depends(validate_jwt)) -> UserModel:
-    user = await User.find_or_create_by_uuid(token)
+async def get_current_user(request: Request, token: Token = Depends(validate_jwt)) -> UserSchema:
+    user = await UserRepo.find_or_create_by_uuid(token)
     request.state.uuid = user.uuid
     return user

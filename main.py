@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from chat_client import ChatClient
+from clients.mongo_strategy import mongo_instance as instance
 from orchestrators.doc.redistore import RediStore as VectorStore
 from routes.home import router as home_router
 from routes.conversations import router as conversations_router
@@ -19,18 +19,17 @@ logging.basicConfig(level=logging.DEBUG)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # try:
-    chat_client = ChatClient.instance()
     vector_client = VectorStore.instance()
-    await chat_client.connect(os.environ['MONGODB_URL'])
+    await instance.connect(os.environ['MONGODB_URL'])
     vector_client.connect()
     # except Exception as e:
     #     msg = 'MongoDB connection error'
     #     logging.critical(f'{msg} {e}')
     #     raise RuntimeError(msg)
 
-    logging.info(f'MongoDB connection established')
+    logging.info(f'Database connection established')
     yield
-    chat_client.close()
+    await instance.close()
     vector_client._disconnect()
     # Load ML model stuff
 

@@ -1,9 +1,10 @@
-from pydantic import BaseModel, Field, field_validator, model_validator
-from typing import List, Any, Optional
-from datetime import datetime
 import re
+from datetime import datetime
+from typing import List, Any, Optional
+from pydantic import field_validator, model_validator
+from models.mongo_schema import ChatSchema, Field
 
-class LdapToken(BaseModel):
+class LdapToken(ChatSchema):
     app: str = Field(description='JWT app attribute')
     sub: str = Field(description='LDAP UUID attribute of User Entry')
     aud: str = Field(description='JWT audience attribute')
