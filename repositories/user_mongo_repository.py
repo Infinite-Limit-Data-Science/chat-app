@@ -14,6 +14,7 @@ class UserMongoRepository(base_mongo_factory(User)):
             user_attributes = await collection.find_one({ 'sessionId': token.sub })
         return UserSchema(**cls.grandfather(user_attributes))
     
+    @staticmethod
     def grandfather(attributes):
         """Ensure historic data complies with new validations by adding missing attributes."""
         required_attributes = ['roles', 'createdAt', 'updatedAt']

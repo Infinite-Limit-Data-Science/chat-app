@@ -14,7 +14,7 @@ class Conversation(AbstractModel):
     __modelname__ = 'conversations'
 
     @classmethod
-    def get_collection_name(cls):
+    def get_model_name(cls) -> str:
         return cls.__modelname__
 
 class ConversationSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):

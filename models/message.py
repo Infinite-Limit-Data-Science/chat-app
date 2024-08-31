@@ -12,7 +12,7 @@ class Message(AbstractModel):
     __modelname__ = 'messages'
 
     @classmethod
-    def get_collection_name(cls):
+    def get_model_name(cls):
         return cls.__modelname__
 
 class MessageSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):

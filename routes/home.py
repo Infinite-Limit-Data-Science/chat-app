@@ -8,10 +8,8 @@ from models.conversation import (
 from repositories.base_mongo_repository import base_mongo_factory as factory
 
 router = APIRouter(
-    prefix='/conversations', 
     tags=['dashbord']
 )
-
 
 @router.get(
     '/',

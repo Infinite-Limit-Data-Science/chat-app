@@ -7,7 +7,7 @@ from models.mongo_schema import (
 )
 
 class User(AbstractModel):
-    __modelname__ = 'conversations'
+    __modelname__ = 'users'
 
     @classmethod
     def get_model_name(cls):

@@ -13,7 +13,7 @@ class Setting(AbstractModel):
     __modelname__ = 'settings'
     
     @classmethod
-    def get_collection_name(cls):
+    def get_model_name(cls):
         return cls.__modelname__
 
 class SettingSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):

@@ -7,14 +7,15 @@ from models.abstract_model import AbstractModel
 from models.mongo_schema import ChatSchema
 
 def base_mongo_factory(model: AbstractModel):
-    """Abstract the data storage and retrieval logic from the business logic of the application"""
+    """Abstract the data storage and retrieval logic from the business logic of the application using first-class object BaseMongoRepository"""
     class BaseMongoRepository:
         @staticmethod
-        def get_collection(_) -> AsyncIOMotorCollection:
+        def get_collection() -> AsyncIOMotorCollection:
             """Get the collection associated with Pydantic model"""
-            return instance.db().get_collection(model.get_model_name())
+            
+            return instance.get_database().get_collection(model.get_model_name())
         
-        @staticmethod
+        @classmethod
         async def all(cls, uuid: str, offset: int, limit: int) -> List[Dict[str, Any]]:
             """Fetch all documents in database filtered by user, limit, and offset"""
             return await cls.get_collection().find({'sessionId': uuid}).skip(offset).limit(limit).to_list(limit)
@@ -23,6 +24,8 @@ def base_mongo_factory(model: AbstractModel):
         async def create(cls, uuid: str, schema: ChatSchema):
             insert_data = {**schema.model_dump(by_alias=True), 'sessionId': uuid}
             new_document = await cls.get_collection().insert_one(insert_data)
+            # TODO: START HERE: This should return new document and the new id
+            # so we won't have to invoke a find method to get the new content
             return new_document.inserted_id
         
         @classmethod
