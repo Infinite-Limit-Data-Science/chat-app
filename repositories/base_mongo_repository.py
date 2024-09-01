@@ -21,12 +21,10 @@ def base_mongo_factory(model: AbstractModel):
             return await cls.get_collection().find({'sessionId': uuid}).skip(offset).limit(limit).to_list(limit)
 
         @classmethod
-        async def create(cls, uuid: str, schema: ChatSchema):
+        async def create(cls, uuid: str, schema: ChatSchema) -> Dict[str, Any]:
             insert_data = {**schema.model_dump(by_alias=True), 'sessionId': uuid}
             new_document = await cls.get_collection().insert_one(insert_data)
-            # TODO: START HERE: This should return new document and the new id
-            # so we won't have to invoke a find method to get the new content
-            return new_document.inserted_id
+            return await cls.get_collection().find_one({'_id': new_document.inserted_id})
         
         @classmethod
         async def find(cls, uuid: str, id: str) -> Dict[str, Any]:

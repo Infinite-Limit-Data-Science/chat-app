@@ -21,14 +21,17 @@ router = APIRouter(
 @router.post(
     '/{conversation_id}/message',
     response_description="Add new message",
+    response_model=MessageSchema,
     status_code=status.HTTP_201_CREATED,
     tags=['message']
 )
 async def create_message(request: Request, conversation_id: str, message: MessageSchema = Body(...)):
     """Insert new message record in configured database, returning resource created"""
     if (
-        user_message := await MessageRepo.create(conversation_id, message)
+        user_message := MessageSchema(**(await MessageRepo.create(conversation_id, message)))
     ) is not None:
+        logger.logging.warning(f'USER MESSAGE SCHEMA content: {user_message.content}')
+        # START HERE!
         chat_bot = ChatBot()
         docs = chat_bot.retrieve(user_message.content)
         await MessageRepo.create(conversation_id, MessageSchema(content=str(chat_bot), modelDetail=user_message.modelDetail))

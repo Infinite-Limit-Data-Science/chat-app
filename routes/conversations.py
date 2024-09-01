@@ -38,9 +38,9 @@ async def conversations(request: Request, record_offset: int = Query(0, descript
 async def create_conversation(request: Request, conversation_schema: CreateConversationSchema = Body(...)):
     """Insert new conversation record in configured database, returning resource created"""
     if (
-        created_conversation_id := await ConversationRepo.create(request.state.uuid, conversation_schema)
+        created_conversation := await ConversationRepo.create(request.state.uuid, conversation_schema)
     ) is not None:
-        return { "_id": created_conversation_id }
+        return { "_id": created_conversation }
     return {'error': f'Conversation not created'}, 400
 
 @router.get(

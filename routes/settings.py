@@ -8,6 +8,8 @@ from models.setting import (
     Setting
 )
 
+SettingRepo = factory(Setting)
+
 router = APIRouter(
     prefix='/settings', 
     tags=['setting'],
@@ -23,7 +25,6 @@ router = APIRouter(
 )
 async def create_setting(request: Request, setting_schema: SettingSchema = Body(...)):
     """Insert new setting record in configured database, returning resource created"""
-    SettingRepo = factory(Setting)
     if (
         created_setting_id := await SettingRepo.create(request.state.uuid, setting_schema)
     ) is not None:
@@ -39,7 +40,6 @@ async def create_setting(request: Request, setting_schema: SettingSchema = Body(
 )
 async def get_setting(request: Request, id: str):
     """Get setting record from configured database by id"""
-    SettingRepo = factory(Setting)
     if (
         setting := await SettingRepo.find(request.state.uuid, id)
     ) is not None:
@@ -55,7 +55,6 @@ async def get_setting(request: Request, id: str):
 )
 async def update_setting(request: Request, id: str, setting_schema: UpdateSettingSchema = Body(...)):
     """Get setting record from configured database by id"""
-    SettingRepo = factory(Setting)
     if (
         updated_setting := await SettingRepo.update(request.state.uuid, id, setting_schema)
     ) is not None:
@@ -68,7 +67,6 @@ async def update_setting(request: Request, id: str, setting_schema: UpdateSettin
 )
 async def delete_setting(request: Request, id: str):
     """Remove a single conversation record from the database."""
-    SettingRepo = factory(Setting)
     if (
         deleted_conversation := await SettingRepo.delete(request.state.uuid, id)
     ) is not None:

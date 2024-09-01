@@ -25,6 +25,5 @@ def validate_jwt(authorization: str = Depends(security)) -> Token:
 
 async def get_current_user(request: Request, token: Token = Depends(validate_jwt)) -> UserSchema:
     user = await UserRepo.find_or_create_by_uuid(token)
-    logger.logging.warning(f'USER MODEL: {UserRepo.model} AND {UserRepo.get_collection()}')
     request.state.uuid = user.uuid
     return user
