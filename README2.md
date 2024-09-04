@@ -14,9 +14,9 @@ The TGI uses various techniques for quantization. This reduces the precision of 
 
 The TGI also supports Safetensors weight loading, which provides a safe and efficient way to load and store model weights, which can be especially important for large models.
 
-Importantly, in the context of Text Generation Inference (TGI), a Stop Sequence is a special sequence of tokens that can be used to indicate the end of a generated text sequence. In other words, a Stop Sequence is a way to tell the model to stop generating text, usually because the desired output has been reached or because the model has reached a certain threshold of confidence. The TGI supports this as well.
+Importantly, in the context of Text Generation Inference (TGI), the TGI supports a Stop Sequence, which is a special sequence of tokens that can be used to indicate the end of a generated text sequence. In other words, a Stop Sequence is a way to tell the model to stop generating text, usually because the desired output has been reached or because the model has reached a certain threshold of confidence. The TGI supports this as well.
 
-The HuggingFace TGI has many other features, but only crucial ones are highlighted above.
+The HuggingFace TGI has many other features, but the top ones are highlighted above.
 
 ### Setup Infrastructure
 
@@ -97,7 +97,7 @@ Mon Sep  2 23:37:41 2024
 |  No running processes found                                                 |
 ```
 
-As shown, we have a Tesla T4 GPU with 16 GB of CUDA memory. You can now try running the LLM:
+As shown, we have a Tesla T4 GPU with 16 GB of CUDA memory. But as mentioned already, it uses the Turling architecture and when you try running the LLM:
 
 ```bash
 model=meta-llama/Meta-Llama-3.1-8B-Instruct
@@ -118,7 +118,7 @@ torch.cuda.OutOfMemoryError: CUDA out of memory. Tried to allocate 224.00 MiB. G
 Error: ShardCannotStart
 ```
 
-You have a few options to resolve this error; each has tradeoffs:
+We clearly knew we were going to run into this issue with the Tesla T4 GPU. However, I wanted to show this error, in the event you get the same error for a newer GPU. You have a few options to resolve this error; each has tradeoffs:
 
 - Adjust Batch Size: adjusting the batch size involves changing the number of input samples that are processed together as a single unit during training or inference. Decreasing the batch size reduces memory requirements, which is can be suitable for LLMs with limited GPU. The negative impact includes decreasing performance by processing fewer samples in parallel and increasing the number of iterations required to process a large dataset
 
@@ -134,7 +134,7 @@ docker container run --gpus all --shm-size 1g -e HUGGING_FACE_HUB_TOKEN=$token -
 docker container run --gpus all --shm-size 1g -e HUGGING_FACE_HUB_TOKEN=$token -p 8080:80 -v $volume:/data ghcr.io/huggingface/text-generation-inference:2.2.0 --model-id $model --quantize bitsandbytes-nf4
 ```
 
-Note do not confuse max_batch_size with max_client_batch_size. max-batch-size refers to the maximum number of input samples that can be processed together in a single batch by the model. This is a property of the model itself and determines how many inputs can be processed in parallel. max_client_batch_size, on the other hand, refers to the maximum number of input samples that can be sent by a client in a single request to the model server. This is a property of the client and determines how many inputs can be sent in a single request.
+Note do not confuse max_batch_size with max_client_batch_size. max_batch_size refers to the maximum number of input samples that can be processed together in a single batch by the model. This is a property of the model itself and determines how many inputs can be processed in parallel. max_client_batch_size, on the other hand, refers to the maximum number of input samples that can be sent by a client in a single request to the model server. This is a property of the client and determines how many inputs can be sent in a single request.
 
 After battling the error above, you may get this error:
 

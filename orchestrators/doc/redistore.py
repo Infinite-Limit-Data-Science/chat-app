@@ -36,6 +36,6 @@ class RediStore:
     def add(self, documents: List[Document]) -> List[str]:
         return self.vector_store.add_documents(documents)
     
-    def search(self, query: str) -> List[Document]:
+    def similarity_search(self, query: str) -> List[Document]:
         results = self.vector_store.similarity_search(query, k=2)
         return results

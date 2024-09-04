@@ -36,7 +36,6 @@ async def create_setting(request: Request, setting_schema: SettingSchema = Body(
     response_description="Get a single setting",
     response_model=SettingSchema,
     response_model_by_alias=False,
-    tags=['setting']
 )
 async def get_setting(request: Request, id: str):
     """Get setting record from configured database by id"""
@@ -51,7 +50,6 @@ async def get_setting(request: Request, id: str):
     response_description="update a single setting",
     response_model=SettingSchema,
     response_model_by_alias=False,
-    tags=['setting']
 )
 async def update_setting(request: Request, id: str, setting_schema: UpdateSettingSchema = Body(...)):
     """Get setting record from configured database by id"""
@@ -66,9 +64,9 @@ async def update_setting(request: Request, id: str, setting_schema: UpdateSettin
     response_description='Delete a conversation',
 )
 async def delete_setting(request: Request, id: str):
-    """Remove a single conversation record from the database."""
+    """Remove a single setting record from the database."""
     if (
         deleted_conversation := await SettingRepo.delete(request.state.uuid, id)
     ) is not None:
         return deleted_conversation  
-    return { 'error': f'Conversation {id} not found'}, 404
+    return { 'error': f'Prompt {id} not found'}, 404

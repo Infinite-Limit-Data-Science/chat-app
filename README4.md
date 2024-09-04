@@ -1,0 +1,1 @@
+Aside from using the HuggingFace Text Generation Inference endpoint directly, you can use the HuggingFace Transformer's library. 

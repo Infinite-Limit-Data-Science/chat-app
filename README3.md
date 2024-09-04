@@ -1,1 +1,7 @@
-Aside from using the HuggingFace Text Generation Inference endpoint directly, you can use the HuggingFace Transformer's library. 
+### HF TGI Argument Reference
+
+Source: https://huggingface.co/docs/text-generation-inference/reference/launcher
+
+MAX_STOP_SEQUENCES
+
+MAX_INPUT_TOKENS

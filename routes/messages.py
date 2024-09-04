@@ -31,9 +31,11 @@ async def create_message(request: Request, conversation_id: str, message: Messag
         user_message := MessageSchema(**(await MessageRepo.create(conversation_id, message)))
     ) is not None:
         logger.logging.warning(f'USER MESSAGE SCHEMA content: {user_message.content}')
-        # START HERE!
+        # verify if conversation has uploaded documents
+        ConversationRepo.retrieval_augmented
+        
         chat_bot = ChatBot()
-        docs = chat_bot.retrieve(user_message.content)
+        docs = chat_bot.cosine_similarity(user_message.content)
         await MessageRepo.create(conversation_id, MessageSchema(content=str(chat_bot), modelDetail=user_message.modelDetail))
         if "application/json" in request.headers.get("Accept"):
             return { 'docs': [doc.page_content for doc in docs]}
