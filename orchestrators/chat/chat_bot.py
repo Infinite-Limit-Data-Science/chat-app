@@ -1,22 +1,43 @@
+import os
 from typing import List
 from langchain_core.documents import Document
+from langchain_core.prompts import ChatMessagePromptTemplate
 from orchestrators.doc.redistore import RediStore as VectorStore
-from orchestrators.chat.llm_wrapper import LLMWrapper
+from langchain.chains.combine_documents import create_stuff_documents_chain
 
 class ChatBot:
-    def __init__(self, llm: LLMWrapper):
-        self.vector_store = VectorStore.instance()
-        self.llm_wrapper = llm
+    def __init__(self, llm):
+        self.prompt 
+        self.vector_store = VectorStore
+        self.llm = llm
+
+    def chat_prompt_template(self):
+        self.prompt = ChatMessagePromptTemplate.from_template(
+            """
+                Answer the following question based only on the provided context:
+                <context>
+                {context}
+                </context>
+            """
+        )
+
+    def chat_prompt_template_(self):
+        generic_template = os.environ['DEFAULT_PROMPT']
+        [('system', generic_template), 'user', "{text}"]
+
+    
+    def chain(self):
+        self.prompt|self.llm|self.parser
 
     def cosine_similarity(self, query) -> List[Document]:
+        """Perform a direct cosine similarity search on the VectorStore"""
         self.documents = self.vector_store.similarity_search(query)
         return self.documents
 
-    # retrieve relevant information from a knowledge base (in this case, the VectorStore) based on a query.
-    # return a Retriever object that can be used to retrieve relevant vectors from the VectorStore.
-    # The Retriever object provides methods for retrieving vectors based on a query
-    # useful when you want to integrate the VectorStore with a larger RAG system, such as a language model or a question-answering system.
-    def as_retriever(self, query):
+    def retrieval_chain():
+        """Retrieve relevant vectors from VectorStore, useful in RAG and Q&A""" 
+
+    def invoke():
         pass
 
     def __str__(self) -> str:
