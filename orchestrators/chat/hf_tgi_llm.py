@@ -1,11 +1,23 @@
+from typing import TypedDict, Optional
+from dataclasses import dataclass, field
+from langchain_huggingface import HuggingFaceEndpoint
 
-from orchestrators.chat.llm_decorator import hf_endpoint
+class PromptDict(TypedDict):
+    title: str
+    prompt: str
 
-# chat orchestrator must be used independently of api schemas
-# therefore cannot pass in the api schemas like ModelConfigEndpointSchema
-class HFTGI:
-    schema: str = __model_config_endpoint_schema__
+class ParameterDict(TypedDict):
+    stop: str
+    truncate: Optional[str]
+    max_new_tokens: int
 
-    @hf_endpoint
-    def llm(self, data):
-        return data
+@dataclass
+class HFTGI(frozen=True, kw_only=True, slots=True):
+    name: str
+    description: str
+    default_prompt: PromptDict
+    parameters: ParameterDict
+    endpoint: HuggingFaceEndpoint = field(init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        self.endpoint = HuggingFaceEndpoint(**self.parameters)

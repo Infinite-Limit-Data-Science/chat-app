@@ -7,7 +7,7 @@ from langchain.chains.combine_documents import create_stuff_documents_chain
 from orchestrators.chat.abstract_chat import AbstractChat
 
 class LLMChat(AbstractChat):
-    def __init__(self, llm):
+    def __init__(self, llm: LLM):
         self.prompt 
         self.vector_store = VectorStore
         self.llm = llm
