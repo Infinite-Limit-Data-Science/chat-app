@@ -1,5 +1,8 @@
-from typing import Optional, TypedDict
+from typing import Optional, TypeAlias, TypedDict
 from pydantic import BaseModel, Field
+from models.mongo_schema import PrimaryKeyMixinSchema, TimestampMixinSchema
+
+LLMSchema: TypeAlias = BaseModel
 
 class PromptDict(TypedDict):
     title: str
@@ -10,10 +13,8 @@ class ParameterDict(TypedDict):
     truncate: Optional[str]
     max_new_tokens: int
 
-class TGISchema(BaseModel):
+class LLMBase(PrimaryKeyMixinSchema, TimestampMixinSchema):
     name: str = Field('Model Name')
-    endpoint: str = Field('HF TGI Endpoint')
-    endpoint_type: str = Field('Endpoint Type, e.g. TGI, SageMaker, etc')
-    description: str = Field('Description of the Model', default='HuggingFace provides open-source models')
+    description: str = Field('Description of the Model', default='Description of TGI Model')
     default_prompt: PromptDict = Field('Default prompt (Note users can create custom ones)')
     parameters: ParameterDict = Field('Parameters to pass to model')

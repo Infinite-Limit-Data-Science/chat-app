@@ -4,8 +4,9 @@ from langchain_core.documents import Document
 from langchain_core.prompts import ChatMessagePromptTemplate
 from orchestrators.doc.redistore import RediStore as VectorStore
 from langchain.chains.combine_documents import create_stuff_documents_chain
+from orchestrators.chat.abstract_chat import AbstractChat
 
-class ChatBot:
+class LLMChat(AbstractChat):
     def __init__(self, llm):
         self.prompt 
         self.vector_store = VectorStore

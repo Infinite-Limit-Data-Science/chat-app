@@ -9,7 +9,7 @@ from models.message import (
     UpdateMessageSchema,
 )
 from repositories.message_mongo_repository import MessageMongoRepository as MessageRepo
-from orchestrators.chat.chat_bot import ChatBot
+from orchestrators.chat.llm_chat import LLMChat
 from orchestrators.doc.document_ingestor import DocumentIngestor
 
 router = APIRouter(
@@ -32,9 +32,9 @@ async def create_message(request: Request, conversation_id: str, message: Messag
     ) is not None:
         logger.logging.warning(f'USER MESSAGE SCHEMA content: {user_message.content}')
         # verify if conversation has uploaded documents
-        ConversationRepo.retrieval_augmented
-        
-        chat_bot = ChatBot()
+        # ConversationRepo.retrieval_augmented
+        # verify if llm endpoint or pipeline endpoint
+        chat_bot = LLMChat(ModelConfigEndpointSchema())
         docs = chat_bot.cosine_similarity(user_message.content)
         await MessageRepo.create(conversation_id, MessageSchema(content=str(chat_bot), modelDetail=user_message.modelDetail))
         if "application/json" in request.headers.get("Accept"):
