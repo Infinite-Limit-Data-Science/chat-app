@@ -5,6 +5,9 @@ from models.user import UserSchema
 from repositories.user_mongo_repository import UserMongoRepository as UserRepo
 from models.ldap_token import LdapToken as Token
 
+# for backward compatibility with chat-ui
+CURRENT_UUID_NAME = 'sessionId'
+
 security = HTTPBearer()
     
 def validate_jwt(authorization: str = Depends(security)) -> Token:
@@ -26,4 +29,5 @@ def validate_jwt(authorization: str = Depends(security)) -> Token:
 async def get_current_user(request: Request, token: Token = Depends(validate_jwt)) -> UserSchema:
     user = await UserRepo.find_or_create_by_uuid(token)
     request.state.uuid = user.uuid
+    request.state.uuid_name = CURRENT_UUID_NAME
     return user

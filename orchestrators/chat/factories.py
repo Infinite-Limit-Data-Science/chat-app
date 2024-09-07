@@ -1,6 +1,7 @@
-class HFLLMFactory:
-
+from hf_tgi_llm import HFTGI
+from hf_pipeline_llm import HFPipelineLLM
 
 FACTORIES = {
-    "hf_llm": [HFTGI]
+    'tgi': HFTGI,
+    'pipeline': HFPipelineLLM,
 }

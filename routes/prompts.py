@@ -57,7 +57,7 @@ async def update_prompt(request: Request, id: str, setting_schema: UpdatePromptS
         updated_prompt := await PromptRepo.update(request.state.uuid, id, setting_schema)
     ) is not None:
         return updated_prompt
-    return {'error': f'Setting {id} not found'}, 404
+    return {'error': f'Prompt {id} not found'}, 404
 
 @router.delete(
     '/{id}', 

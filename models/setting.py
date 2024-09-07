@@ -42,4 +42,4 @@ class UpdateSettingSchema(ChatSchema):
         arbitrary_types_allowed = True
 
 class SettingCollectionSchema(ChatSchema):
-    messages: List[SettingSchema]
+    settings: List[SettingSchema]

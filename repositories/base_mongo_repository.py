@@ -1,4 +1,4 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from pymongo import ReturnDocument
 from motor.motor_asyncio import AsyncIOMotorCollection
 from clients.mongo_strategy import mongo_instance as instance
@@ -16,40 +16,42 @@ def base_mongo_factory(model: AbstractModel):
             return instance.get_database().get_collection(model.get_model_name())
         
         @classmethod
-        async def all(cls, uuid: str, offset: int, limit: int) -> List[Dict[str, Any]]:
+        async def all(cls, *, options: Optional[dict] = {}, offset: int = 0, limit: int = 20) -> List[Dict[str, Any]]:
             """Fetch all documents in database filtered by user, limit, and offset"""
-            return await cls.get_collection().find({'sessionId': uuid}).skip(offset).limit(limit).to_list(limit)
+            return await cls.get_collection().find(options).skip(offset).limit(limit).to_list(limit)
 
         @classmethod
-        async def create(cls, uuid: str, schema: ChatSchema) -> Dict[str, Any]:
-            insert_data = {**schema.model_dump(by_alias=True), 'sessionId': uuid}
+        async def create(cls, *, schema: ChatSchema = ChatSchema,  options: Optional[dict] = {}) -> Dict[str, Any]:
+            """Create document"""
+            insert_data = {**schema.model_dump(by_alias=True), **options}
             new_document = await cls.get_collection().insert_one(insert_data)
             return await cls.get_collection().find_one({'_id': new_document.inserted_id})
         
         @classmethod
-        async def find(cls, uuid: str, id: str) -> Dict[str, Any]:
-            """"Find a conversation by id"""
-            return await cls.get_collection().find_one({"_id": ObjectId(id), 'sessionId': uuid })
-        
+        async def find(cls, id: str = None, *, options: dict = {}) -> Dict[str, Any]:
+            """"Find a document by filter"""
+            query = {"_id": ObjectId(id)} if id else {} 
+            return await cls.get_collection().find_one({**query, **options})
+
         @classmethod
-        async def update(cls, uuid: str, id: str, schema: ChatSchema):
-            """"Update a conversation"""
+        async def update(cls, id: str, *, schema: ChatSchema = ChatSchema, options: dict = {}):
+            """"Update a document"""
             # keep only fields with values
             document = {
                 k: v for k, v in schema.model_dump(by_alias=True).items() if v is not None
             }
             if len(document) >= 1:
                 update_result = await cls.get_collection().find_one_and_update(
-                    {"_id": ObjectId(id), 'sessionId': uuid},
+                    {"_id": ObjectId(id), **options},
                     {"$set": document},
                     return_document=ReturnDocument.AFTER,
                 )
             return update_result
         
         @classmethod
-        async def delete(cls, uuid: str, id: str) -> bool:
-            """"Delete a conversation"""
-            delete_result = await cls.get_collection().delete_one({"_id": ObjectId(id), 'sessionId': uuid})
+        async def delete(cls, id: str, *, options: Optional[dict] = {}) -> bool:
+            """"Delete a document"""
+            delete_result = await cls.get_collection().delete_one({"_id": ObjectId(id), **options})
             if delete_result.deleted_count == 1:
                 return True
             return False

@@ -41,4 +41,4 @@ class UpdatePromptSchema(ChatSchema):
         arbitrary_types_allowed = True
 
 class PromptCollectionSchema(ChatSchema):
-    messages: List[PromptSchema]
+    prompts: List[PromptSchema]

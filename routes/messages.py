@@ -1,22 +1,54 @@
 import os
 import shutil
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from fastapi import APIRouter, status, Request, Body, Depends, File, UploadFile, logger
 from fastapi.responses import StreamingResponse
 from auth.bearer_authentication import get_current_user
+from models.conversation import Conversation
+from models.setting import (
+    Setting,
+    SettingSchema
+)
 from models.message import (
     MessageSchema,
     UpdateMessageSchema,
 )
+from models.model_config import (
+    ModelConfigSchema,
+    ModelConfig,
+)
 from repositories.message_mongo_repository import MessageMongoRepository as MessageRepo
+from repositories.base_mongo_repository import base_mongo_factory as factory
 from orchestrators.chat.llm_chat import LLMChat
 from orchestrators.doc.document_ingestor import DocumentIngestor
+from orchestrators.chat.llm import LLM
+from orchestrators.chat.factories import FACTORIES
+
+ConversationRepo = factory(Conversation)
+SettingRepo = factory(Setting)
+ModelConfigRepo = factory(ModelConfig)
 
 router = APIRouter(
     prefix='/conversations', 
     tags=['conversation'],
     dependencies=[Depends(get_current_user)]
 )
+
+async def get_current_models(request: Request) -> List[LLM]:
+    setting_schema = SettingSchema(SettingRepo.find(options={request.state.uuid_name: request.state.uuid}))
+    model_config_schema = ModelConfigSchema(await ModelConfigRepo.find(options={'activeModel': setting_schema.activeModel}))    
+    models = [
+        FACTORIES[endpoint.type](**{
+            'name': model_config_schema.name,
+            'description': model_config_schema.description,
+            'default_prompt': model_config_schema.default_prompt,
+            'parameters': model_config_schema.parameters,
+            'endpoint': endpoint
+        })
+        for endpoint in model_config_schema.endpoints
+    ]
+    return models
+
 
 @router.post(
     '/{conversation_id}/message',
@@ -25,17 +57,14 @@ router = APIRouter(
     status_code=status.HTTP_201_CREATED,
     tags=['message']
 )
-async def create_message(request: Request, conversation_id: str, message: MessageSchema = Body(...)):
+async def create_message(request: Request, conversation_id: str, message_schema: MessageSchema = Body(...), models: LLM = Depends(get_current_models)):
     """Insert new message record in configured database, returning resource created"""
     if (
-        user_message := MessageSchema(**(await MessageRepo.create(conversation_id, message)))
+        _ := await ConversationRepo.update(id, schema=message_schema)
     ) is not None:
-        logger.logging.warning(f'USER MESSAGE SCHEMA content: {user_message.content}')
-        # verify if conversation has uploaded documents
-        # ConversationRepo.retrieval_augmented
-        # verify if llm endpoint or pipeline endpoint
-        chat_bot = LLMChat(ModelConfigEndpointSchema())
-        docs = chat_bot.cosine_similarity(user_message.content)
+        llm_chat = LLMChat(models)
+        # START HERE
+        docs = llm_chat.template_method(message_schema.content)
         await MessageRepo.create(conversation_id, MessageSchema(content=str(chat_bot), modelDetail=user_message.modelDetail))
         if "application/json" in request.headers.get("Accept"):
             return { 'docs': [doc.page_content for doc in docs]}
@@ -44,7 +73,7 @@ async def create_message(request: Request, conversation_id: str, message: Messag
                 for doc in docs:
                     yield doc.page_content.encode("utf-8")
             return StreamingResponse(stream_response())
-    return {'error': f'Conversation not created'}, 400
+    return {'error': f'Conversation not updated'}, 400
 
 @router.get(
     '/{conversation_id}/message/{id}',

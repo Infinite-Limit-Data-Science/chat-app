@@ -2,9 +2,9 @@ from typing import Dict, Any, Optional
 from pymongo import ReturnDocument
 from models.message import Message, UpdateMessageSchema
 from models.mongo_schema import ObjectId
-from repositories.base_mongo_repository import base_mongo_factory
+from repositories.base_mongo_repository import base_mongo_factory as factory
 
-class MessageMongoRepository(base_mongo_factory(Message)):
+class MessageMongoRepository(factory(Message)):
     @classmethod
     async def find(cls, uuid: str, conversation_id: str, id: str) -> Dict[str, Any]:
         """"Find a message by id"""
