@@ -1,16 +1,17 @@
-import os
 from typing import List
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatMessagePromptTemplate
 from orchestrators.doc.redistore import RediStore as VectorStore
-from langchain.chains.combine_documents import create_stuff_documents_chain
-from orchestrators.chat.abstract_chat import AbstractChat
-from orchestrators.chat.llm import LLM
+# from langchain.chains.combine_documents import create_stuff_documents_chain
+from orchestrators.chat.abstract_bot import AbstractBot
+from orchestrators.chat.llm_models.model_proxy import ModelProxy
+from orchestrators.chat.messages.message_history import MessageHistory
 
-class LLMChat(AbstractChat):
-    def __init__(self, llms: List[LLM]):
+class ChatBot(AbstractBot):
+    def __init__(self, llm: ModelProxy, message_history: MessageHistory):
         self.vector_store = VectorStore
-        self.llms = llms
+        self.message_history = message_history
+        self.llm = llm
 
     def chat_prompt_template(self):
         self.prompt = ChatMessagePromptTemplate.from_template(
@@ -21,10 +22,6 @@ class LLMChat(AbstractChat):
                 </context>
             """
         )
-
-    def chat_prompt_template_(self):
-        generic_template = os.environ['DEFAULT_PROMPT']
-        [('system', generic_template), 'user', "{text}"]
 
     
     def chain(self):

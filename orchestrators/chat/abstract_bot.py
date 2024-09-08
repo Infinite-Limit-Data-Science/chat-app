@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 
-class AbstractChat(ABC):
+class AbstractBot(ABC):
     @abstractmethod
     def prompt(self):
         pass
@@ -13,7 +13,8 @@ class AbstractChat(ABC):
     def embedding(self):
         pass
 
-    def template_method(self):
+    def chat(self):
+        """Template Method"""
         self.template()
         self.llm()
         self.embedding()

@@ -20,7 +20,8 @@ class EndpointDict(TypedDict):
     type: str
 
 class ModelConfigSchema(LLMBase):
-    endpoints: Optional[List[EndpointDict]]
+    endpoints: Optional[List[EndpointDict]] = Field(description='Valid if using TGI', default=None)
+    model: Optional[str] = Field(description='Valid if using pipeline', default=None)
     
     class Config:
         from_attributes = True

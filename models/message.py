@@ -3,7 +3,6 @@ from typing import List, Dict, Any, Union, Optional
 from models.abstract_model import AbstractModel
 from models.mongo_schema import (
     ChatSchema,
-    PrimaryKeyMixinSchema,
     TimestampMixinSchema,
     Field,
 )
@@ -15,7 +14,7 @@ class Message(AbstractModel):
     def get_model_name(cls):
         return cls.__modelname__
 
-class MessageSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):
+class MessageSchema(TimestampMixinSchema):
     content: str = Field(description='message content')
     modelDetail: Dict[str, Union[str, Dict[str, str]]]
     files: Optional[List[str]] = Field(description='file upload data', default=None)
@@ -24,9 +23,6 @@ class MessageSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):
         from_attributes = True
         populate_by_name = True
         arbitrary_types_allowed = True
-
-# class MessageIdSchema(ChatSchema):
-#     id: PyObjectId = Field(alias="_id", description='bson object id')
 
 class UpdateMessageSchema(ChatSchema):
     content: Optional[str] = None

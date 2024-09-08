@@ -19,10 +19,12 @@ from models.model_config import (
 )
 from repositories.message_mongo_repository import MessageMongoRepository as MessageRepo
 from repositories.base_mongo_repository import base_mongo_factory as factory
-from orchestrators.chat.llm_chat import LLMChat
 from orchestrators.doc.document_ingestor import DocumentIngestor
-from orchestrators.chat.llm import LLM
-from orchestrators.chat.factories import FACTORIES
+from orchestrators.chat.llm_models.llm import LLM
+from orchestrators.chat.llm_models.factories import FACTORIES
+from orchestrators.chat.llm_models.model_proxy import ModelProxy
+from orchestrators.chat.messages.message_history import MessageHistorySchema, MessageHistory
+from orchestrators.chat.chat_bot import ChatBot
 
 ConversationRepo = factory(Conversation)
 SettingRepo = factory(Setting)
@@ -62,9 +64,10 @@ async def create_message(request: Request, conversation_id: str, message_schema:
     if (
         _ := await ConversationRepo.update(id, schema=message_schema)
     ) is not None:
-        llm_chat = LLMChat(models)
+        message_history = MessageHistory(schema=MessageHistorySchema({'conversation_id': conversation_id, **dict(message_schema)}))
+        chat_bot = ChatBot(ModelProxy(models), message_history)
         # START HERE
-        docs = llm_chat.template_method(message_schema.content)
+        docs = chat_bot.chat()
         await MessageRepo.create(conversation_id, MessageSchema(content=str(chat_bot), modelDetail=user_message.modelDetail))
         if "application/json" in request.headers.get("Accept"):
             return { 'docs': [doc.page_content for doc in docs]}
