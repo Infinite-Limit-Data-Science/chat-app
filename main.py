@@ -20,7 +20,7 @@ logging.basicConfig(level=logging.DEBUG)
 async def lifespan(app: FastAPI):
     # try:
     vector_client = VectorStore.instance()
-    await instance.connect(os.environ['MONGODB_URL'])
+    await instance.connect()
     vector_client.connect()                               
     # except Exception as e:
     #     msg = 'MongoDB connection error'

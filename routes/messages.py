@@ -3,8 +3,9 @@ import shutil
 from typing import Dict, Any, Optional, List
 from fastapi import APIRouter, status, Request, Body, Depends, File, UploadFile, logger
 from fastapi.responses import StreamingResponse
+from clients.mongo_strategy import mongo_instance as instance
 from auth.bearer_authentication import get_current_user
-from models.conversation import Conversation
+from models.message import Message
 from models.setting import (
     Setting,
     SettingSchema
@@ -23,10 +24,10 @@ from orchestrators.doc.document_ingestor import DocumentIngestor
 from orchestrators.chat.llm_models.llm import LLM
 from orchestrators.chat.llm_models.factories import FACTORIES
 from orchestrators.chat.llm_models.model_proxy import ModelProxy
-from orchestrators.chat.messages.message_history import MessageHistorySchema, MessageHistory
+from orchestrators.chat.messages.message_history import MongoMessageHistory, MongoMessageHistorySchema
 from orchestrators.chat.chat_bot import ChatBot
 
-ConversationRepo = factory(Conversation)
+MessageRepo = factory(Message)
 SettingRepo = factory(Setting)
 ModelConfigRepo = factory(ModelConfig)
 
@@ -51,6 +52,13 @@ async def get_current_models(request: Request) -> List[LLM]:
     ]
     return models
 
+async def get_message_history(request: Request) -> MongoMessageHistorySchema:
+    return MongoMessageHistory(MongoMessageHistorySchema(
+        connection_string=instance.connection_string,
+        session_id=instance.message_history_identifier,
+        database_name=instance.name,
+        collection_name=instance.message_history_collection
+    ))
 
 @router.post(
     '/{conversation_id}/message',
@@ -59,16 +67,20 @@ async def get_current_models(request: Request) -> List[LLM]:
     status_code=status.HTTP_201_CREATED,
     tags=['message']
 )
-async def create_message(request: Request, conversation_id: str, message_schema: MessageSchema = Body(...), models: LLM = Depends(get_current_models)):
+async def create_message(request: Request, conversation_id: str, message_schema: MessageSchema = Body(...), models: LLM = Depends(get_current_models), message_history: MongoMessageHistorySchema = Depends(get_message_history)):
     """Insert new message record in configured database, returning resource created"""
+    chat_bot = ChatBot(ModelProxy(models), message_history)
+    # TODO: get default prompt template from current_user settings
+    # ONLY add system message if this is the first conversation for the SessionId
+    if not ConversationRepo.find(conversation_id).messages.count > 0
+        chat_bot.system_message(default_prompt)
     if (
-        _ := await ConversationRepo.update(id, schema=message_schema)
-    ) is not None:
-        message_history = MessageHistory(schema=MessageHistorySchema({'conversation_id': conversation_id, **dict(message_schema)}))
-        chat_bot = ChatBot(ModelProxy(models), message_history)
+        message := chat_bot.human_message(dict(message_schema))
+    ) is not None:        
         # START HERE
-        docs = chat_bot.chat()
-        await MessageRepo.create(conversation_id, MessageSchema(content=str(chat_bot), modelDetail=user_message.modelDetail))
+        docs = chat_bot.ai_message()
+        # Note MessageHistory will automatically save the content; no need to do it here anymore
+        # await MessageRepo.create(conversation_id, MessageSchema(content=str(chat_bot), modelDetail=user_message.modelDetail))
         if "application/json" in request.headers.get("Accept"):
             return { 'docs': [doc.page_content for doc in docs]}
         if 'text/event-stream' in request.headers.get("Accept"):
@@ -93,20 +105,21 @@ async def get_message(request: Request, conversation_id: str, id: str):
         return message
     return {'error': f'Message {id} not found'}, 404
 
-@router.put(
-    '/{conversation_id}/message/{id}',
-    response_description="Update a single message",
-    response_model=MessageSchema,
-    response_model_by_alias=False,
-    tags=['message']
-)
-async def update_message(request: Request, conversation_id: str, id: str, message: UpdateMessageSchema = Body(...)):
-    """Update individual fields of an existing message record and return modified fields to client."""
-    if (
-        updated_message := await MessageRepo.update(request.state.uuid, conversation_id, id, message)
-    ) is not None:
-        return updated_message
-    return {'error': f'Conversation {id} not found'}, 404
+# Conversational AI does not allow the edit of existing messages
+# @router.put(
+#     '/{conversation_id}/message/{id}',
+#     response_description="Update a single message",
+#     response_model=MessageSchema,
+#     response_model_by_alias=False,
+#     tags=['message']
+# )
+# async def update_message(request: Request, conversation_id: str, id: str, message: UpdateMessageSchema = Body(...)):
+#     """Update individual fields of an existing message record and return modified fields to client."""
+#     if (
+#         updated_message := await MessageRepo.update(request.state.uuid, conversation_id, id, message)
+#     ) is not None:
+#         return updated_message
+#     return {'error': f'Message {id} not found'}, 404
     
 @router.delete(
     '/{conversation_id}/message/{id}', 

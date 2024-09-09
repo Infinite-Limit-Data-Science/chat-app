@@ -1,8 +1,17 @@
 from datetime import datetime
-from typing import List, Dict, Any, Union, Optional
+from typing import (
+    List, 
+    Dict, 
+    Any, 
+    Union, 
+    Optional, 
+    Literal, 
+    TypedDict,
+)
 from models.abstract_model import AbstractModel
 from models.mongo_schema import (
     ChatSchema,
+    PrimaryKeyMixinSchema,
     TimestampMixinSchema,
     Field,
 )
@@ -14,10 +23,18 @@ class Message(AbstractModel):
     def get_model_name(cls):
         return cls.__modelname__
 
-class MessageSchema(TimestampMixinSchema):
-    content: str = Field(description='message content')
+class AdditionalPayloadSchema(TypedDict):
     modelDetail: Dict[str, Union[str, Dict[str, str]]]
     files: Optional[List[str]] = Field(description='file upload data', default=None)
+
+class BaseMessageSchema(TypedDict):
+    content: str = Field(description='The corpus')
+    type: Literal['SystemMessage', 'HumanMessage', 'AIMessage'] = Field(description='Origin of Message')
+    additional_kwargs: AdditionalPayloadSchema = Field(description='Additional payload to store in message (backward compatibility)', default_factory={})
+
+class MessageSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):
+    SessionId: str = Field(description='The session id of messages (RAG context), currently corresponding to conversation id')
+    History: BaseMessageSchema = Field(description='shape of data for Conversational AI')
 
     class Config:
         from_attributes = True
@@ -25,9 +42,7 @@ class MessageSchema(TimestampMixinSchema):
         arbitrary_types_allowed = True
 
 class UpdateMessageSchema(ChatSchema):
-    content: Optional[str] = None
-    modelDetail: Optional[Dict[str, Union[str, Dict[str, str]]]] = None
-    files: Optional[List[str]] = None
+    History: BaseMessageSchema
     updatedAt: datetime = Field(default_factory=datetime.now)
     
     class Config:

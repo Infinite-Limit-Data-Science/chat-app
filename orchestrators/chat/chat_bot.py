@@ -5,13 +5,27 @@ from orchestrators.doc.redistore import RediStore as VectorStore
 # from langchain.chains.combine_documents import create_stuff_documents_chain
 from orchestrators.chat.abstract_bot import AbstractBot
 from orchestrators.chat.llm_models.model_proxy import ModelProxy
-from orchestrators.chat.messages.message_history import MessageHistory
+from orchestrators.chat.messages.message_history import (
+    MongoMessageHistory,
+    SystemMessage,
+    HumanMessage,
+)
 
 class ChatBot(AbstractBot):
-    def __init__(self, llm: ModelProxy, message_history: MessageHistory):
+    def __init__(self, llm: ModelProxy, message_history: MongoMessageHistory):
         self.vector_store = VectorStore
         self.message_history = message_history
         self.llm = llm
+
+    @property
+    def system_message(self, default_prompt: str) -> SystemMessage:
+        self.message_history.system(default_prompt)
+
+    @property
+    def human_message(self, message_schema: dict) -> HumanMessage:
+        self.message_history.human(message_schema)
+
+    # TODO: refactor the methods below to use Langchain Expression Language chain instead
 
     def chat_prompt_template(self):
         self.prompt = ChatMessagePromptTemplate.from_template(
