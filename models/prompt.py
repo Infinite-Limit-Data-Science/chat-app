@@ -8,6 +8,7 @@ from models.mongo_schema import (
     Field,
     PyObjectId
 )
+from llm_schema import LLMPrompt
 
 class Prompt(AbstractModel):
     __modelname__ = 'prompts'
@@ -16,11 +17,8 @@ class Prompt(AbstractModel):
     def get_model_name(cls):
         return cls.__modelname__
     
-class PromptSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):
-    sessionId: str = Field(description='downcased alphanumeric session id')
-    setting_id: Optional[PyObjectId] = Field(alias="_id", description='settings bson object id')
-    title: str = Field(description='Title of Prompt Template')
-    prompt: str = Field(description='Content of Prompt Template')
+class PromptSchema(LLMPrompt, PrimaryKeyMixinSchema, TimestampMixinSchema):
+    model_configs: List[PyObjectId] = Field(description='Model configs associated with the Prompt', default_factory=[])
 
     class Config:
         from_attributes = True

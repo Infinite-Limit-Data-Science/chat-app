@@ -32,6 +32,11 @@ def base_mongo_factory(model: AbstractModel):
             """"Find a document by filter"""
             query = {"_id": ObjectId(id)} if id else {} 
             return await cls.get_collection().find_one({**query, **options})
+        
+        @classmethod
+        async def count(cls, *, options: dict = {}) -> int:
+            """"Count number of documents in filter"""
+            return await cls.get_collection().count_documents(options)
 
         @classmethod
         async def update(cls, id: str, *, schema: ChatSchema = ChatSchema, options: dict = {}):

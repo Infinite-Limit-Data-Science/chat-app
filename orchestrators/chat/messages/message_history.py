@@ -1,8 +1,7 @@
+
 from dataclasses import dataclass, field
 from langchain.memory import MongoDBChatMessageHistory
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
-
-from langchain_core.chat_history import BaseChatMessageHistory
+from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, AIMessage
 from langchain_core.runnables.history import RunnableWithMessageHistory
 
 @dataclass(kw_only=True, slots=True)
@@ -30,10 +29,31 @@ class MongoMessageHistorySchema(BaseMessageHistorySchema):
     
 class MongoMessageHistory:
     def __init__(self, schema: MongoMessageHistorySchema):
-        self.schema = schema
+        self._schema = schema
+        self._new_messages = []
+
+    @property
+    def messages(self) -> list[BaseMessage]:
+        return self._schema.message_history.messages
+    
+    @property
+    def has_no_messages(self) -> bool:
+        return self._schema.message_history.messages == 0
+
+    @messages.setter
+    def messages(self, messages=list[BaseMessage]):
+        self._new_messages.extend(messages)
 
     def system(self, default_prompt: str) -> SystemMessage:
         return SystemMessage(default_prompt)
-    
+
     def human(self, message_schema: dict) -> HumanMessage:
         return HumanMessage(message_schema)
+    
+    def ai(self, message_schema: dict) -> AIMessage:
+        return AIMessage(message_schema)
+
+    async def save(self) -> bool:
+        await self._schema.message_history.aadd_messages(self._new_messages)
+        self._new_messages = []
+        return True

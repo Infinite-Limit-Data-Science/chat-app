@@ -6,9 +6,13 @@ LLMSchema: TypeAlias = BaseModel
 
 _TextTask = Literal['text-generation', 'text2text-generation', 'summarization', 'translation']
 
+class LLMPrompt:
+    title: str
+    content: str
+
 class PromptDict(TypedDict):
     title: str
-    prompt: str
+    content: str
 
 class LLMParamSchema(ChatSchema):
     max_new_tokens: Optional[int] = Field(description='Maximum number of new tokens that model generates in response to prompt', default=1024)

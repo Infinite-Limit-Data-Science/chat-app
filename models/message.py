@@ -33,6 +33,7 @@ class BaseMessageSchema(TypedDict):
     additional_kwargs: AdditionalPayloadSchema = Field(description='Additional payload to store in message (backward compatibility)', default_factory={})
 
 class MessageSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):
+    # currently the 'SessionId' is required because in langchain mongo source code they hardcode the search value
     SessionId: str = Field(description='The session id of messages (RAG context), currently corresponding to conversation id')
     History: BaseMessageSchema = Field(description='shape of data for Conversational AI')
 

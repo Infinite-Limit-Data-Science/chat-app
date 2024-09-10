@@ -9,6 +9,7 @@ from orchestrators.chat.messages.message_history import (
     MongoMessageHistory,
     SystemMessage,
     HumanMessage,
+    AIMessage,
 )
 
 class ChatBot(AbstractBot):
@@ -18,12 +19,34 @@ class ChatBot(AbstractBot):
         self.llm = llm
 
     @property
-    def system_message(self, default_prompt: str) -> SystemMessage:
-        self.message_history.system(default_prompt)
+    def add_system_message(self, message: dict) -> SystemMessage:
+        system_message = self.message_history.system(message.content)
+        self.message_history.messages = system_message
+        return system_message
 
     @property
-    def human_message(self, message_schema: dict) -> HumanMessage:
-        self.message_history.human(message_schema)
+    def add_human_message(self, message_schema: dict) -> HumanMessage:
+        human_message = self.message_history.human(message_schema)
+        self.message_history.messages = human_message
+        return human_message
+
+    @property
+    def add_ai_message(self, message_schema: dict) -> AIMessage:
+        ai_message = self.message_history.ai(message_schema)
+        self.message_history.messages = ai_message
+        return ai_message
+
+    def message_chain():
+        # START HERE
+        # chain=(
+        #     RunnablePassthrough.assign(messages=itemgetter("messages")|trimmer)
+        #     | prompt
+        #     | model
+        # )
+        pass
+
+    async def save_messages(self) -> bool:
+        return await self.message_history.save()
 
     # TODO: refactor the methods below to use Langchain Expression Language chain instead
 

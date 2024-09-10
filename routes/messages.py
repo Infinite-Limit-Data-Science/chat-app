@@ -5,6 +5,7 @@ from fastapi import APIRouter, status, Request, Body, Depends, File, UploadFile,
 from fastapi.responses import StreamingResponse
 from clients.mongo_strategy import mongo_instance as instance
 from auth.bearer_authentication import get_current_user
+from models.llm_schema import PromptDict
 from models.message import Message
 from models.setting import (
     Setting,
@@ -37,9 +38,30 @@ router = APIRouter(
     dependencies=[Depends(get_current_user)]
 )
 
-async def get_current_models(request: Request) -> List[LLM]:
-    setting_schema = SettingSchema(SettingRepo.find(options={request.state.uuid_name: request.state.uuid}))
-    model_config_schema = ModelConfigSchema(await ModelConfigRepo.find(options={'activeModel': setting_schema.activeModel}))    
+async def get_user_settings(request: Request) -> SettingSchema:
+    """Retrieve settings for current user"""
+    setting_schema = SettingSchema(await SettingRepo.find(options={request.state.uuid_name: request.state.uuid}))
+    return setting_schema
+
+async def get_active_model_config(request: Request, setting_schema: SettingSchema) -> ModelConfigSchema:
+    """Get the active model config"""
+    model_config_schema = ModelConfigSchema(await ModelConfigRepo.find(options={'name': setting_schema.activeModel}))
+    return model_config_schema
+    
+async def get_system_prompt(
+    request: Request, 
+    setting_schema: SettingSchema = Depends(get_user_settings), 
+    model_config_schema: ModelConfigSchema = Depends(get_active_model_config)) -> PromptDict:
+    """Derive system prompt from either custom prompts or default system prompt"""
+    prompt = next((prompt for prompt in setting_schema.prompts for model_config_id in prompt.model_configs if model_config_id == model_config_schema.id), None)
+    if prompt is not None:
+        return { 'title': prompt.title, 'prompt': prompt.prompt}
+    return model_config_schema.default_prompt
+
+async def get_current_models(
+    request: Request, 
+    model_config_schema: ModelConfigSchema = Depends(get_active_model_config)) -> List[LLM]:
+    """Return the active model(s) of settings for current user"""
     models = [
         FACTORIES[endpoint.type](**{
             'name': model_config_schema.name,
@@ -52,7 +74,8 @@ async def get_current_models(request: Request) -> List[LLM]:
     ]
     return models
 
-async def get_message_history(request: Request) -> MongoMessageHistorySchema:
+async def get_message_history(request: Request) -> MongoMessageHistory:
+    """Return the Message History"""
     return MongoMessageHistory(MongoMessageHistorySchema(
         connection_string=instance.connection_string,
         session_id=instance.message_history_identifier,
@@ -67,18 +90,22 @@ async def get_message_history(request: Request) -> MongoMessageHistorySchema:
     status_code=status.HTTP_201_CREATED,
     tags=['message']
 )
-async def create_message(request: Request, conversation_id: str, message_schema: MessageSchema = Body(...), models: LLM = Depends(get_current_models), message_history: MongoMessageHistorySchema = Depends(get_message_history)):
+async def create_message(
+    request: Request, 
+    conversation_id: str, 
+    message_schema: MessageSchema = Body(...), 
+    models: LLM = Depends(get_current_models), 
+    system_prompt: PromptDict = Depends(get_system_prompt),
+    mongo_message_history: MongoMessageHistory = Depends(get_message_history)):
     """Insert new message record in configured database, returning resource created"""
-    chat_bot = ChatBot(ModelProxy(models), message_history)
-    # TODO: get default prompt template from current_user settings
-    # ONLY add system message if this is the first conversation for the SessionId
-    if not ConversationRepo.find(conversation_id).messages.count > 0
-        chat_bot.system_message(default_prompt)
+    chat_bot = ChatBot(ModelProxy(models), mongo_message_history)
+    if mongo_message_history.has_no_messages:
+        chat_bot.add_system_message(dict(system_prompt))
+    chat_bot.add_human_message(dict(message_schema))
     if (
-        message := chat_bot.human_message(dict(message_schema))
+        ai_message := chat_bot.add_ai_message(dict)
     ) is not None:        
         # START HERE
-        docs = chat_bot.ai_message()
         # Note MessageHistory will automatically save the content; no need to do it here anymore
         # await MessageRepo.create(conversation_id, MessageSchema(content=str(chat_bot), modelDetail=user_message.modelDetail))
         if "application/json" in request.headers.get("Accept"):
