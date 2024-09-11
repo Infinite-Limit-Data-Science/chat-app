@@ -1,5 +1,6 @@
 from typing import List
 import requests
+from langchain_huggingface import HuggingFaceEndpoint
 from orchestrators.chat.llm_models.llm import LLM
 
 class ModelProxy:
@@ -15,3 +16,7 @@ class ModelProxy:
             except requests.exceptions.RequestException:
                 continue
         raise Exception('No models responded within 3 seconds')
+    
+    def runnable(self) -> HuggingFaceEndpoint:
+        model = self.latency()
+        return model.endpoint_object

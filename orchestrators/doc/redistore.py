@@ -1,5 +1,6 @@
 import os
 from typing import List
+from dataclasses import dataclass, field
 from langchain_core.documents import Document
 from langchain_huggingface import HuggingFaceEmbeddings as Embeddings
 from langchain_redis import RedisConfig as Config, RedisVectorStore as VectorStore
@@ -8,7 +9,6 @@ from langchain_core.vectorstores import VectorStoreRetriever
 SCHEMA = [
     {"name": "uuid", "type": "tag"},
     {"name": "conversation_id", "type": "tag"},
-    {"name": "message_id", "type": "tag"}
 ]
 
 embeddings = Embeddings(model_name=os.environ['EMBEDDINGS_MODEL'])
@@ -19,6 +19,11 @@ _config = Config(
     metadata_schema=SCHEMA,
 )
 
+@dataclass
+class VectorStoreRetreival:
+    k: int = field(default=4)
+    score_threshold: float = field(default=0.9)
+
 class RediStore:
     class ConnectionException(Exception):
         def __init__(self, message='Connection not established'):
@@ -26,6 +31,11 @@ class RediStore:
 
     _vector_store = None
     _exception = 'Connection not established'
+
+    def __init__(self, uuid: str, conversation_id: str, message_id: str):
+        self.uuid = uuid
+        self.conversation_id = conversation_id
+        self.message_id = message_id
 
     @classmethod
     def connect(cls) -> VectorStore:
@@ -48,15 +58,17 @@ class RediStore:
     @classmethod
     def similarity_search(cls, query: str, filter=filter) -> List[Document]:
         """Use Cosine Similarity Search to get immediate results"""
+        """Its recommended to use runnable instead"""
         if not cls._vector_store:
             raise RediStore.ConnectionException()
         results = cls._vector_store.similarity_search(query, filter=filter)
         return results
     
-    @classmethod
-    def as_retriever(cls, filter: dict={}) -> VectorStoreRetriever:
-        """Interface for retrieving vectors from the vector store returning retriever object"""
-        if not cls._vector_store:
-            raise RediStore.ConnectionException()
-        retriever = cls._vector_store.as_retriever(search_type="similarity", filter=filter)
+    def runnable(self, options: VectorStoreRetreival = VectorStoreRetreival()) -> VectorStoreRetriever:
+        """Generate a retriever which is a runnable to be incorporated in chain"""
+        vector_filter = { 
+            'uuid': self.uuid, 
+            'conversation_id': self.conversation_id,
+        }
+        retriever = self._vector_store.as_retriever(search_type="similarity", k=options.k, score_threshold=options.score_threshold, filter=vector_filter)
         return retriever

@@ -98,23 +98,19 @@ async def create_message(
     system_prompt: PromptDict = Depends(get_system_prompt),
     mongo_message_history: MongoMessageHistory = Depends(get_message_history)):
     """Insert new message record in configured database, returning resource created"""
-    chat_bot = ChatBot(ModelProxy(models), mongo_message_history)
+    chat_bot = ChatBot(system_prompt, ModelProxy(models), mongo_message_history, { 'uuid': request.state.uuid, 'conversation_id': conversation_id })
     if mongo_message_history.has_no_messages:
-        chat_bot.add_system_message(dict(system_prompt))
-    chat_bot.add_human_message(dict(message_schema))
-    if (
-        ai_message := chat_bot.add_ai_message(dict)
-    ) is not None:        
-        # START HERE
-        # Note MessageHistory will automatically save the content; no need to do it here anymore
-        # await MessageRepo.create(conversation_id, MessageSchema(content=str(chat_bot), modelDetail=user_message.modelDetail))
-        if "application/json" in request.headers.get("Accept"):
-            return { 'docs': [doc.page_content for doc in docs]}
-        if 'text/event-stream' in request.headers.get("Accept"):
-            async def stream_response():
-                for doc in docs:
-                    yield doc.page_content.encode("utf-8")
-            return StreamingResponse(stream_response())
+        await chat_bot.add_system_message(dict(system_prompt))
+    message = await chat_bot.add_human_message(dict(message_schema))
+    ai_response = chat_bot.chat(session_id=conversation_id, message=message)
+    # TODO: start here 
+    if "application/json" in request.headers.get("Accept"):
+        return { 'docs': [doc.page_content for doc in ai_response]}
+    if 'text/event-stream' in request.headers.get("Accept"):
+        async def stream_response():
+            for doc in ai_response:
+                yield doc.page_content.encode("utf-8")
+        return StreamingResponse(stream_response())
     return {'error': f'Conversation not updated'}, 400
 
 @router.get(

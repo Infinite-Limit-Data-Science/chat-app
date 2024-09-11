@@ -1,9 +1,14 @@
 from typing import TypedDict, Optional, List
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from langchain_huggingface import HuggingFaceEndpoint
 
 class PromptDict(TypedDict):
     title: str
     prompt: str
+
+class EndpointDict(TypedDict):
+    url: str
+    type: str
 
 class ParameterDict(TypedDict, total=False):
     max_new_tokens: int
@@ -24,3 +29,5 @@ class LLM:
     description: str
     default_prompt: PromptDict
     parameters: ParameterDict
+    endpoint: EndpointDict = field(default=None)
+    endpoint_object: HuggingFaceEndpoint = field(init=False, repr=False)

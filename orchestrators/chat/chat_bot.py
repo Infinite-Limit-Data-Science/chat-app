@@ -1,82 +1,57 @@
 from typing import List
 from langchain_core.documents import Document
-from langchain_core.prompts import ChatMessagePromptTemplate
 from orchestrators.doc.redistore import RediStore as VectorStore
 # from langchain.chains.combine_documents import create_stuff_documents_chain
 from orchestrators.chat.abstract_bot import AbstractBot
 from orchestrators.chat.llm_models.model_proxy import ModelProxy
+from orchestrators.chat.messages.prompt_template import PromptDict, PromptTemplate
 from orchestrators.chat.messages.message_history import (
     MongoMessageHistory,
     SystemMessage,
     HumanMessage,
     AIMessage,
+    BaseMessage,
+    Sequence,
 )
 
 class ChatBot(AbstractBot):
-    def __init__(self, llm: ModelProxy, message_history: MongoMessageHistory):
-        self.vector_store = VectorStore
-        self.message_history = message_history
-        self.llm = llm
+    def __init__(self, prompt: PromptDict, llm: ModelProxy, message_history: MongoMessageHistory, vector_options: dict):
+        self._prompt = PromptTemplate(prompt)
+        self._llm = llm
+        self._vector_store = VectorStore(vector_options['uuid'], vector_options['conversation_id'])
+        self._message_history = message_history
 
-    @property
-    def add_system_message(self, message: dict) -> SystemMessage:
-        system_message = self.message_history.system(message.content)
-        self.message_history.messages = system_message
+    async def add_system_message(self, message: PromptDict) -> SystemMessage:
+        """Add system message to data store"""
+        system_message = await self._message_history.system(message['content'])
         return system_message
 
-    @property
-    def add_human_message(self, message_schema: dict) -> HumanMessage:
-        human_message = self.message_history.human(message_schema)
-        self.message_history.messages = human_message
+    async def add_human_message(self, message_schema: dict) -> HumanMessage:
+        """add human message to data store"""
+        human_message = await self._message_history.human(message_schema)
         return human_message
 
-    @property
-    def add_ai_message(self, message_schema: dict) -> AIMessage:
-        ai_message = self.message_history.ai(message_schema)
-        self.message_history.messages = ai_message
+    async def add_ai_message(self, message_schema: dict) -> AIMessage:
+        """Add ai message to data store"""
+        ai_message = await self._message_history.ai(message_schema)
+        self._message_history.messages = ai_message
         return ai_message
-
-    def message_chain():
-        # START HERE
-        # chain=(
-        #     RunnablePassthrough.assign(messages=itemgetter("messages")|trimmer)
-        #     | prompt
-        #     | model
-        # )
-        pass
-
-    async def save_messages(self) -> bool:
-        return await self.message_history.save()
-
-    # TODO: refactor the methods below to use Langchain Expression Language chain instead
-
-    def chat_prompt_template(self):
-        self.prompt = ChatMessagePromptTemplate.from_template(
-            """
-                Answer the following question based only on the provided context:
-                <context>
-                {context}
-                </context>
-            """
-        )
-
     
-    def chain(self):
-        self.prompt|self.llm|self.parser
-
+    async def add_bulk_messages(self, messages: Sequence[BaseMessage]) -> True:
+        """Store messages in bulk in data store"""
+        return await self._message_history.bulk_add(messages)
+    
     def cosine_similarity(self, query) -> List[Document]:
         """Perform a direct cosine similarity search on the VectorStore"""
-        self.documents = self.vector_store.similarity_search(query)
+        """This method is here for completeness but generally use runnable instead"""
+        self.documents = self._vector_store.similarity_search(query)
         return self.documents
 
-    def retrieval_chain():
-        """Retrieve relevant vectors from VectorStore, useful in RAG and Q&A""" 
-
-    def invoke():
-        pass
-
-    def __str__(self) -> str:
-        if not self.documents:
-            return ''
-        raw_data = [document.page_content for document in self.documents]
-        return ' '.join(raw_data)
+    # TODO: add trimmer runnable    
+    def runnable(self, **kwargs) -> AIMessage:
+        """Invoke the chain"""
+        chain = self._prompt.runnable() | self._llm.runnable() | self._vector_store.runnable()
+        chain_with_history = self._message_history.runnable(chain)
+        ai_response = chain_with_history.invoke({'question': kwargs['message']}, {'session_id': kwargs['session_id']})
+        return ai_response
+    chat = runnable
