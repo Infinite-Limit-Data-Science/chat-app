@@ -1,16 +1,13 @@
 from fastapi import APIRouter, status, Request, Query, Body, Depends, logger
 from auth.bearer_authentication import get_current_user
-from repositories.base_mongo_repository import base_mongo_factory as factory
+from repositories.conversation_mongo_repository import ConversationMongoRepository as ConversationRepo
 from models.conversation import (
     ConversationSchema,
     CreateConversationSchema,
     ConversationCollectionSchema, 
     UpdateConversationSchema,
     ConversationIdSchema,
-    Conversation
 )
-
-ConversationRepo = factory(Conversation)
 
 router = APIRouter(
     prefix='/conversations', 
@@ -34,7 +31,7 @@ async def conversations(request: Request, record_offset: int = Query(0, descript
     status_code=status.HTTP_201_CREATED,
     response_model_by_alias=False,
 )
-async def create_conversation(request: Request, conversation_schema: CreateConversationSchema = Body(...)):
+async def create_conversation(request: Request, conversation_schema: ConversationSchema = Body(...)): # CreateConversationSchema
     """Insert new conversation record in configured database, returning resource created"""
     if (
         created_conversation := await ConversationRepo.create(schema=conversation_schema, options={request.state.uuid_name: request.state.uuid})
@@ -51,7 +48,7 @@ async def create_conversation(request: Request, conversation_schema: CreateConve
 async def get_conversation(request: Request, id: str):
     """Get conversation record from configured database by id"""
     if (
-        found_conversation := await ConversationRepo.find(id, options={request.state.uuid_name: request.state.uuid})
+        found_conversation := await ConversationRepo.find_one(id, options={request.state.uuid_name: request.state.uuid})
     ) is not None:
         return found_conversation
     return {'error': f'Conversation {id} not found'}, 404
@@ -65,7 +62,7 @@ async def get_conversation(request: Request, id: str):
 async def update_conversation(request: Request, id: str, conversation_schema: UpdateConversationSchema = Body(...)):
     """Update individual fields of an existing conversation record and return modified fields to client."""
     if (
-        updated_conversation := await ConversationRepo.update(id, schema=conversation_schema, options={request.state.uuid_name: request.state.uuid})
+        updated_conversation := await ConversationRepo.update_one(id, schema=conversation_schema, options={request.state.uuid_name: request.state.uuid})
     ) is not None:
         return updated_conversation
     return {'error': f'Conversation {id} not found'}, 404
