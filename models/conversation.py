@@ -18,14 +18,10 @@ class Conversation(AbstractModel):
         return cls.__modelname__
 
 class ConversationSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):
-    title: str = Field(description='title of conversation')
-    # rootMessageId: str = Field(description='the root message of the list of messages')
-    messages: List[MessageSchema] = Field(description='list of messages associated with conversation')
-    model: str = Field(description='LLM model name')
-    preprompt: Optional[str] = Field(description='preprompt to send to LLM', default=None)
-    userAgent: Optional[str] = Field(description='browser user agent', default=None)
-    embeddingModel: Optional[str] = Field(description='embedding model name', default=None)
     uuid: str = Field(alias="sessionId", description='downcased alphanumeric session id')
+    title: str = Field(description='title of conversation')
+    messages: Optional[List[MessageSchema]] = Field(description='backward compatibility with chat-ui; not in use')
+    message_ids: List[PyObjectId] = Field(description='bson object ids', default_factory=[])
 
     class Config:
         from_attributes = True
@@ -34,16 +30,14 @@ class ConversationSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):
 
 class CreateConversationSchema(ChatSchema):
     title: str = Field(description='title of conversation')
-    messages: List[MessageSchema] = Field(description='list of messages associated with conversation')
-    model: str = Field(description='LLM model name')
-    preprompt: Optional[str] = Field(description='preprompt to send to LLM', default=None)
+    message_ids: List[PyObjectId] = Field(description='bson object ids')
 
 class ConversationIdSchema(ChatSchema):
     id: PyObjectId = Field(alias="_id", description='bson object id')
 
 class UpdateConversationSchema(ChatSchema):
     title: Optional[str] = None
-    messages: Optional[MessageSchema] = None
+    message_ids: List[PyObjectId] = Field(description='bson object ids')
     updatedAt: datetime = Field(default_factory=datetime.now)
     
     class Config:

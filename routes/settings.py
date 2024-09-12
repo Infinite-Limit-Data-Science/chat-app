@@ -16,21 +16,6 @@ router = APIRouter(
     dependencies=[Depends(get_current_user)]
 )
 
-@router.post(
-    '/',
-    response_description="Add new setting",
-    response_model=SettingIdSchema,
-    status_code=status.HTTP_201_CREATED,
-    response_model_by_alias=False,
-)
-async def create_setting(request: Request, setting_schema: SettingSchema = Body(...)):
-    """Insert new setting record in configured database, returning resource created"""
-    if (
-        created_setting_id := await SettingRepo.create(request.state.uuid, setting_schema)
-    ) is not None:
-        return { "_id": created_setting_id }
-    return {'error': f'Setting not created'}, 400
-
 @router.get(
     '/{id}',
     response_description="Get a single setting",
@@ -58,15 +43,3 @@ async def update_setting(request: Request, id: str, setting_schema: UpdateSettin
     ) is not None:
         return updated_setting
     return {'error': f'Setting {id} not found'}, 404
-
-@router.delete(
-    '/{id}', 
-    response_description='Delete a conversation',
-)
-async def delete_setting(request: Request, id: str):
-    """Remove a single setting record from the database."""
-    if (
-        deleted_conversation := await SettingRepo.delete(request.state.uuid, id)
-    ) is not None:
-        return deleted_conversation  
-    return { 'error': f'Prompt {id} not found'}, 404

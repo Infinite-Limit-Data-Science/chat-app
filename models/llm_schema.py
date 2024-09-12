@@ -30,5 +30,5 @@ class LLMParamSchema(ChatSchema):
 class LLMBase(PrimaryKeyMixinSchema, TimestampMixinSchema, LLMParamSchema):
     name: str = Field(description='Model Name')
     description: str = Field(description='Description of the Model', default='Description of TGI Model')
-    default_prompt: PromptDict = Field(description='Default prompt (Note users can create custom ones)')
+    default_prompt: Optional[PromptDict] = Field(description='Default prompt (Note users can create custom ones)')
     parameters: Optional[LLMParamSchema]

@@ -34,7 +34,7 @@ class BaseMessageSchema(TypedDict):
 
 class MessageSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):
     # currently the 'SessionId' is required because in langchain mongo source code they hardcode the search value
-    SessionId: str = Field(description='The session id of messages (RAG context), currently corresponding to conversation id')
+    conversation_id: str = Field(alias="SessionId", description='The session id of messages, a reference to conversation id')
     History: BaseMessageSchema = Field(description='shape of data for Conversational AI')
 
     class Config:

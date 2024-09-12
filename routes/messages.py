@@ -28,7 +28,6 @@ from orchestrators.chat.llm_models.model_proxy import ModelProxy
 from orchestrators.chat.messages.message_history import MongoMessageHistory, MongoMessageHistorySchema
 from orchestrators.chat.chat_bot import ChatBot
 
-MessageRepo = factory(Message)
 SettingRepo = factory(Setting)
 ModelConfigRepo = factory(ModelConfig)
 
@@ -103,15 +102,16 @@ async def create_message(
         await chat_bot.add_system_message(dict(system_prompt))
     message = await chat_bot.add_human_message(dict(message_schema))
     ai_response = chat_bot.chat(session_id=conversation_id, message=message)
+    logger.logging.warning(f'AI Messages: {ai_response}')
     # TODO: start here 
-    if "application/json" in request.headers.get("Accept"):
-        return { 'docs': [doc.page_content for doc in ai_response]}
-    if 'text/event-stream' in request.headers.get("Accept"):
-        async def stream_response():
-            for doc in ai_response:
-                yield doc.page_content.encode("utf-8")
-        return StreamingResponse(stream_response())
-    return {'error': f'Conversation not updated'}, 400
+    # if "application/json" in request.headers.get("Accept"):
+    #     return { 'docs': [doc.page_content for doc in ai_response]}
+    # if 'text/event-stream' in request.headers.get("Accept"):
+    #     async def stream_response():
+    #         for doc in ai_response:
+    #             yield doc.page_content.encode("utf-8")
+    #     return StreamingResponse(stream_response())
+    # return {'error': f'Conversation not updated'}, 400
 
 @router.get(
     '/{conversation_id}/message/{id}',
