@@ -40,7 +40,7 @@ class ConversationMongoRepository(factory(Conversation)):
     
     @classmethod
     async def create(cls, *, schema: ConversationSchema = BaseModel(),  options: Optional[dict] = {}) -> Dict[str, Any]:
-        """Create conversation and associated messages"""
+        """Create conversation"""
         conversation_dict = {
             **options,
             'title': schema.title,
@@ -48,23 +48,18 @@ class ConversationMongoRepository(factory(Conversation)):
         }
         create_schema = CreateConversationSchema(conversation_dict)
         created_conversation = await super().create(schema=create_schema)
-        conversation_id = created_conversation['_id']
-
-        for message in schema.messages:
-            message_doc = MessageSchema({
-                'conversation_id': conversation_id,
-                'History': message.History
-            })
-            created_message = await MessageRepo.create(schema=message_doc)
-            conversation_dict['message_ids'].append(created_message['_id'])
-        await super().update_one(options={"_id": conversation_id}, assigns=conversation_dict)
-        return conversation_dict
+        return created_conversation['_id']
+        # for message in schema.messages:
+        #     message_doc = MessageSchema({
+        #         'conversation_id': conversation_id,
+        #         'History': message.History
+        #     })
+        #     created_message = await MessageRepo.create(schema=message_doc)
+        #     conversation_dict['message_ids'].append(created_message['_id'])
+        # await super().update_one(options={"_id": conversation_id}, assigns=conversation_dict)
+        # return conversation_dict
     
     @classmethod
     async def find_one(cls, id: str = None, *, _: dict = {}) -> Dict[str, Any]:
         stages = cls.pipeline({"_id": ObjectId(id)})
         return await cls.get_collection().aggregate(stages)
-    
-    @classmethod 
-    async def update_one(id, *, schema: UpdateConversationSchema, options: dict = {}):
-        

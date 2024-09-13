@@ -3,48 +3,27 @@ import shutil
 from typing import Dict, Any, Optional, List
 from fastapi import APIRouter, status, Request, Body, Depends, File, UploadFile, logger
 from fastapi.responses import StreamingResponse
-from clients.mongo_strategy import mongo_instance as instance
+from models.mongo_schema import ObjectId
 from auth.bearer_authentication import get_current_user
+from routes.chats import get_current_models, get_system_prompt, get_message_history, chat
+from orchestrators.doc.document_ingestor import DocumentIngestor
+from orchestrators.chat.llm_models.llm import LLM
+from orchestrators.chat.messages.message_history import MongoMessageHistory
+from repositories.base_mongo_repository import base_mongo_factory as factory
 from models.llm_schema import PromptDict
-from models.message import Message
-from models.setting import (
-    Setting,
-    SettingSchema
-)
 from models.message import (
+    Message,
     MessageSchema,
     UpdateMessageSchema,
 )
-from models.model_config import (
-    ModelConfigSchema,
-    ModelConfig,
-)
-from repositories.message_mongo_repository import MessageMongoRepository as MessageRepo
-from repositories.base_mongo_repository import base_mongo_factory as factory
-from orchestrators.doc.document_ingestor import DocumentIngestor
-from orchestrators.chat.llm_models.llm import LLM
-from orchestrators.chat.llm_models.factories import FACTORIES
-from orchestrators.chat.llm_models.model_proxy import ModelProxy
-from orchestrators.chat.messages.message_history import MongoMessageHistory, MongoMessageHistorySchema
-from orchestrators.chat.chat_bot import ChatBot
 
-SettingRepo = factory(Setting)
-ModelConfigRepo = factory(ModelConfig)
+MessageRepo = factory(Message)
 
 router = APIRouter(
     prefix='/conversations', 
     tags=['conversation'],
     dependencies=[Depends(get_current_user)]
 )
-
-async def get_message_history(request: Request) -> MongoMessageHistory:
-    """Return the Message History"""
-    return MongoMessageHistory(MongoMessageHistorySchema(
-        connection_string=instance.connection_string,
-        session_id=instance.message_history_identifier,
-        database_name=instance.name,
-        collection_name=instance.message_history_collection
-    ))
 
 @router.post(
     '/{conversation_id}/message',
@@ -60,13 +39,14 @@ async def create_message(
     models: LLM = Depends(get_current_models), 
     system_prompt: PromptDict = Depends(get_system_prompt),
     mongo_message_history: MongoMessageHistory = Depends(get_message_history)):
-    """Insert new message record in configured database, returning resource created"""
-    chat_bot = ChatBot(system_prompt, ModelProxy(models), mongo_message_history, { 'uuid': request.state.uuid, 'conversation_id': conversation_id })
-    if mongo_message_history.has_no_messages:
-        await chat_bot.add_system_message(dict(system_prompt))
-    message = await chat_bot.add_human_message(dict(message_schema))
-    ai_response = chat_bot.chat(session_id=conversation_id, message=message)
-    logger.logging.warning(f'AI Messages: {ai_response}')
+    """Insert new message record in configured database, returning AI Response"""
+    ai_message = await chat(
+        system_prompt, 
+        models, 
+        mongo_message_history, 
+        { 'uuid': request.state.uuid, 'conversation_id': conversation_id },
+        message_schema)
+    logger.logging.warning(f'AI Messages: {ai_message}')
     # TODO: start here 
     # if "application/json" in request.headers.get("Accept"):
     #     return { 'docs': [doc.page_content for doc in ai_response]}
@@ -87,7 +67,7 @@ async def create_message(
 async def get_message(request: Request, conversation_id: str, id: str):
     """Get message record from configured database by id"""
     if (
-        message := await MessageRepo.find(request.state.uuid, conversation_id, id)
+        message := await MessageRepo.find(request.state.uuid, options={'conversation_id': conversation_id, '_id': ObjectId(id)})
     ) is not None:
         return message
     return {'error': f'Message {id} not found'}, 404
@@ -116,7 +96,7 @@ async def get_message(request: Request, conversation_id: str, id: str):
 async def delete_message(request: Request, conversation_id: str, id: str):
     """Remove a single message record from the database."""
     if (
-        deleted_message := await MessageRepo.delete(request.state.uuid, conversation_id, id)
+        deleted_message := await MessageRepo.delete(id, options={'conversation_id': ObjectId(conversation_id)})
     ) is not None:
         return deleted_message  
     return { 'error': f'Conversation {id} not found'}, 404

@@ -1,5 +1,10 @@
 from fastapi import APIRouter, status, Request, Query, Body, Depends, logger
 from auth.bearer_authentication import get_current_user
+from models.mongo_schema import ObjectId
+from routes.chats import get_current_models, get_system_prompt, get_message_history, chat
+from orchestrators.chat.llm_models.llm import LLM
+from orchestrators.chat.messages.message_history import MongoMessageHistory
+from models.llm_schema import PromptDict
 from repositories.conversation_mongo_repository import ConversationMongoRepository as ConversationRepo
 from models.conversation import (
     ConversationSchema,
@@ -31,12 +36,25 @@ async def conversations(request: Request, record_offset: int = Query(0, descript
     status_code=status.HTTP_201_CREATED,
     response_model_by_alias=False,
 )
-async def create_conversation(request: Request, conversation_schema: ConversationSchema = Body(...)): # CreateConversationSchema
-    """Insert new conversation record in configured database, returning resource created"""
+#TODO: update conversation with list of message ids
+async def create_conversation(
+    request: Request, 
+    conversation_schema: ConversationSchema = Body(...),
+    models: LLM = Depends(get_current_models), 
+    system_prompt: PromptDict = Depends(get_system_prompt),
+    mongo_message_history: MongoMessageHistory = Depends(get_message_history)): # CreateConversationSchema
+    """Insert new conversation record and message record in configured database, returning AI Response"""
     if (
-        created_conversation := await ConversationRepo.create(schema=conversation_schema, options={request.state.uuid_name: request.state.uuid})
+        created_conversation_id := await ConversationRepo.create(schema=conversation_schema, options={request.state.uuid_name: request.state.uuid})
     ) is not None:
-        return { "_id": created_conversation }
+        ai_message = await chat(
+            system_prompt, 
+            models, 
+            mongo_message_history, 
+            { 'uuid': request.state.uuid, 'conversation_id': created_conversation_id },
+            conversation_schema.messages[0])
+        logger.logging.warning(f'AI Messages: {ai_message}')
+        
     return {'error': f'Conversation not created'}, 400
 
 @router.get(
@@ -62,7 +80,7 @@ async def get_conversation(request: Request, id: str):
 async def update_conversation(request: Request, id: str, conversation_schema: UpdateConversationSchema = Body(...)):
     """Update individual fields of an existing conversation record and return modified fields to client."""
     if (
-        updated_conversation := await ConversationRepo.update_one(id, schema=conversation_schema, options={request.state.uuid_name: request.state.uuid})
+        updated_conversation := await ConversationRepo.update_one(options={'_id': ObjectId(id), request.state.uuid_name: request.state.uuid}, assigns=dict(conversation_schema))
     ) is not None:
         return updated_conversation
     return {'error': f'Conversation {id} not found'}, 404
