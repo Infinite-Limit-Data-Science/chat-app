@@ -32,10 +32,9 @@ class RediStore:
     _vector_store = None
     _exception = 'Connection not established'
 
-    def __init__(self, uuid: str, conversation_id: str, message_id: str):
+    def __init__(self, uuid: str, conversation_id: str):
         self.uuid = uuid
         self.conversation_id = conversation_id
-        self.message_id = message_id
 
     @classmethod
     def connect(cls) -> VectorStore:

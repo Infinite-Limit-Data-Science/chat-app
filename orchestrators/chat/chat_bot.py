@@ -4,7 +4,7 @@ from orchestrators.doc.redistore import RediStore as VectorStore
 # from langchain.chains.combine_documents import create_stuff_documents_chain
 from orchestrators.chat.abstract_bot import AbstractBot
 from orchestrators.chat.llm_models.model_proxy import ModelProxy
-from orchestrators.chat.messages.prompt_template import PromptDict, PromptTemplate
+from orchestrators.chat.messages.prompt_template import PromptTemplate
 from orchestrators.chat.messages.message_history import (
     MongoMessageHistory,
     SystemMessage,
@@ -15,15 +15,15 @@ from orchestrators.chat.messages.message_history import (
 )
 
 class ChatBot(AbstractBot):
-    def __init__(self, prompt: PromptDict, llm: ModelProxy, message_history: MongoMessageHistory, vector_options: dict):
+    def __init__(self, prompt: str, llm: ModelProxy, message_history: MongoMessageHistory, vector_options: dict):
         self._prompt = PromptTemplate(prompt)
         self._llm = llm
         self._vector_store = VectorStore(vector_options['uuid'], vector_options['conversation_id'])
         self._message_history = message_history
 
-    async def add_system_message(self, message: PromptDict) -> SystemMessage:
+    async def add_system_message(self, message: str) -> SystemMessage:
         """Add system message to data store"""
-        system_message = await self._message_history.system(message['content'])
+        system_message = await self._message_history.system(message)
         return system_message
 
     async def add_human_message(self, message_schema: dict) -> HumanMessage:
@@ -47,7 +47,7 @@ class ChatBot(AbstractBot):
         self.documents = self._vector_store.similarity_search(query)
         return self.documents
 
-    # TODO: add trimmer runnable    
+    # TODO: add trimmer runnable  
     def runnable(self, **kwargs) -> AIMessage:
         """Invoke the chain"""
         chain = self._prompt.runnable() | self._llm.runnable() | self._vector_store.runnable()

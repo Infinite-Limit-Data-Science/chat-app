@@ -1,7 +1,7 @@
+import logging
 from typing import List, Dict, Any, Optional
 from pymongo import ReturnDocument
 from motor.motor_asyncio import AsyncIOMotorCollection
-import logging
 from clients.mongo_strategy import mongo_instance as instance
 from models.mongo_schema import ObjectId
 from models.abstract_model import AbstractModel
@@ -26,7 +26,7 @@ def base_mongo_factory(model: AbstractModel):
             """Create document"""
             insert_data = {**schema.model_dump(by_alias=True), **options}
             new_document = await cls.get_collection().insert_one(insert_data)
-            return await cls.find_one(options={'_id': new_document.inserted_id})
+            return await cls.find_one(new_document.inserted_id)
         
         @classmethod
         async def find(cls, id: str = None, *, options: dict = {}) -> List[Dict[str, Any]]:

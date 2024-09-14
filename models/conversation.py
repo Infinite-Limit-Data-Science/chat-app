@@ -1,5 +1,8 @@
+import logging
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Any
+from bson import ObjectId
+from pydantic import field_validator, model_validator
 from models.abstract_model import AbstractModel
 from models.message import MessageSchema
 from models.mongo_schema import (
@@ -18,19 +21,15 @@ class Conversation(AbstractModel):
         return cls.__modelname__
 
 class ConversationSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):
-    uuid: str = Field(alias="sessionId", description='downcased alphanumeric session id')
+    uuid: Optional[str] = Field(alias="sessionId", description='downcased alphanumeric session id', default=None)
     title: str = Field(description='title of conversation')
-    messages: List[MessageSchema] = Field(description='Messages associated with Conversation')
+    message_ids: Optional[List[PyObjectId]] = Field(description='Messages associated with Conversation', default=None)
 
     class Config:
         from_attributes = True
         populate_by_name = True
         arbitrary_types_allowed = True
 
-class CreateConversationSchema(ChatSchema):
-    title: str = Field(description='title of conversation')
-    message_ids: List[PyObjectId] = Field(description='bson object ids')
-    
 class ConversationIdSchema(ChatSchema):
     id: PyObjectId = Field(alias="_id", description='bson object id')
 

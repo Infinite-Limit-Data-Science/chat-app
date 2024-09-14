@@ -1,3 +1,4 @@
+from typing import List
 from fastapi import APIRouter, status, Request, Query, Body, Depends, logger
 from auth.bearer_authentication import get_current_user
 from models.mongo_schema import ObjectId
@@ -8,11 +9,11 @@ from models.llm_schema import PromptDict
 from repositories.conversation_mongo_repository import ConversationMongoRepository as ConversationRepo
 from models.conversation import (
     ConversationSchema,
-    CreateConversationSchema,
     ConversationCollectionSchema, 
     UpdateConversationSchema,
     ConversationIdSchema,
 )
+from models.message import MessageSchema
 
 router = APIRouter(
     prefix='/conversations', 
@@ -36,23 +37,26 @@ async def conversations(request: Request, record_offset: int = Query(0, descript
     status_code=status.HTTP_201_CREATED,
     response_model_by_alias=False,
 )
-#TODO: update conversation with list of message ids
+
 async def create_conversation(
     request: Request, 
-    conversation_schema: ConversationSchema = Body(...),
-    models: LLM = Depends(get_current_models), 
-    system_prompt: PromptDict = Depends(get_system_prompt),
-    mongo_message_history: MongoMessageHistory = Depends(get_message_history)): # CreateConversationSchema
+    conversation: ConversationSchema = Body(...),
+    messages: List[MessageSchema] = Body(...),
+    models: List[LLM] = Depends(get_current_models), 
+    system_prompt: str = Depends(get_system_prompt),
+    mongo_message_history: MongoMessageHistory = Depends(get_message_history)):
     """Insert new conversation record and message record in configured database, returning AI Response"""
+    conversation.uuid = request.state.uuid
     if (
-        created_conversation_id := await ConversationRepo.create(schema=conversation_schema, options={request.state.uuid_name: request.state.uuid})
+        created_conversation_id := await ConversationRepo.create(conversation_schema=conversation, messages_schema=messages)
     ) is not None:
+        logger.logging.warning(f'CREATED CONV ID {created_conversation_id}')
         ai_message = await chat(
             system_prompt, 
             models, 
             mongo_message_history, 
-            { 'uuid': request.state.uuid, 'conversation_id': created_conversation_id },
-            conversation_schema.messages[0])
+            { 'conversation_id': created_conversation_id },
+            messages[0])
         logger.logging.warning(f'AI Messages: {ai_message}')
         
     return {'error': f'Conversation not created'}, 400

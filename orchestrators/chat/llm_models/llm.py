@@ -27,7 +27,7 @@ class ParameterDict(TypedDict, total=False):
 class LLM:
     name: str
     description: str
-    default_prompt: PromptDict
+    preprompt: str
     parameters: ParameterDict
     endpoint: EndpointDict = field(default=None)
     endpoint_object: HuggingFaceEndpoint = field(init=False, repr=False)

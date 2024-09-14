@@ -8,14 +8,14 @@ class PromptDict(TypedDict):
     content: str
 
 class PromptTemplate:
-    def __init__(self, prompt: PromptDict):
+    def __init__(self, prompt: str):
         self._prompt = prompt
 
     def runnable(self):
         """Runnable with placeholder to reference message history"""
         return ChatPromptTemplate.from_messages(
             [
-                ("system", self._prompt.content),
+                ("system", self._prompt),
                 MessagesPlaceholder(variable_name="history"),
                 ("human", "{question}"),
             ]
