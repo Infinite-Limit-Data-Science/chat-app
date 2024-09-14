@@ -39,10 +39,7 @@ async def get_model_config(uuid: str) -> dict:
     model_configs = [ModelConfigSchema(**config) for config in model_dict]
     synced_model_dicts = await SettingRepo.sync(options={CURRENT_UUID_NAME: uuid}, source=model_configs, attribute='model_configs', identifier='name')
     active_model_dict = next((model_dict for model_dict in synced_model_dicts if model_dict['active']), None)
-    # START HERE
-    logging.warning(f'SYNCED MODEL DICTS {synced_model_dicts}')
-    logging.warning(f'ACTIVE MODEL DICT {active_model_dict}')
-    await SettingRepo.update_one({CURRENT_UUID_NAME: uuid}, {'activeModel': active_model_dict['name']})
+    await SettingRepo.update_one(options={CURRENT_UUID_NAME: uuid}, assigns={'activeModel': active_model_dict['name']})
     return active_model_dict
 
 async def get_current_user(request: Request, token: Token = Depends(validate_jwt)) -> UserSchema:
@@ -53,8 +50,7 @@ async def get_current_user(request: Request, token: Token = Depends(validate_jwt
         if (
             _ := await SettingRepo.find_one(options={CURRENT_UUID_NAME: token.sub}) 
         ) is None:
-            resp = await SettingRepo.create(schema=SettingSchema(uuid=token.sub))
-            logging.warning(f'RESP FROM SETTING CREATE {resp}')
+            await SettingRepo.create(schema=SettingSchema(uuid=token.sub))
     user = UserSchema(**UserRepo.grandfather(user_attributes))
     await get_model_config(user.uuid)
     request.state.uuid = user.uuid

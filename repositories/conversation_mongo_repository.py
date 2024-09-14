@@ -14,7 +14,7 @@ MessageRepo = factory(Message)
 
 class ConversationMongoRepository(factory(Conversation)):
     @classmethod
-    def pipeline(options: Optional[dict] = {}) -> List[dict]:
+    def pipeline(cls, options: Optional[dict] = {}) -> List[dict]:
         stages = []
         if options:
             stages.append({
@@ -36,7 +36,7 @@ class ConversationMongoRepository(factory(Conversation)):
         stages = cls.pipeline(options)
         stages.append({ '$skip': offset })
         stages.append({ '$limit': limit })
-        return await cls.get_collection().aggregate(stages)
+        return await cls.get_collection().aggregate(stages).to_list(length=None)
     
     @classmethod
     async def create(cls, *, schema: ConversationSchema = BaseModel,  options: Optional[dict] = {}) -> Dict[str, Any]:
