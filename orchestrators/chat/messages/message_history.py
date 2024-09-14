@@ -14,13 +14,13 @@ class BaseMessageHistorySchema:
     connection_string: str
     session_id: str
 
-@dataclass(frozen=True, kw_only=True, slots=True)
+@dataclass(kw_only=True, slots=True)
 class MongoMessageHistorySchema(BaseMessageHistorySchema):
     """Schema for MongoDB data store"""
     database_name: str
     collection_name: str
     create_index: bool = True
-    message_history = field(init=False, repr=False)
+    message_history: MongoDBChatMessageHistory = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         """connect to mongo message history data store"""

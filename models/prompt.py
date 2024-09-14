@@ -8,7 +8,7 @@ from models.mongo_schema import (
     Field,
     PyObjectId
 )
-from llm_schema import LLMPrompt
+from models.llm_schema import LLMPrompt
 
 class Prompt(AbstractModel):
     __modelname__ = 'prompts'
@@ -29,7 +29,6 @@ class PromptIdSchema(ChatSchema):
     id: PyObjectId = Field(alias="_id", description='bson object id')
 
 class UpdatePromptSchema(ChatSchema):
-    setting_id: Optional[PyObjectId] = Field(alias="_id", description='settings bson object id')
     title: str = Field(description='Title of Prompt Template')
     prompt: str = Field(description='Content of Prompt Template')
     updatedAt: datetime = Field(default_factory=datetime.now)

@@ -1,5 +1,6 @@
 import os
 import json
+import logging
 from typing import List
 from fastapi import Request, Depends, logger
 from fastapi.security import HTTPBearer
@@ -9,7 +10,7 @@ from repositories.base_mongo_repository import base_mongo_factory as factory
 from repositories.user_mongo_repository import UserMongoRepository as UserRepo
 from models.ldap_token import LdapToken as Token
 from models.setting import Setting, SettingSchema
-from models.model_config import ModelConfigSchema, ModelConfigCollectionSchema
+from models.model_config import ModelConfigSchema
 
 # for backward compatibility with chat-ui
 CURRENT_UUID_NAME = 'sessionId'
@@ -33,14 +34,16 @@ def validate_jwt(authorization: str = Depends(security)) -> Token:
         return {'error': 'Invalid Token, decoding failed'}, 401
     return token
 
-async def get_model_config(uuid: str) -> ModelConfigCollectionSchema:
+async def get_model_config(uuid: str) -> dict:
     model_dict = json.loads(os.environ['MODELS'])
-    model_configs = [ModelConfigSchema(config) for config in model_dict]
-    schema = ModelConfigCollectionSchema(await SettingRepo.sync(options={CURRENT_UUID_NAME: uuid}, source=model_configs, attribute='model_configs', identifier='name'))
-    # TODO: need to add boolean attribute to model_config for activeModel
-    activeModel = schema[0]['name']
-    await SettingRepo.update_one({CURRENT_UUID_NAME: uuid}, {'activeModel': activeModel})
-    return schema
+    model_configs = [ModelConfigSchema(**config) for config in model_dict]
+    synced_model_dicts = await SettingRepo.sync(options={CURRENT_UUID_NAME: uuid}, source=model_configs, attribute='model_configs', identifier='name')
+    active_model_dict = next((model_dict for model_dict in synced_model_dicts if model_dict['active']), None)
+    # START HERE
+    logging.warning(f'SYNCED MODEL DICTS {synced_model_dicts}')
+    logging.warning(f'ACTIVE MODEL DICT {active_model_dict}')
+    await SettingRepo.update_one({CURRENT_UUID_NAME: uuid}, {'activeModel': active_model_dict['name']})
+    return active_model_dict
 
 async def get_current_user(request: Request, token: Token = Depends(validate_jwt)) -> UserSchema:
     if (
@@ -50,9 +53,10 @@ async def get_current_user(request: Request, token: Token = Depends(validate_jwt
         if (
             _ := await SettingRepo.find_one(options={CURRENT_UUID_NAME: token.sub}) 
         ) is None:
-            await SettingRepo.create(schema=SettingSchema(uuid=token.sub))
-    await get_model_config(user.uuid)
+            resp = await SettingRepo.create(schema=SettingSchema(uuid=token.sub))
+            logging.warning(f'RESP FROM SETTING CREATE {resp}')
     user = UserSchema(**UserRepo.grandfather(user_attributes))
+    await get_model_config(user.uuid)
     request.state.uuid = user.uuid
     request.state.uuid_name = CURRENT_UUID_NAME
     return user

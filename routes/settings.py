@@ -25,11 +25,12 @@ router = APIRouter(
 async def get_setting(request: Request, id: str):
     """Get setting record from configured database by id"""
     if (
-        setting := await SettingRepo.find(request.state.uuid, id)
+        setting := await SettingRepo.find(id)
     ) is not None:
         return setting
     return {'error': f'Setting {id} not found'}, 404
 
+# TODO: update this below
 @router.put(
     '/{id}',
     response_description="update a single setting",

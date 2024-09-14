@@ -39,7 +39,7 @@ class ConversationMongoRepository(factory(Conversation)):
         return await cls.get_collection().aggregate(stages)
     
     @classmethod
-    async def create(cls, *, schema: ConversationSchema = BaseModel(),  options: Optional[dict] = {}) -> Dict[str, Any]:
+    async def create(cls, *, schema: ConversationSchema = BaseModel,  options: Optional[dict] = {}) -> Dict[str, Any]:
         """Create conversation"""
         conversation_dict = {
             **options,

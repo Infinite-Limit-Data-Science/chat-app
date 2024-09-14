@@ -148,6 +148,8 @@ This is because you are using an older NVidia architecture, such as Turing. Turi
 A successful launch of the Docker container will yield log outputs as shown below:
 
 ```shell
+token=[token-from-huggingface]
+model=meta-llama/Meta-Llama-3.1-8B-Instruct
 docker container run --gpus all --shm-size 1g -e HUGGING_FACE_HUB_TOKEN=$token -p 8080:80 -v $volume:/data ghcr.io/huggingface/text-generation-inference:2.2.0 --model-id $model
 Unable to find image 'ghcr.io/huggingface/text-generation-inference:2.2.0' locally
 2.2.0: Pulling from huggingface/text-generation-inference
@@ -589,3 +591,10 @@ print(response.json())
 ```
 
 For more information on the HuggingFace TGI, please use this documentation as a reference: https://huggingface.co/docs/text-generation-inference/installation_nvidia
+
+### Launching Vector Store
+
+```shell
+docker container run -d -p 6379:6379 --name redisearch redis/redis-stack-server:latest
+
+```

@@ -10,5 +10,6 @@ class UserMongoRepository(base_mongo_factory(User)):
         """Ensure historic data complies with new validations by adding missing attributes."""
         required_attributes = ['roles', 'createdAt', 'updatedAt']
         for attr in required_attributes:
-            attributes.setdefault(attr, [] if attr == 'roles' else datetime.now())
+            if attr not in attributes:
+                attributes.setdefault(attr, [] if attr == 'roles' else datetime.now())
         return attributes

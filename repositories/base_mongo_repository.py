@@ -1,6 +1,7 @@
 from typing import List, Dict, Any, Optional
 from pymongo import ReturnDocument
 from motor.motor_asyncio import AsyncIOMotorCollection
+import logging
 from clients.mongo_strategy import mongo_instance as instance
 from models.mongo_schema import ObjectId
 from models.abstract_model import AbstractModel
@@ -21,7 +22,7 @@ def base_mongo_factory(model: AbstractModel):
             return await cls.get_collection().find(options).skip(offset).limit(limit).to_list(limit)
 
         @classmethod
-        async def create(cls, *, schema: ChatSchema = BaseModel(),  options: Optional[dict] = {}) -> Dict[str, Any]:
+        async def create(cls, *, schema: ChatSchema = BaseModel,  options: Optional[dict] = {}) -> Dict[str, Any]:
             """Create document"""
             insert_data = {**schema.model_dump(by_alias=True), **options}
             new_document = await cls.get_collection().insert_one(insert_data)
@@ -33,6 +34,7 @@ def base_mongo_factory(model: AbstractModel):
             query = {"_id": ObjectId(id)} if id else {} 
             return await cls.get_collection().find({**query, **options})
         
+        @classmethod
         async def find_one(cls, id: str = None, *, options: dict = {}) -> Dict[str, Any]:
             """"Find a document by filter"""
             query = {"_id": ObjectId(id)} if id else {} 
@@ -71,8 +73,12 @@ def base_mongo_factory(model: AbstractModel):
             return False
         
         @classmethod
-        async def sync(cls, *, options: dict, source: List[dict], attribute: str, identifier: str) -> List[dict]:
+        async def sync(cls, *, options: dict, source: List[ChatSchema], attribute: str, identifier: str) -> List[dict]:
             """Synchronize an array of documents in data store with a specified data source"""
+            def key_in_dicts(key, dicts):
+                return any(d.get(identifier) == key for d in dicts)
+            
+            source = [ { **config.model_dump(by_alias=True) } for config in source]
             document = await cls.find_one(options=options)
             if document and attribute in document:
                 target = document[attribute]
@@ -80,9 +86,9 @@ def base_mongo_factory(model: AbstractModel):
                 target = []
             target_dicts = {config[identifier]: config for config in target}
             for config in source:
-                if config[identifier] not in target:
+                if not key_in_dicts(config[identifier], target):
                     target_dicts[config[identifier]] = config
-            target_dicts = {name: config for name, config in target_dicts.items() if name in [c['name'] for c in source]}
+            target_dicts = {name: config for name, config in target_dicts.items() if name in [c[identifier] for c in source]}
             sync_attributes = list(target_dicts.values())
             await cls.update_one(options=options, assigns={attribute: sync_attributes})
             return sync_attributes
