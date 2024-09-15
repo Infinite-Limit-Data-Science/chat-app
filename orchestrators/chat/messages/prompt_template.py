@@ -15,7 +15,6 @@ class PromptTemplate:
         """Runnable with placeholder to reference message history"""
         return ChatPromptTemplate.from_messages(
             [
-                ("system", self._prompt),
                 MessagesPlaceholder(variable_name="history"),
                 ("human", "{question}"),
             ]

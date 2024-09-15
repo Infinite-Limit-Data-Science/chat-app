@@ -87,6 +87,6 @@ async def chat(system_prompt: str,
         if not preprompt:
             preprompt = _DEFAULT_PREPROMPT
         await chat_bot.add_system_message(preprompt)
-        logger.logger.warning(f' HOW MANY MESSAGES {mongo_message_history.messages}')
-    message = await chat_bot.add_human_message(dict(message_schema))
-    return chat_bot.chat(session_id=metadata['conversation_id'], message=message)
+    history = message_schema.model_dump(by_alias=True, include={'History'})
+    message = await chat_bot.add_human_message(history['History'])
+    return await chat_bot.chat(session_id=metadata['conversation_id'], message=message)

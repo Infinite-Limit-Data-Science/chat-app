@@ -10,7 +10,7 @@ class ModelProxy:
     def latency(self) -> LLM:
         for model in self.models:
             try:
-                response = requests.get(model.endpoint_url, timeout=3)
+                response = requests.get(model.endpoint['url'], timeout=3)
                 response.raise_for_status()
                 return model
             except requests.exceptions.RequestException:

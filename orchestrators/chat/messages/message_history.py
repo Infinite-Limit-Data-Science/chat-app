@@ -45,9 +45,9 @@ class MongoMessageHistory:
         await self.add_messages([system_message])
         return system_message
 
-    async def human(self, message_schema: dict) -> HumanMessage:
+    async def human(self, message: dict) -> HumanMessage:
         """Add system message to store"""
-        human_message = HumanMessage(message_schema)
+        human_message = HumanMessage(**message)
         await self.add_messages([human_message])
         return human_message
     

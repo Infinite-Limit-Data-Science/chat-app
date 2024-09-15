@@ -26,9 +26,9 @@ class ChatBot(AbstractBot):
         system_message = await self._message_history.system(message)
         return system_message
 
-    async def add_human_message(self, message_schema: dict) -> HumanMessage:
+    async def add_human_message(self, message: dict) -> HumanMessage:
         """add human message to data store"""
-        human_message = await self._message_history.human(message_schema)
+        human_message = await self._message_history.human(message)
         return human_message
 
     async def add_ai_message(self, message_schema: dict) -> AIMessage:

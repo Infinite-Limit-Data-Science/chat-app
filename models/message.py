@@ -30,7 +30,7 @@ class AdditionalPayloadSchema(TypedDict):
 
 class BaseMessageSchema(ChatSchema):
     content: str = Field(description='The corpus')
-    type: Literal['SystemMessage', 'HumanMessage', 'AIMessage'] = Field(description='Origin of Message')
+    type: Literal['system', 'human', 'ai'] = Field(description='Origin of Message')
     additional_kwargs: AdditionalPayloadSchema = Field(description='Additional payload to store in message', default_factory=dict)
 
 class MessageSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):
