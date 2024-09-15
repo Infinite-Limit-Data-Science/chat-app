@@ -48,10 +48,10 @@ class ChatBot(AbstractBot):
         return self.documents
 
     # TODO: add trimmer runnable  
-    def runnable(self, **kwargs) -> AIMessage:
+    async def runnable(self, **kwargs) -> AIMessage:
         """Invoke the chain"""
         chain = self._prompt.runnable() | self._llm.runnable() | self._vector_store.runnable()
         chain_with_history = self._message_history.runnable(chain)
-        ai_response = chain_with_history.invoke({'question': kwargs['message']}, {'session_id': kwargs['session_id']})
+        ai_response = await chain_with_history.ainvoke({'question': kwargs['message']}, {'session_id': kwargs['session_id']})
         return ai_response
     chat = runnable

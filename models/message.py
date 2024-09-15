@@ -34,8 +34,7 @@ class BaseMessageSchema(ChatSchema):
     additional_kwargs: AdditionalPayloadSchema = Field(description='Additional payload to store in message', default_factory=dict)
 
 class MessageSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):
-    # currently the 'SessionId' is required because in langchain mongo history source code they hardcode the search value
-    conversation_id: Optional[PyObjectId] = Field(alias="SessionId", description='The session id of messages, a reference to conversation id', default=None)
+    conversation_id: Optional[PyObjectId] = Field(description='The session id of messages, a reference to conversation id', default=None)
     History: BaseMessageSchema = Field(description='shape of data for Conversational AI')
 
     class Config:

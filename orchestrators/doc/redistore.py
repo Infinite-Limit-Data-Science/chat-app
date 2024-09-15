@@ -48,16 +48,16 @@ class RediStore:
         cls._vector_store._index.client.quit()
 
     @classmethod
-    def add(cls, documents: List[Document]) -> List[str]:
+    async def add(cls, documents: List[Document]) -> List[str]:
         """Add documents to the vector store, expecting metadata per document"""
         if not cls._vector_store:
             raise RediStore.ConnectionException()
-        return cls._vector_store.add_documents(documents)
+        return await cls._vector_store.aadd_documents(documents)
     
     @classmethod
     def similarity_search(cls, query: str, filter=filter) -> List[Document]:
         """Use Cosine Similarity Search to get immediate results"""
-        """Its recommended to use runnable instead"""
+        """It's recommended to use runnable instead"""
         if not cls._vector_store:
             raise RediStore.ConnectionException()
         results = cls._vector_store.similarity_search(query, filter=filter)

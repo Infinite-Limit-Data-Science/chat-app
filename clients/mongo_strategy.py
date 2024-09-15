@@ -4,14 +4,14 @@ from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from clients.database_strategy import DatabaseStrategy
 
 _MESSAGE_HISTORY_COLLECTION = 'messages'
-_MESSAGE_HISTORY_IDENTIFIER = 'SessionId'
+_MESSAGE_HISTORY_KEY = 'conversation_id'
 
 class MongoStrategy(DatabaseStrategy):
     def __init__(self, url: str):
         self._client = None
         self._database_name = os.environ['DATABASE_NAME']
         self._message_history_collection = _MESSAGE_HISTORY_COLLECTION
-        self._message_history_identifier = _MESSAGE_HISTORY_IDENTIFIER
+        self._message_history_key = _MESSAGE_HISTORY_KEY
         self._url = url
 
     async def connect(self) -> AsyncIOMotorClient:
@@ -36,8 +36,8 @@ class MongoStrategy(DatabaseStrategy):
         return self._message_history_collection
     
     @property
-    def message_history_identifier(self):
-        return self._message_history_identifier
+    def message_history_key(self):
+        return self._message_history_key
 
     @property
     def connection_string(self):

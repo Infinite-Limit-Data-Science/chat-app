@@ -2,7 +2,7 @@ from typing import List
 from fastapi import APIRouter, status, Request, Query, Body, Depends, logger
 from auth.bearer_authentication import get_current_user
 from models.mongo_schema import ObjectId
-from routes.chats import get_current_models, get_system_prompt, get_message_history, chat
+from routes.chats import get_current_models, get_prompt_template, get_message_history, chat
 from orchestrators.chat.llm_models.llm import LLM
 from orchestrators.chat.messages.message_history import MongoMessageHistory
 from models.llm_schema import PromptDict
@@ -43,19 +43,16 @@ async def create_conversation(
     conversation: ConversationSchema = Body(...),
     messages: List[MessageSchema] = Body(...),
     models: List[LLM] = Depends(get_current_models), 
-    system_prompt: str = Depends(get_system_prompt),
-    mongo_message_history: MongoMessageHistory = Depends(get_message_history)):
+    prompt_template: str = Depends(get_prompt_template)):
     """Insert new conversation record and message record in configured database, returning AI Response"""
     conversation.uuid = request.state.uuid
     if (
         created_conversation_id := await ConversationRepo.create(conversation_schema=conversation, messages_schema=messages)
     ) is not None:
-        logger.logging.warning(f'CREATED CONV ID {created_conversation_id}')
         ai_message = await chat(
-            system_prompt, 
+            prompt_template, 
             models, 
-            mongo_message_history, 
-            { 'conversation_id': created_conversation_id },
+            { 'uuid': conversation.uuid, 'conversation_id': created_conversation_id },
             messages[0])
         logger.logging.warning(f'AI Messages: {ai_message}')
         

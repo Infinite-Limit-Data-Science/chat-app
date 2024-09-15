@@ -22,6 +22,7 @@ from models.setting import (
 )
 from models.message import MessageSchema
 
+_DEFAULT_PREPROMPT='Please respond to the following question as if you were a knowledgeable expert in the field.'
 
 SettingRepo = factory(Setting)
 
@@ -53,7 +54,7 @@ async def get_current_models(
     ]
     return models
 
-async def get_system_prompt(
+async def get_prompt_template(
     request: Request, 
     setting_schema: SettingSchema = Depends(get_user_settings), 
     model_config_schema: ModelConfigSchema = Depends(get_active_model_config)) -> str:
@@ -63,22 +64,29 @@ async def get_system_prompt(
         return prompt.content
     return model_config_schema.preprompt
 
-async def get_message_history(request: Request) -> MongoMessageHistory:
-    """Return the Message History"""
+async def get_message_history(session_id: str) -> MongoMessageHistory:
+    """Return Message History delegator"""
     return MongoMessageHistory(MongoMessageHistorySchema(
         connection_string=mongo_instance.connection_string,
-        session_id=mongo_instance.message_history_identifier,
         database_name=mongo_instance.name,
-        collection_name=mongo_instance.message_history_collection
+        collection_name=mongo_instance.message_history_collection,
+        session_id_key=mongo_instance.message_history_key,
+        session_id=session_id
     ))
 
 async def chat(system_prompt: str,
     models: List[LLM], 
-    mongo_message_history: MongoMessageHistory, 
     metadata: dict, 
     message_schema: MessageSchema) -> AIMessage:
-    chat_bot = ChatBot(system_prompt, ModelProxy(models), mongo_message_history, metadata)
+    """Chat"""
+    mongo_message_history = await get_message_history(metadata['conversation_id'])
+    model_proxy = ModelProxy(models)
+    chat_bot = ChatBot(system_prompt, model_proxy, mongo_message_history, metadata)
     if mongo_message_history.has_no_messages:
-        await chat_bot.add_system_message(system_prompt)
+        preprompt = model_proxy.models[0].preprompt
+        if not preprompt:
+            preprompt = _DEFAULT_PREPROMPT
+        await chat_bot.add_system_message(preprompt)
+        logger.logger.warning(f' HOW MANY MESSAGES {mongo_message_history.messages}')
     message = await chat_bot.add_human_message(dict(message_schema))
     return chat_bot.chat(session_id=metadata['conversation_id'], message=message)

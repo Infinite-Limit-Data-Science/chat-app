@@ -5,7 +5,7 @@ from fastapi import APIRouter, status, Request, Body, Depends, File, UploadFile,
 from fastapi.responses import StreamingResponse
 from models.mongo_schema import ObjectId
 from auth.bearer_authentication import get_current_user
-from routes.chats import get_current_models, get_system_prompt, get_message_history, chat
+from routes.chats import get_current_models, get_prompt_template, get_message_history, chat
 from orchestrators.doc.document_ingestor import DocumentIngestor
 from orchestrators.chat.llm_models.llm import LLM
 from orchestrators.chat.messages.message_history import MongoMessageHistory
@@ -37,7 +37,7 @@ async def create_message(
     conversation_id: str, 
     message_schema: MessageSchema = Body(...), 
     models: LLM = Depends(get_current_models), 
-    system_prompt: PromptDict = Depends(get_system_prompt),
+    system_prompt: PromptDict = Depends(get_prompt_template),
     mongo_message_history: MongoMessageHistory = Depends(get_message_history)):
     """Insert new message record in configured database, returning AI Response"""
     ai_message = await chat(

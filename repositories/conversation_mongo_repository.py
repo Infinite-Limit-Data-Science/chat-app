@@ -40,15 +40,16 @@ class ConversationMongoRepository(factory(Conversation)):
     
     @classmethod
     async def create(cls, *, conversation_schema: ConversationSchema = BaseModel, messages_schema: List[MessageSchema] = [BaseModel]) -> str:
-        """Create conversation and related messages"""
+        """Create conversation"""
         created_conversation = await super().create(schema=conversation_schema)
         conversation_id = created_conversation['_id']
-        conversation_dict = {'message_ids': []}
-        for message in messages_schema:
-            message.conversation_id = conversation_id
-            created_message = await MessageRepo.create(schema=message)
-            conversation_dict['message_ids'].append(created_message['_id'])
-        await super().update_one(options={"_id": conversation_id}, assigns=conversation_dict)
+        # messages are created by orchestrator
+        # conversation_dict = {'message_ids': []}
+        # for message in messages_schema:
+        #     message.conversation_id = conversation_id
+        #     created_message = await MessageRepo.create(schema=message)
+        #     conversation_dict['message_ids'].append(created_message['_id'])
+        # await super().update_one(options={"_id": conversation_id}, assigns=conversation_dict)
         return conversation_id
     
     @classmethod
