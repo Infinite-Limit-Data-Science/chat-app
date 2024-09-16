@@ -1,3 +1,4 @@
+import logging
 from typing import TypedDict
 from dataclasses import dataclass, field
 from langchain_huggingface import HuggingFaceEndpoint

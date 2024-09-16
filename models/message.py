@@ -42,6 +42,10 @@ class MessageSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):
         populate_by_name = True
         arbitrary_types_allowed = True
 
+class CreatedMessageSchema(PrimaryKeyMixinSchema):
+    conversation_id: Optional[PyObjectId]
+    History: str
+
 class UpdateMessageSchema(ChatSchema):
     History: BaseMessageSchema
     updatedAt: datetime = Field(default_factory=datetime.now)

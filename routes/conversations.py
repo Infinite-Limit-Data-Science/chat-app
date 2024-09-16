@@ -13,7 +13,7 @@ from models.conversation import (
     UpdateConversationSchema,
     ConversationIdSchema,
 )
-from models.message import MessageSchema
+from models.message import MessageSchema, CreatedMessageSchema
 
 router = APIRouter(
     prefix='/conversations', 
@@ -33,11 +33,10 @@ async def conversations(request: Request, record_offset: int = Query(0, descript
 @router.post(
     '/',
     response_description="Add new conversation",
-    response_model=ConversationIdSchema,
+    # response_model=CreatedMessageSchema,
     status_code=status.HTTP_201_CREATED,
     response_model_by_alias=False,
 )
-
 async def create_conversation(
     request: Request, 
     conversation: ConversationSchema = Body(...),
@@ -47,14 +46,15 @@ async def create_conversation(
     """Insert new conversation record and message record in configured database, returning AI Response"""
     conversation.uuid = request.state.uuid
     if (
-        created_conversation_id := await ConversationRepo.create(conversation_schema=conversation, messages_schema=messages)
+        created_conversation_id := await ConversationRepo.create(conversation_schema=conversation)
     ) is not None:
+        metadata = { 'uuid': conversation.uuid, 'conversation_id': created_conversation_id }
         ai_message = await chat(
             prompt_template, 
             models, 
-            { 'uuid': conversation.uuid, 'conversation_id': created_conversation_id },
+            metadata,
             messages[0])
-        logger.logging.warning(f'AI Messages: {ai_message}')
+        return ai_message.content
         
     return {'error': f'Conversation not created'}, 400
 

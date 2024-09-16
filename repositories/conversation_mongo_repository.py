@@ -39,7 +39,7 @@ class ConversationMongoRepository(factory(Conversation)):
         return await cls.get_collection().aggregate(stages).to_list(length=None)
     
     @classmethod
-    async def create(cls, *, conversation_schema: ConversationSchema = BaseModel, messages_schema: List[MessageSchema] = [BaseModel]) -> str:
+    async def create(cls, *, conversation_schema: ConversationSchema = BaseModel) -> str:
         """Create conversation"""
         created_conversation = await super().create(schema=conversation_schema)
         conversation_id = created_conversation['_id']

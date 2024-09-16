@@ -3,10 +3,11 @@ from typing import Sequence
 from dataclasses import dataclass, field, asdict
 from langchain_mongodb import MongoDBChatMessageHistory
 from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, AIMessage
-from langchain_core.runnables.history import RunnableWithMessageHistory
-
-_INPUT_MESSAGES_KEY = 'question'
-_HISTORY_MESSAGES_KEY = 'history'
+from langchain_core.runnables.history import (
+    RunnableWithMessageHistory, 
+    Runnable, 
+    MessagesOrDictWithMessages
+)
 
 @dataclass(kw_only=True, slots=True)
 class BaseMessageHistorySchema:
@@ -62,13 +63,12 @@ class MongoMessageHistory:
         await self.add_messages(messages)
         return True
 
-    def runnable(self, chain = None) -> RunnableWithMessageHistory:
+    def get_session_history(self):
+        return self._message_history
+
+    def runnable(self, chain: Runnable[MessagesOrDictWithMessages, MessagesOrDictWithMessages | str | BaseMessage]) -> RunnableWithMessageHistory:
         """Wraps a Runnable with a Chat History Runnable"""
-        """session_id is used to determine whether to create a new message history or load existing"""
-        """If message history is stored in the mongo store, it will be loaded here"""
         return RunnableWithMessageHistory(
             chain,
-            self._schema.session_id,
-            input_messages_key=_INPUT_MESSAGES_KEY,
-            history_messages_key=_HISTORY_MESSAGES_KEY,
+            self.get_session_history,
         )

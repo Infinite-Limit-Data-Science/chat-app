@@ -1,3 +1,4 @@
+import logging
 from typing import List
 from langchain_core.documents import Document
 from orchestrators.doc.redistore import RediStore as VectorStore
@@ -31,10 +32,9 @@ class ChatBot(AbstractBot):
         human_message = await self._message_history.human(message)
         return human_message
 
-    async def add_ai_message(self, message_schema: dict) -> AIMessage:
+    async def add_ai_message(self, message: str) -> AIMessage:
         """Add ai message to data store"""
-        ai_message = await self._message_history.ai(message_schema)
-        self._message_history.messages = ai_message
+        ai_message = await self._message_history.ai(message)
         return ai_message
     
     async def add_bulk_messages(self, messages: Sequence[BaseMessage]) -> True:
@@ -50,8 +50,11 @@ class ChatBot(AbstractBot):
     # TODO: add trimmer runnable  
     async def runnable(self, **kwargs) -> AIMessage:
         """Invoke the chain"""
-        chain = self._prompt.runnable() | self._llm.runnable() | self._vector_store.runnable()
+        # chain = self._prompt.runnable() | self._llm.runnable() | self._vector_store.runnable()
+        chain = self._llm.runnable()# | self._vector_store.runnable()
         chain_with_history = self._message_history.runnable(chain)
-        ai_response = await chain_with_history.ainvoke({'question': kwargs['message']}, {'session_id': kwargs['session_id']})
-        return ai_response
+        ai_response = await chain_with_history.ainvoke(
+            [HumanMessage(content=kwargs['message'])],
+            config={'session_id': kwargs['session_id']})
+        return await self.add_ai_message(ai_response)
     chat = runnable

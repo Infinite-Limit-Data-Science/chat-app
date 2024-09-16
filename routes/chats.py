@@ -22,7 +22,7 @@ from models.setting import (
 )
 from models.message import MessageSchema
 
-_DEFAULT_PREPROMPT='Please respond to the following question as if you were a knowledgeable expert in the field.'
+_DEFAULT_PREPROMPT='You are a helpful assistant. Answer all the questions to the best of your ability.'
 
 SettingRepo = factory(Setting)
 
@@ -62,7 +62,7 @@ async def get_prompt_template(
     prompt = next((prompt for prompt in setting_schema.prompts for model_config_id in prompt.model_configs if model_config_id == model_config_schema.id), None)
     if prompt is not None:
         return prompt.content
-    return model_config_schema.preprompt
+    return model_config_schema.preprompt or _DEFAULT_PREPROMPT
 
 async def get_message_history(session_id: str) -> MongoMessageHistory:
     """Return Message History delegator"""
@@ -74,19 +74,16 @@ async def get_message_history(session_id: str) -> MongoMessageHistory:
         session_id=session_id
     ))
 
-async def chat(system_prompt: str,
+async def chat(prompt_template: str,
     models: List[LLM], 
     metadata: dict, 
     message_schema: MessageSchema) -> AIMessage:
     """Chat"""
     mongo_message_history = await get_message_history(metadata['conversation_id'])
     model_proxy = ModelProxy(models)
-    chat_bot = ChatBot(system_prompt, model_proxy, mongo_message_history, metadata)
+    chat_bot = ChatBot(prompt_template, model_proxy, mongo_message_history, metadata)
     if mongo_message_history.has_no_messages:
-        preprompt = model_proxy.models[0].preprompt
-        if not preprompt:
-            preprompt = _DEFAULT_PREPROMPT
-        await chat_bot.add_system_message(preprompt)
+        await chat_bot.add_system_message(prompt_template)
     history = message_schema.model_dump(by_alias=True, include={'History'})
     message = await chat_bot.add_human_message(history['History'])
-    return await chat_bot.chat(session_id=metadata['conversation_id'], message=message)
+    return await chat_bot.chat(session_id=metadata['conversation_id'], message=message.content)
