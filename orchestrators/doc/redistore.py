@@ -1,10 +1,10 @@
 import os
 from typing import List
-from dataclasses import dataclass, field
 from langchain_core.documents import Document
 from langchain_huggingface import HuggingFaceEmbeddings as Embeddings
 from langchain_redis import RedisConfig as Config, RedisVectorStore as VectorStore
 from langchain_core.vectorstores import VectorStoreRetriever
+from orchestrators.doc.abstract_vector_store import AbstractVectorStore, VectorStoreRetrieval
 
 SCHEMA = [
     {"name": "uuid", "type": "tag"},
@@ -19,12 +19,7 @@ _config = Config(
     metadata_schema=SCHEMA,
 )
 
-@dataclass
-class VectorStoreRetreival:
-    k: int = field(default=4)
-    score_threshold: float = field(default=0.9)
-
-class RediStore:
+class RediStore(AbstractVectorStore):
     class ConnectionException(Exception):
         def __init__(self, message='Connection not established'):
             super().__init__(message)
@@ -63,7 +58,7 @@ class RediStore:
         results = cls._vector_store.similarity_search(query, filter=filter)
         return results
     
-    def runnable(self, options: VectorStoreRetreival = VectorStoreRetreival()) -> VectorStoreRetriever:
+    def runnable(self, options: VectorStoreRetrieval = VectorStoreRetrieval()) -> VectorStoreRetriever:
         """Generate a retriever which is a runnable to be incorporated in chain"""
         vector_filter = { 
             'uuid': self.uuid, 

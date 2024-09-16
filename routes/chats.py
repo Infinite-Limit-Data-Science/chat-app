@@ -81,7 +81,7 @@ async def chat(prompt_template: str,
     """Chat"""
     mongo_message_history = await get_message_history(metadata['conversation_id'])
     model_proxy = ModelProxy(models)
-    chat_bot = ChatBot(prompt_template, model_proxy, mongo_message_history, metadata)
+    chat_bot = ChatBot(model_proxy, mongo_message_history, metadata)
     if mongo_message_history.has_no_messages:
         await chat_bot.add_system_message(prompt_template)
     history = message_schema.model_dump(by_alias=True, include={'History'})
