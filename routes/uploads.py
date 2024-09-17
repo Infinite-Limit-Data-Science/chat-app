@@ -8,6 +8,7 @@ def format_file_for_storage(uuid: str, conversation_id: str, filename: str):
     return f'files/{uuid}/conversations/{conversation_id}/{filename}'
 
 async def ingest_file(uuid: str, upload_file: UploadFile, conversation_id) -> List[str]:
+    conversation_id = str(conversation_id)
     path = format_file_for_storage(uuid, conversation_id, upload_file.filename)
     dir_path = os.path.dirname(path)
     if not os.path.exists(dir_path):

@@ -65,7 +65,7 @@ class RediStore(AbstractVectorStore):
         """Generate a retriever which is a runnable to be incorporated in chain"""
         vector_filter = { 
             'uuid': self.uuid, 
-            'conversation_id': self.conversation_id,
+            'conversation_id': str(self.conversation_id),
         }
         retriever = self._vector_store.as_retriever(search_type="similarity", k=options.k, score_threshold=options.score_threshold, filter=vector_filter)
         return retriever

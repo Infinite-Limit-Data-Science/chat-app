@@ -83,9 +83,6 @@ class ChatBot(AbstractBot):
             config={'session_id': kwargs['session_id']}
         )
 
-        if rag_chain:
-            return ai_response['answer']
-        else:
-            return ai_response
+        return ai_response['answer'] if rag_chain else ai_response
 
     chat = runnable
