@@ -1,19 +1,17 @@
-from typing import List
-from fastapi import APIRouter, status, Request, Query, Body, Depends, logger
+import logging
+from typing import Annotated, List, Optional
+from fastapi import APIRouter, status, Request, Query, Body, Form, Depends, File, UploadFile, logger
 from auth.bearer_authentication import get_current_user
 from models.mongo_schema import ObjectId
 from routes.chats import get_current_models, get_prompt_template, get_message_history, chat
 from orchestrators.chat.llm_models.llm import LLM
-from orchestrators.chat.messages.message_history import MongoMessageHistory
-from models.llm_schema import PromptDict
 from repositories.conversation_mongo_repository import ConversationMongoRepository as ConversationRepo
 from models.conversation import (
     ConversationSchema,
     ConversationCollectionSchema, 
     UpdateConversationSchema,
-    ConversationIdSchema,
 )
-from models.message import MessageSchema, CreatedMessageSchema
+from models.message import MessageSchema, BaseMessageSchema
 
 router = APIRouter(
     prefix='/conversations', 
@@ -38,23 +36,32 @@ async def conversations(request: Request, record_offset: int = Query(0, descript
     response_model_by_alias=False,
 )
 async def create_conversation(
-    request: Request, 
-    conversation: ConversationSchema = Body(...),
-    messages: List[MessageSchema] = Body(...),
+    request: Request,
+    uuid: str = Form(...),
+    title: str = Form(...),
+    content: str = Form(...),
+    # conversation: Annotated[ConversationSchema, Form()],
+    # message: Annotated[MessageSchema, Form()],
     models: List[LLM] = Depends(get_current_models), 
-    prompt_template: str = Depends(get_prompt_template)):
+    prompt_template: str = Depends(get_prompt_template),
+    upload_file: Optional[UploadFile] = File(None)):
     """Insert new conversation record and message record in configured database, returning AI Response"""
-    conversation.uuid = request.state.uuid
+    conversation_schema = ConversationSchema(uuid=uuid, title=title)
+    message_schema = MessageSchema(History=BaseMessageSchema(content=content, type='human'))
+    conversation_schema.uuid = request.state.uuid
+
+    if upload_file:
+        logging.warning(f'THE FILE NAME {upload_file.filename}') 
     if (
-        created_conversation_id := await ConversationRepo.create(conversation_schema=conversation)
+        created_conversation_id := await ConversationRepo.create(conversation_schema=conversation_schema)
     ) is not None:
-        metadata = { 'uuid': conversation.uuid, 'conversation_id': created_conversation_id }
+        metadata = { 'uuid': conversation_schema.uuid, 'conversation_id': created_conversation_id }
         ai_message = await chat(
             prompt_template, 
             models, 
             metadata,
-            messages[0])
-        return ai_message.content
+            message_schema)
+        return ai_message
         
     return {'error': f'Conversation not created'}, 400
 

@@ -4,6 +4,7 @@ from langchain_core.documents import Document
 from langchain_huggingface import HuggingFaceEmbeddings as Embeddings
 from langchain_redis import RedisConfig as Config, RedisVectorStore as VectorStore
 from langchain_core.vectorstores import VectorStoreRetriever
+from redisvl.query.filter import Tag
 from orchestrators.doc.abstract_vector_store import AbstractVectorStore, VectorStoreRetrieval
 
 SCHEMA = [
@@ -50,11 +51,13 @@ class RediStore(AbstractVectorStore):
         return await cls._vector_store.aadd_documents(documents)
     
     @classmethod
-    def similarity_search(cls, query: str, filter=filter) -> List[Document]:
+    def similarity_search(cls, query: str, kwargs) -> List[Document]:
         """Use Cosine Similarity Search to get immediate results"""
         """It's recommended to use runnable instead"""
         if not cls._vector_store:
             raise RediStore.ConnectionException()
+        
+        filter = (Tag("uuid") == kwargs['uuid']) & (Tag("conversation_id") == str(kwargs['conversation_id']))
         results = cls._vector_store.similarity_search(query, filter=filter)
         return results
     

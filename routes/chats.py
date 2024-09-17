@@ -85,5 +85,7 @@ async def chat(prompt_template: str,
     if mongo_message_history.has_no_messages:
         await chat_bot.add_system_message(prompt_template)
     history = message_schema.model_dump(by_alias=True, include={'History'})
-    message = await chat_bot.add_human_message(history['History'])
-    return await chat_bot.chat(session_id=metadata['conversation_id'], message=message.content)
+    return await chat_bot.chat(
+        session_id=metadata['conversation_id'], 
+        metadata={ 'uuid': metadata['uuid'], 'conversation_id': metadata['conversation_id'] },
+        message=history['History']['content'])
