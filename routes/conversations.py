@@ -4,6 +4,7 @@ from fastapi import APIRouter, status, Request, Query, Body, Form, Depends, File
 from auth.bearer_authentication import get_current_user
 from models.mongo_schema import ObjectId
 from routes.chats import get_current_models, get_prompt_template, get_message_history, chat
+from routes.uploads import ingest_file
 from orchestrators.chat.llm_models.llm import LLM
 from repositories.conversation_mongo_repository import ConversationMongoRepository as ConversationRepo
 from models.conversation import (
@@ -50,11 +51,11 @@ async def create_conversation(
     message_schema = MessageSchema(History=BaseMessageSchema(content=content, type='human'))
     conversation_schema.uuid = request.state.uuid
 
-    if upload_file:
-        logging.warning(f'THE FILE NAME {upload_file.filename}') 
     if (
         created_conversation_id := await ConversationRepo.create(conversation_schema=conversation_schema)
     ) is not None:
+        if upload_file:
+            await ingest_file(request.state.uuid, upload_file, created_conversation_id)
         metadata = { 'uuid': conversation_schema.uuid, 'conversation_id': created_conversation_id }
         ai_message = await chat(
             prompt_template, 

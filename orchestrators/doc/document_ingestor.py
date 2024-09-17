@@ -6,12 +6,11 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from orchestrators.doc.redistore import RediStore as VectorStore
 
 class DocumentIngestor:
-    def __init__(self, file: str, uuid: str, conversation_id: str, message_id: str):
+    def __init__(self, file: str, uuid: str, conversation_id: str):
         self.file = file
         self.uuid = uuid
         self.conversation_id = conversation_id
-        self.message_id = message_id
-        self.vector_store = VectorStore.instance()
+        self.vector_store = VectorStore
 
     def load(self) -> List[Document]:
         loader = PyPDFLoader(self.file)
@@ -21,16 +20,16 @@ class DocumentIngestor:
     def split(self, doc: List[Document], chunk_size: int = 500, chunk_overlap: int = 100) -> List[Document]:
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
         chunks = text_splitter.split_documents(doc)
-        metadata = { 'uuid': self.uuid, 'conversation_id': self.conversation_id,'message_id': self.message_id}
+        metadata = { 'uuid': self.uuid, 'conversation_id': self.conversation_id }
         chunks_with_metadata = [Document(page_content=chunk.page_content, metadata=metadata) for chunk in chunks]
         return chunks_with_metadata
 
-    def embed(self, chunks) -> List[str]:
-        ids = self.vector_store.add(chunks)
+    async def embed(self, chunks) -> List[str]:
+        ids = await self.vector_store.add(chunks)
         logging.warning(f'first embedded id {ids[:1]}')
         return ids
 
-    def ingest(self) -> List[str]:
+    async def ingest(self) -> List[str]:
         doc = self.load()
         chunks = self.split(doc)
-        return self.embed(chunks)
+        return await self.embed(chunks)
