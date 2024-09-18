@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Callable, Tuple
 from fastapi import Request, Depends, logger
 from clients.mongo_strategy import mongo_instance
 from orchestrators.chat.chat_bot import ChatBot
@@ -10,6 +10,7 @@ from orchestrators.chat.messages.message_history import (
     AIMessage,
 )
 from orchestrators.chat.llm_models.model_proxy import ModelProxy
+from orchestrators.chat.llm_models.llm import StreamingToClientCallbackHandler
 from repositories.base_mongo_repository import base_mongo_factory as factory
 from models.llm_schema import PromptDict
 from models.model_config import (
@@ -76,7 +77,7 @@ async def get_message_history(session_id: str) -> MongoMessageHistory:
 async def chat(prompt_template: str,
     models: List[LLM], 
     metadata: dict, 
-    message_schema: MessageSchema) -> AIMessage:
+    message_schema: MessageSchema) -> Tuple[Callable[[], None], StreamingToClientCallbackHandler]:
     """Chat"""
     mongo_message_history = await get_message_history(metadata['conversation_id'])
     model_proxy = ModelProxy(models)

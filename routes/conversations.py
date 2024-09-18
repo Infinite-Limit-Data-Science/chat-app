@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from typing import Annotated, List, Optional
 from fastapi import APIRouter, status, Request, Query, Body, Form, Depends, File, UploadFile, logger
 from auth.bearer_authentication import get_current_user
@@ -13,6 +14,7 @@ from models.conversation import (
     UpdateConversationSchema,
 )
 from models.message import MessageSchema, BaseMessageSchema
+from fastapi.responses import StreamingResponse
 
 router = APIRouter(
     prefix='/conversations', 
@@ -57,12 +59,13 @@ async def create_conversation(
         if upload_file:
             await ingest_file(request.state.uuid, upload_file, created_conversation_id)
         metadata = { 'uuid': conversation_schema.uuid, 'conversation_id': created_conversation_id }
-        ai_message = await chat(
+        run_llm, streaming_handler = await chat(
             prompt_template, 
             models, 
             metadata,
             message_schema)
-        return ai_message
+        asyncio.create_task(asyncio.to_thread(run_llm))
+        return StreamingResponse(streaming_handler.get_streamed_response(), media_type="text/plain")
         
     return {'error': f'Conversation not created'}, 400
 

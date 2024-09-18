@@ -66,7 +66,7 @@ class MongoMessageHistory:
     def get_session_history(self):
         return self._message_history
 
-    def runnable(self, chain: Runnable[MessagesOrDictWithMessages, MessagesOrDictWithMessages | str | BaseMessage], rag_chain: bool) -> RunnableWithMessageHistory:
+    def get(self, chain: Runnable[MessagesOrDictWithMessages, MessagesOrDictWithMessages | str | BaseMessage], rag_chain: bool) -> RunnableWithMessageHistory:
         """Wraps a Runnable with a Chat History Runnable"""
         keys = {
             'input_messages_key': 'input',

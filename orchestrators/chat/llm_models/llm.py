@@ -1,6 +1,8 @@
-from typing import TypedDict, Optional, List
+from typing import TypedDict, Optional, List, Any
 from dataclasses import dataclass, field
 from langchain_huggingface import HuggingFaceEndpoint
+from langchain_core.callbacks.base import BaseCallbackHandler
+import asyncio
 
 class PromptDict(TypedDict):
     title: str
@@ -13,7 +15,6 @@ class EndpointDict(TypedDict):
 class ParameterDict(TypedDict, total=False):
     max_new_tokens: int
     stop_sequences: List[str]
-    streaming: bool
     truncate: int
     do_sample: bool
     repetition_penalty: float
@@ -29,6 +30,21 @@ class ServerHeaderDict(TypedDict):
 class ServerKwargDict(TypedDict):
     headers: ServerHeaderDict
 
+class StreamingToClientCallbackHandler(BaseCallbackHandler):
+    def __init__(self):
+        self.queue = asyncio.Queue()
+
+    async def on_llm_new_token(self, token: str, **kwargs: Any) -> None:
+        await self.queue.put(token)
+
+    async def get_streamed_response(self):
+        while True:
+            token = await self.queue.get()
+            if token is None:
+                break
+            yield token
+        yield ''
+
 @dataclass
 class LLM:
     name: str
@@ -38,3 +54,4 @@ class LLM:
     server_kwargs: ServerKwargDict
     endpoint: EndpointDict = field(default=None)
     endpoint_object: HuggingFaceEndpoint = field(init=False, repr=False)
+    streaming_handler: StreamingToClientCallbackHandler = field(init=False, repr=False)

@@ -2,7 +2,6 @@ import logging
 import socket
 from urllib.parse import urlparse
 from typing import List
-from langchain_huggingface import HuggingFaceEndpoint
 from orchestrators.chat.llm_models.llm import LLM
 
 class ModelProxy:
@@ -20,6 +19,7 @@ class ModelProxy:
                 continue        
         raise Exception('No models responded within 3 seconds')
     
-    def runnable(self) -> HuggingFaceEndpoint:
+    def get(self) -> LLM:
+        """Return a runnable"""
         model = self.reachable()
-        return model.endpoint_object
+        return model
