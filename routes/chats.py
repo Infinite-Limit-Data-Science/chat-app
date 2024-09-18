@@ -32,14 +32,13 @@ async def get_user_settings(request: Request) -> SettingSchema:
     setting_schema = SettingSchema(**setting)
     return setting_schema
 
-async def get_active_model_config(request: Request, setting_schema: SettingSchema = Depends(get_user_settings)) -> ModelConfigSchema:
+async def get_active_model_config(setting_schema: SettingSchema = Depends(get_user_settings)) -> ModelConfigSchema:
     """Get the active model config for current user"""
     active_model_config = next((config for config in setting_schema.model_configs if config.active), None)
     return active_model_config
 
 async def get_current_models(
     request: Request,
-    setting_schema: SettingSchema = Depends(get_user_settings),
     model_config_schema: ModelConfigSchema = Depends(get_active_model_config)) -> List[LLM]:
     """Return the active model(s) of settings for current user"""
     models = [
@@ -48,14 +47,14 @@ async def get_current_models(
             'description': model_config_schema.description,
             'preprompt': model_config_schema.preprompt,
             'parameters': dict(model_config_schema.parameters),
-            'endpoint': endpoint
+            'server_kwargs': { 'headers': {'Authorization': request.state.authorization }},
+            'endpoint': endpoint,
         })
         for endpoint in model_config_schema.endpoints
     ]
     return models
 
 async def get_prompt_template(
-    request: Request, 
     setting_schema: SettingSchema = Depends(get_user_settings), 
     model_config_schema: ModelConfigSchema = Depends(get_active_model_config)) -> str:
     """Derive system prompt from either custom prompts or default system prompt"""

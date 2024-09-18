@@ -23,11 +23,18 @@ class ParameterDict(TypedDict, total=False):
     timeout: int
     task: str
 
+class ServerHeaderDict(TypedDict):
+    Authorization: str
+
+class ServerKwargDict(TypedDict):
+    headers: ServerHeaderDict
+
 @dataclass
 class LLM:
     name: str
     description: str
     preprompt: str
     parameters: ParameterDict
+    server_kwargs: ServerKwargDict
     endpoint: EndpointDict = field(default=None)
     endpoint_object: HuggingFaceEndpoint = field(init=False, repr=False)

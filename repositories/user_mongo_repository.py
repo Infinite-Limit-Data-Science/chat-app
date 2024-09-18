@@ -1,6 +1,6 @@
 from typing import Optional
 from datetime import datetime
-from models.ldap_token import LdapToken as Token
+from models.jwt_token import JWTToken as Token
 from models.user import User, UserSchema
 from repositories.base_mongo_repository import base_mongo_factory
 

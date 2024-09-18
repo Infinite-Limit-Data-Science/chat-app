@@ -1,14 +1,12 @@
 import os
 import json
-import logging
-from typing import List
 from fastapi import Request, Depends, logger
 from fastapi.security import HTTPBearer
 from jwt import decode, DecodeError
 from models.user import UserSchema
 from repositories.base_mongo_repository import base_mongo_factory as factory
 from repositories.user_mongo_repository import UserMongoRepository as UserRepo
-from models.ldap_token import LdapToken as Token
+from models.jwt_token import JWTToken as Token
 from models.setting import Setting, SettingSchema
 from models.model_config import ModelConfigSchema
 
@@ -18,16 +16,20 @@ CURRENT_UUID_NAME = 'sessionId'
 SettingRepo = factory(Setting)
 
 security = HTTPBearer()
-    
+
+def load_token_schema(token) -> Token:
+    keys_to_extract = ['app', 'sub', 'roles', 'aud', 'exp', 'iat']
+    required_attributes = {key: token[key] for key in keys_to_extract}
+    token = Token(**required_attributes)
+    return token
+
 def validate_jwt(authorization: str = Depends(security)) -> Token:
     credentials = authorization.credentials
     if not credentials:
         return {'error': 'Missing Token'}, 401
     try:
-        token = decode(credentials + '.', options={'verify_signature': False})
-        token = Token(**token)
-        if token.sub is None:
-            return {'error': 'Missing LDAP UUID attribute of User Entry'}, 401
+        decoded_jwt = decode(credentials, options={'verify_signature': False})
+        token = load_token_schema(decoded_jwt)
         if token.is_expired():
             return {'error': 'Token has expired'}, 401
     except DecodeError:
@@ -42,7 +44,7 @@ async def get_model_config(uuid: str) -> dict:
     await SettingRepo.update_one(options={CURRENT_UUID_NAME: uuid}, assigns={'activeModel': active_model_dict['name']})
     return active_model_dict
 
-async def get_current_user(request: Request, token: Token = Depends(validate_jwt)) -> UserSchema:
+async def get_current_user(request: Request, authorization: str = Depends(security), token: Token = Depends(validate_jwt)) -> UserSchema:
     if (
         user_attributes := await UserRepo.find_one(options={CURRENT_UUID_NAME: token.sub}) 
     ) is None:
@@ -55,4 +57,5 @@ async def get_current_user(request: Request, token: Token = Depends(validate_jwt
     await get_model_config(user.uuid)
     request.state.uuid = user.uuid
     request.state.uuid_name = CURRENT_UUID_NAME
+    request.state.authorization = authorization.credentials
     return user

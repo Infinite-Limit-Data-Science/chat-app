@@ -85,12 +85,21 @@ def base_mongo_factory(model: AbstractModel):
             else:
                 target = []
             target_dicts = {config[identifier]: config for config in target}
+            updated_configs = []
             for config in source:
-                if not key_in_dicts(config[identifier], target):
+                if key_in_dicts(config[identifier], target):
+                    current_config = target_dicts[config[identifier]]
+                    if current_config != config:
+                        target_dicts[config[identifier]] = config
+                        updated_configs.append(config)
+                else:
                     target_dicts[config[identifier]] = config
             target_dicts = {name: config for name, config in target_dicts.items() if name in [c[identifier] for c in source]}
             sync_attributes = list(target_dicts.values())
-            await cls.update_one(options=options, assigns={attribute: sync_attributes})
+
+            if updated_configs or len(sync_attributes) != len(target):
+                await cls.update_one(options=options, assigns={attribute: sync_attributes})
+
             return sync_attributes
 
     BaseMongoRepository.model = model
