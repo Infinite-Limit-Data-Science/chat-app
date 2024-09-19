@@ -35,7 +35,7 @@ class BaseMessageSchema(ChatSchema):
 
 class MessageSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):
     conversation_id: Optional[PyObjectId] = Field(description='The session id of messages, a reference to conversation id', default=None)
-    History: BaseMessageSchema = Field(description='shape of data for Conversational AI')
+    History: Optional[BaseMessageSchema] = Field(description='shape of data for Conversational AI')
 
     class Config:
         from_attributes = True

@@ -1,19 +1,19 @@
-import os
-import shutil
 from typing import Dict, Any, Optional, List
-from fastapi import APIRouter, status, Request, Body, Depends, File, UploadFile, logger
+from bson import ObjectId
+import asyncio
+from fastapi import APIRouter, status, Request, Form, Body, Depends, File, UploadFile, logger
 from fastapi.responses import StreamingResponse
 from models.mongo_schema import ObjectId
 from auth.bearer_authentication import get_current_user
-from routes.chats import get_current_models, get_prompt_template, get_message_history, chat
+from routes.chats import get_current_models, get_prompt_template, chat
 from orchestrators.chat.llm_models.llm import LLM
 from orchestrators.chat.messages.message_history import MongoMessageHistory
 from repositories.base_mongo_repository import base_mongo_factory as factory
-from models.llm_schema import PromptDict
+from routes.uploads import ingest_file
 from models.message import (
     Message,
     MessageSchema,
-    UpdateMessageSchema,
+    BaseMessageSchema,
 )
 
 MessageRepo = factory(Message)
@@ -32,29 +32,25 @@ router = APIRouter(
     tags=['message']
 )
 async def create_message(
-    request: Request, 
-    conversation_id: str, 
-    message_schema: MessageSchema = Body(...), 
+    request: Request,
+    conversation_id: str,
+    content: str = Form(...),
     models: LLM = Depends(get_current_models), 
-    system_prompt: PromptDict = Depends(get_prompt_template),
-    mongo_message_history: MongoMessageHistory = Depends(get_message_history)):
+    prompt_template: str = Depends(get_prompt_template),
+    upload_file: Optional[UploadFile] = File(None)):
     """Insert new message record in configured database, returning AI Response"""
-    ai_message = await chat(
-        system_prompt, 
+    conversation_id = ObjectId(conversation_id)
+    message_schema = MessageSchema(conversation_id=conversation_id, History=BaseMessageSchema(content=content, type='human'))
+    if upload_file:
+        await ingest_file(request.state.uuid, upload_file, conversation_id)
+    metadata = { 'uuid': request.state.uuid, 'conversation_id': conversation_id }
+    run_llm, streaming_handler = await chat(
+        prompt_template, 
         models, 
-        mongo_message_history, 
-        { 'uuid': request.state.uuid, 'conversation_id': conversation_id },
+        metadata,
         message_schema)
-    logger.logging.warning(f'AI Messages: {ai_message}')
-    # TODO: start here 
-    # if "application/json" in request.headers.get("Accept"):
-    #     return { 'docs': [doc.page_content for doc in ai_response]}
-    # if 'text/event-stream' in request.headers.get("Accept"):
-    #     async def stream_response():
-    #         for doc in ai_response:
-    #             yield doc.page_content.encode("utf-8")
-    #     return StreamingResponse(stream_response())
-    # return {'error': f'Conversation not updated'}, 400
+    asyncio.create_task(asyncio.to_thread(run_llm))
+    return StreamingResponse(streaming_handler.get_streamed_response(), media_type="text/plain")
 
 @router.get(
     '/{conversation_id}/message/{id}',
@@ -71,22 +67,7 @@ async def get_message(request: Request, conversation_id: str, id: str):
         return message
     return {'error': f'Message {id} not found'}, 404
 
-# Conversational AI does not allow the edit of existing messages
-# @router.put(
-#     '/{conversation_id}/message/{id}',
-#     response_description="Update a single message",
-#     response_model=MessageSchema,
-#     response_model_by_alias=False,
-#     tags=['message']
-# )
-# async def update_message(request: Request, conversation_id: str, id: str, message: UpdateMessageSchema = Body(...)):
-#     """Update individual fields of an existing message record and return modified fields to client."""
-#     if (
-#         updated_message := await MessageRepo.update(request.state.uuid, conversation_id, id, message)
-#     ) is not None:
-#         return updated_message
-#     return {'error': f'Message {id} not found'}, 404
-    
+# Note Conversational AI does not allow the edit of existing messages
 @router.delete(
     '/{conversation_id}/message/{id}', 
     response_description='Delete a message',
