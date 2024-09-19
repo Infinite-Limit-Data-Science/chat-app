@@ -49,4 +49,4 @@ class JWTToken(ChatSchema):
     #     return v
     
     def is_expired(self) -> bool:
-        return self.exp > datetime.now()
+        return datetime.now() > self.exp
