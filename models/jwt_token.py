@@ -24,7 +24,7 @@ class JWTToken(ChatSchema):
     @field_validator('roles', mode='before')
     @classmethod
     def validate_roles(cls, value: List[str]) -> List[str]:
-        pattern = r"^CN=Data Service Entitlements.*$"
+        pattern = r"^CN=Data\s+Services?\s+Entitlements.*$"
         valid_roles =[role for role in value if re.match(pattern, role)]
         if len(valid_roles) < 1:
              # raise ValueError('Received Invalid Group Entries, expecting at least one valid LDAP Group Entry')

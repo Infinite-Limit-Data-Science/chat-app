@@ -1,6 +1,6 @@
 import os
 import json
-from fastapi import Request, Depends, logger
+from fastapi import Request, Depends, HTTPException, logger
 from fastapi.security import HTTPBearer
 from jwt import decode, DecodeError
 from models.user import UserSchema
@@ -26,14 +26,14 @@ def load_token_schema(token) -> Token:
 def validate_jwt(authorization: str = Depends(security)) -> Token:
     credentials = authorization.credentials
     if not credentials:
-        return {'error': 'Missing Token'}, 401
+        raise HTTPException(status_code=401, detail='Missing Token')
     try:
         decoded_jwt = decode(credentials, options={'verify_signature': False})
         token = load_token_schema(decoded_jwt)
         if token.is_expired():
-            return {'error': 'Token has expired'}, 401
+            raise HTTPException(status_code=401, detail='Token has expired')
     except DecodeError:
-        return {'error': 'Invalid Token, decoding failed'}, 401
+        raise HTTPException(status_code=401, detail='Invalid Token, decoding failed')
     return token
 
 async def get_model_config(uuid: str) -> dict:
