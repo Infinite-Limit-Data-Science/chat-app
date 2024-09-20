@@ -1,22 +1,25 @@
 from typing import List, Callable, Tuple
-from fastapi import Request, Depends, logger
+from fastapi import Request, Depends, HTTPException, logger
 from clients.mongo_strategy import mongo_instance
 from orchestrators.chat.chat_bot import ChatBot
 from orchestrators.chat.llm_models.llm import LLM
-from orchestrators.chat.llm_models.factories import FACTORIES
+from orchestrators.chat.llm_models.factories import FACTORIES as LLM_FACTORIES
 from orchestrators.chat.messages.message_history import (
     MongoMessageHistory, 
     MongoMessageHistorySchema, 
-    AIMessage,
 )
-from orchestrators.chat.llm_models.model_proxy import ModelProxy
+from orchestrators.chat.llm_models.model_proxy import ModelProxy as LLMProxy
+from orchestrators.doc.embedding_models.model_proxy import ModelProxy as EmbeddingProxy
 from orchestrators.chat.llm_models.llm import StreamingToClientCallbackHandler
+from orchestrators.doc.embedding_models.embedding import BaseEmbedding
+from orchestrators.doc.embedding_models.factories import FACTORIES as EMBEDDING_FACTORIES
 from repositories.base_mongo_repository import base_mongo_factory as factory
 from models.llm_schema import PromptDict
 from models.model_config import (
     ModelConfigSchema,
     ModelConfig,
 )
+from models.embedding_config import EmbeddingConfigSchema
 from models.setting import (
     Setting,
     SettingSchema
@@ -43,15 +46,35 @@ async def get_current_models(
     model_config_schema: ModelConfigSchema = Depends(get_active_model_config)) -> List[LLM]:
     """Return the active model(s) of settings for current user"""
     models = [
-        FACTORIES[endpoint['type']](**{
+        LLM_FACTORIES[endpoint['type']](**{
             'name': model_config_schema.name,
             'description': model_config_schema.description,
             'preprompt': model_config_schema.preprompt,
             'parameters': dict(model_config_schema.parameters),
-            'server_kwargs': { 'headers': {'Authorization': request.state.authorization }},
+            'server_kwargs': { 'headers': {'Authorization': 'Bearer {request.state.authorization}' }},
             'endpoint': endpoint,
         })
         for endpoint in model_config_schema.endpoints
+    ]
+    return models    
+
+async def get_current_embedding_models(request: Request) -> List[BaseEmbedding]:
+    import os
+    import json
+    model_dict = json.loads(os.environ['EMBEDDING_MODELS'])
+    model_configs = [EmbeddingConfigSchema(**config) for config in model_dict]
+    active_model_config = next((config for config in model_configs if config.active), None)
+    if not active_model_config:
+        HTTPException(status_code=404, detail='Expected Embedding Model, got None')
+    models = [
+        EMBEDDING_FACTORIES[endpoint['type']](**{
+            'name': active_model_config.name,
+            'description': active_model_config.description,
+            'task': active_model_config.task,
+            'endpoint': endpoint,
+            'token': request.state.authorization,
+        })
+        for endpoint in active_model_config.endpoints
     ]
     return models
 
@@ -75,13 +98,15 @@ async def get_message_history(session_id: str) -> MongoMessageHistory:
     ))
 
 async def chat(prompt_template: str,
-    models: List[LLM], 
+    models: List[LLM],
+    embedding_models: List[BaseEmbedding],
     metadata: dict, 
     message_schema: MessageSchema) -> Tuple[Callable[[], None], StreamingToClientCallbackHandler]:
     """Chat"""
     mongo_message_history = await get_message_history(metadata['conversation_id'])
-    model_proxy = ModelProxy(models)
-    chat_bot = ChatBot(model_proxy, mongo_message_history, metadata)
+    model_proxy = LLMProxy(models)
+    embedding_model_proxy = EmbeddingProxy(embedding_models)
+    chat_bot = ChatBot(model_proxy, embedding_model_proxy, mongo_message_history, metadata)
     if mongo_message_history.has_no_messages:
         await chat_bot.add_system_message(prompt_template)
     history = message_schema.model_dump(by_alias=True, include={'History'})

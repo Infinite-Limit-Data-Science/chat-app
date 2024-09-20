@@ -1,5 +1,7 @@
+import logging
 from typing import TypedDict, Optional, List, Any
 from dataclasses import dataclass, field
+from langchain_core.outputs.llm_result import LLMResult
 from langchain_huggingface import HuggingFaceEndpoint
 from langchain_core.callbacks.base import BaseCallbackHandler
 import asyncio
@@ -36,6 +38,9 @@ class StreamingToClientCallbackHandler(BaseCallbackHandler):
 
     async def on_llm_new_token(self, token: str, **kwargs: Any) -> None:
         await self.queue.put(token)
+
+    async def on_llm_end(self, response: LLMResult, **kwargs: Any) -> None:
+        await self.queue.put(None)
 
     async def get_streamed_response(self):
         while True:

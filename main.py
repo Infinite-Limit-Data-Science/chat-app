@@ -5,7 +5,6 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from clients.mongo_strategy import mongo_instance
-from orchestrators.doc.redistore import RediStore as redis_instance
 from routes.home import router as home_router
 from routes.conversations import router as conversations_router
 from routes.messages import router as messages_router
@@ -17,19 +16,17 @@ load_dotenv()
 logging.basicConfig(level=logging.DEBUG)
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
-    # try:
-    await mongo_instance.connect()
-    redis_instance.connect()                               
-    # except Exception as e:
-    #     msg = 'MongoDB connection error'
-    #     logging.critical(f'{msg} {e}')
-    #     raise RuntimeError(msg)
+async def lifespan(_: FastAPI):
+    try:
+        await mongo_instance.connect()
+    except Exception as e:
+        msg = 'MongoDB connection error'
+        logging.critical(f'{msg} {e}')
+        raise RuntimeError(msg)
 
     logging.info(f'Database connection established')
     yield
     await mongo_instance.close()
-    redis_instance._disconnect()
 
 app = FastAPI(lifespan=lifespan)
 

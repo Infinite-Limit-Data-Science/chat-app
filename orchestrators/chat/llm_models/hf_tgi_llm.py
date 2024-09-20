@@ -3,13 +3,11 @@ from dataclasses import dataclass, field
 from langchain_huggingface import HuggingFaceEndpoint
 from orchestrators.chat.llm_models.llm import LLM, StreamingToClientCallbackHandler
 
-
 @dataclass(kw_only=True, slots=True)
 class HFTGI(LLM):
     def __post_init__(self) -> None:
         self.streaming_handler = StreamingToClientCallbackHandler()
         callbacks = [self.streaming_handler]
-        logging.warning(f'YIELD TO ME THE PARAMETERS {self.parameters}')
         endpoint = HuggingFaceEndpoint(
             streaming=True, 
             callbacks=callbacks, 

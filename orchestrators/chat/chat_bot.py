@@ -7,9 +7,10 @@ from langchain.chains.history_aware_retriever import create_history_aware_retrie
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from orchestrators.doc.redistore import RediStore as VectorStore
 from langchain_huggingface import HuggingFaceEndpoint
+from orchestrators.doc.embedding_models.model_proxy import ModelProxy as EmbeddingProxy
 from orchestrators.chat.messages.prompts import registry
 from orchestrators.chat.abstract_bot import AbstractBot
-from orchestrators.chat.llm_models.model_proxy import ModelProxy
+from orchestrators.chat.llm_models.model_proxy import ModelProxy as LLMProxy
 from orchestrators.chat.llm_models.llm import StreamingToClientCallbackHandler
 from orchestrators.chat.messages.message_history import (
     MongoMessageHistory,
@@ -21,10 +22,10 @@ from orchestrators.chat.messages.message_history import (
 )
 
 class ChatBot(AbstractBot):
-    def __init__(self, llm: ModelProxy, message_history: MongoMessageHistory, vector_options: dict):
+    def __init__(self, llm: LLMProxy, embeddings: EmbeddingProxy, message_history: MongoMessageHistory, vector_options: dict):
         self._llm = llm.get()
+        self._vector_store = VectorStore(embeddings, vector_options['uuid'], vector_options['conversation_id'])
         self._message_history = message_history
-        self._vector_store = VectorStore(vector_options['uuid'], vector_options['conversation_id'])
         self._contextualized_template = registry['contextualized_template']()
         self._qa_template = registry['qa_template']()
         self._llm_template = registry['llm_template']()

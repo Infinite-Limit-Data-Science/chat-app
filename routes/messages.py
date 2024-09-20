@@ -5,8 +5,14 @@ from fastapi import APIRouter, status, Request, Form, Body, Depends, File, Uploa
 from fastapi.responses import StreamingResponse
 from models.mongo_schema import ObjectId
 from auth.bearer_authentication import get_current_user
-from routes.chats import get_current_models, get_prompt_template, chat
+from routes.chats import ( 
+    get_current_models, 
+    get_current_embedding_models, 
+    get_prompt_template, 
+    chat
+)
 from orchestrators.chat.llm_models.llm import LLM
+from orchestrators.doc.embedding_models.embedding import BaseEmbedding
 from orchestrators.chat.messages.message_history import MongoMessageHistory
 from repositories.base_mongo_repository import base_mongo_factory as factory
 from routes.uploads import ingest_file
@@ -35,7 +41,8 @@ async def create_message(
     request: Request,
     conversation_id: str,
     content: str = Form(...),
-    models: LLM = Depends(get_current_models), 
+    models: LLM = Depends(get_current_models),
+    embedding_models: List[BaseEmbedding]  = Depends(get_current_embedding_models),
     prompt_template: str = Depends(get_prompt_template),
     upload_file: Optional[UploadFile] = File(None)):
     """Insert new message record in configured database, returning AI Response"""
@@ -46,7 +53,8 @@ async def create_message(
     metadata = { 'uuid': request.state.uuid, 'conversation_id': conversation_id }
     run_llm, streaming_handler = await chat(
         prompt_template, 
-        models, 
+        models,
+        embedding_models,
         metadata,
         message_schema)
     asyncio.create_task(asyncio.to_thread(run_llm))

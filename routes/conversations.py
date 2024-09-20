@@ -4,9 +4,16 @@ from typing import Annotated, List, Optional
 from fastapi import APIRouter, status, Request, Query, Body, Form, Depends, File, UploadFile, logger
 from auth.bearer_authentication import get_current_user
 from models.mongo_schema import ObjectId
-from routes.chats import get_current_models, get_prompt_template, get_message_history, chat
+from routes.chats import  (
+    get_current_models, 
+    get_current_embedding_models, 
+    get_prompt_template, 
+    get_message_history, 
+    chat
+)
 from routes.uploads import ingest_file
 from orchestrators.chat.llm_models.llm import LLM
+from orchestrators.doc.embedding_models.embedding import BaseEmbedding
 from repositories.conversation_mongo_repository import ConversationMongoRepository as ConversationRepo
 from models.conversation import (
     ConversationSchema,
@@ -45,7 +52,8 @@ async def create_conversation(
     content: str = Form(...),
     # conversation: Annotated[ConversationSchema, Form()],
     # message: Annotated[MessageSchema, Form()],
-    models: List[LLM] = Depends(get_current_models), 
+    models: List[LLM] = Depends(get_current_models),
+    embedding_models: List[BaseEmbedding]  = Depends(get_current_embedding_models),
     prompt_template: str = Depends(get_prompt_template),
     upload_file: Optional[UploadFile] = File(None)):
     """Insert new conversation record and message record in configured database, returning AI Response"""
@@ -60,7 +68,8 @@ async def create_conversation(
         metadata = { 'uuid': conversation_schema.uuid, 'conversation_id': created_conversation_id }
         run_llm, streaming_handler = await chat(
             prompt_template, 
-            models, 
+            models,
+            embedding_models,
             metadata,
             message_schema)
         asyncio.create_task(asyncio.to_thread(run_llm))
