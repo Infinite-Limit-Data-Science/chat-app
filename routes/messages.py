@@ -42,14 +42,14 @@ async def create_message(
     conversation_id: str,
     content: str = Form(...),
     models: LLM = Depends(get_current_models),
-    embedding_models: List[BaseEmbedding]  = Depends(get_current_embedding_models),
+    embedding_models: List[BaseEmbedding] = Depends(get_current_embedding_models),
     prompt_template: str = Depends(get_prompt_template),
     upload_file: Optional[UploadFile] = File(None)):
     """Insert new message record in configured database, returning AI Response"""
     conversation_id = ObjectId(conversation_id)
     message_schema = MessageSchema(conversation_id=conversation_id, History=BaseMessageSchema(content=content, type='human'))
     if upload_file:
-        await ingest_file(request.state.uuid, upload_file, conversation_id)
+        await ingest_file(embedding_models, request.state.uuid, conversation_id, upload_file)
     metadata = { 'uuid': request.state.uuid, 'conversation_id': conversation_id }
     run_llm, streaming_handler = await chat(
         prompt_template, 

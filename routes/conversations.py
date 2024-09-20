@@ -64,7 +64,7 @@ async def create_conversation(
         created_conversation_id := await ConversationRepo.create(conversation_schema=conversation_schema)
     ) is not None:
         if upload_file:
-            await ingest_file(request.state.uuid, upload_file, created_conversation_id)
+            await ingest_file(embedding_models, request.state.uuid, created_conversation_id, upload_file)
         metadata = { 'uuid': conversation_schema.uuid, 'conversation_id': created_conversation_id }
         run_llm, streaming_handler = await chat(
             prompt_template, 

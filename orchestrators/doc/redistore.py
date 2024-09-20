@@ -27,15 +27,15 @@ class RediStore(AbstractVectorStore):
         self.uuid = uuid
         self.conversation_id = conversation_id
 
-    async def add(cls, documents: List[Document]) -> List[str]:
+    async def add(self, documents: List[Document]) -> List[str]:
         """Add documents to the vector store, expecting metadata per document"""
-        return await cls._vector_store.aadd_documents(documents)
+        return await self._vector_store.aadd_documents(documents)
     
-    def similarity_search(cls, query: str, kwargs) -> List[Document]:
+    def similarity_search(self, query: str, kwargs) -> List[Document]:
         """Use Cosine Similarity Search to get immediate results"""
         """It's recommended to use runnable instead"""
         filter = (Tag("uuid") == kwargs['uuid']) & (Tag("conversation_id") == str(kwargs['conversation_id']))
-        results = cls._vector_store.similarity_search(query, filter=filter)
+        results = self._vector_store.similarity_search(query, filter=filter)
         return results
     
     def runnable(self, options: VectorStoreRetrieval = VectorStoreRetrieval()) -> VectorStoreRetriever:

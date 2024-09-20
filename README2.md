@@ -618,7 +618,7 @@ token=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
 model=BAAI/bge-large-en-v1.5
 volume=$PWD/teidata
 
-docker run --gpus all -e HUGGING_FACE_HUB_TOKEN=$token -p 8070:80 -v $volume:/data --pull always ghcr.io/huggingface/text-embeddings-inference:1.5 --model-id $model
+docker run --gpus all -e HUGGING_FACE_HUB_TOKEN=$token -p 8070:80 -v $volume:/data --pull always ghcr.io/huggingface/text-embeddings-inference:1.5 --model-id $model --max-client-batch-size 65 --auto-truncate
 
 Once you have deployed a model, you can use the embed endpoint by sending requests:
 
@@ -633,14 +633,6 @@ curl 100.28.34.190:8070/embed -X POST -d '{"inputs":"What is Deep Learning?"}' -
 Look at all those beautiful vectors above!
 
 ### Launching Vector Store
-
-Install the embeddings model:
-
-model=meta-llama/Meta-Llama-3.1-8B-Instruct
-token=token-from-huggingface
-volume=$PWD/data
-
-docker container run --gpus all --shm-size 1g -e HUGGING_FACE_HUB_TOKEN=$token -p 8080:80 -v $volume:/data ghcr.io/huggingface/text-generation-inference:2.2.0 --model-id $model
 
 ```shell
 # server

@@ -1,6 +1,7 @@
 import logging
 from dataclasses import dataclass, field
 from langchain_huggingface import HuggingFaceEndpoint
+from orchestrators.chat.llm_models.custom_huggingface_endpoint import CustomHuggingFaceEndpoint
 from orchestrators.chat.llm_models.llm import LLM, StreamingToClientCallbackHandler
 
 @dataclass(kw_only=True, slots=True)
@@ -8,7 +9,7 @@ class HFTGI(LLM):
     def __post_init__(self) -> None:
         self.streaming_handler = StreamingToClientCallbackHandler()
         callbacks = [self.streaming_handler]
-        endpoint = HuggingFaceEndpoint(
+        endpoint = CustomHuggingFaceEndpoint(
             streaming=True, 
             callbacks=callbacks, 
             **{'endpoint_url': self.endpoint['url'], **self.parameters, 'server_kwargs': dict(self.server_kwargs)})
