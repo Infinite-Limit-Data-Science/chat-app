@@ -10,7 +10,6 @@ from routes.conversations import router as conversations_router
 from routes.messages import router as messages_router
 from routes.settings import router as settings_router
 from routes.default import router as default_router
-from routes.streamingbots import router as streamingbot_router
 
 load_dotenv()
 
@@ -48,4 +47,3 @@ app.include_router(conversations_router)
 app.include_router(messages_router)
 app.include_router(settings_router)
 app.include_router(default_router)
-app.include_router(streamingbot_router)
