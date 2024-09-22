@@ -1,5 +1,4 @@
 import logging
-import asyncio
 from typing import Annotated, List, Optional
 from fastapi import APIRouter, status, Request, Query, Body, Form, Depends, File, UploadFile, logger
 from auth.bearer_authentication import get_current_user
@@ -66,14 +65,13 @@ async def create_conversation(
         if upload_file:
             await ingest_file(embedding_models, request.state.uuid, created_conversation_id, upload_file)
         metadata = { 'uuid': conversation_schema.uuid, 'conversation_id': created_conversation_id }
-        run_llm, streaming_handler = await chat(
+        llm_stream = await chat(
             prompt_template, 
             models,
             embedding_models,
             metadata,
             message_schema)
-        asyncio.create_task(asyncio.to_thread(run_llm))
-        return StreamingResponse(streaming_handler.get_streamed_response(), media_type="text/plain")
+        return StreamingResponse(llm_stream(), media_type="text/plain", headers={"X-Accel-Buffering": "no"})
         
     return {'error': f'Conversation not created'}, 400
 

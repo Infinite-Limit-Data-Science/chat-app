@@ -35,6 +35,7 @@ class RediStore(AbstractVectorStore):
         """Use Cosine Similarity Search to get immediate results"""
         """It's recommended to use runnable instead"""
         filter = (Tag("uuid") == kwargs['uuid']) & (Tag("conversation_id") == str(kwargs['conversation_id']))
+        # TODO: change to async vector store
         results = self._vector_store.similarity_search(query, filter=filter)
         return results
     

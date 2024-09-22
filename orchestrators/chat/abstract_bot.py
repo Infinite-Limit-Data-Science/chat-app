@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
+from typing import Callable, AsyncGenerator
 
 class AbstractBot(ABC):
     @abstractmethod
-    def runnable(self):
+    async def astream(self, **kwargs) -> Callable[[], AsyncGenerator[str, None]]:
         pass

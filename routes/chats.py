@@ -1,4 +1,4 @@
-from typing import List, Callable, Tuple
+from typing import List, Callable, AsyncGenerator
 from fastapi import Request, Depends, HTTPException, logger
 from clients.mongo_strategy import mongo_instance
 from orchestrators.chat.chat_bot import ChatBot
@@ -10,7 +10,6 @@ from orchestrators.chat.messages.message_history import (
 )
 from orchestrators.chat.llm_models.model_proxy import ModelProxy as LLMProxy
 from orchestrators.doc.embedding_models.model_proxy import ModelProxy as EmbeddingProxy
-from orchestrators.chat.llm_models.llm import StreamingToClientCallbackHandler
 from orchestrators.doc.embedding_models.embedding import BaseEmbedding
 from orchestrators.doc.embedding_models.factories import FACTORIES as EMBEDDING_FACTORIES
 from repositories.base_mongo_repository import base_mongo_factory as factory
@@ -101,7 +100,7 @@ async def chat(prompt_template: str,
     models: List[LLM],
     embedding_models: List[BaseEmbedding],
     metadata: dict, 
-    message_schema: MessageSchema) -> Tuple[Callable[[], None], StreamingToClientCallbackHandler]:
+    message_schema: MessageSchema) -> Callable[[], AsyncGenerator[str, None]]:
     """Chat"""
     mongo_message_history = await get_message_history(metadata['conversation_id'])
     model_proxy = LLMProxy(models)

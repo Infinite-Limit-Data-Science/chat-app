@@ -1,17 +1,15 @@
 import logging
-from typing import Callable, Tuple
+from typing import Callable, AsyncGenerator
 from langchain_core.runnables import RunnablePassthrough, RunnableLambda
-from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.chains.retrieval import create_retrieval_chain
 from langchain.chains.history_aware_retriever import create_history_aware_retriever
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from orchestrators.doc.redistore import RediStore as VectorStore
-from langchain_huggingface import HuggingFaceEndpoint
+from langchain_core.language_models.chat_models import BaseChatModel
 from orchestrators.doc.embedding_models.model_proxy import ModelProxy as EmbeddingProxy
 from orchestrators.chat.messages.prompts import registry
 from orchestrators.chat.abstract_bot import AbstractBot
 from orchestrators.chat.llm_models.model_proxy import ModelProxy as LLMProxy
-from orchestrators.chat.llm_models.llm import StreamingToClientCallbackHandler
 from orchestrators.chat.messages.message_history import (
     MongoMessageHistory,
     SystemMessage,
@@ -49,7 +47,7 @@ class ChatBot(AbstractBot):
         """Store messages in bulk in data store"""
         return await self._message_history.bulk_add(messages)
     
-    def create_rag_chain_advanced(self, llm: HuggingFaceEndpoint):
+    def create_rag_chain_advanced(self, llm: BaseChatModel):
         """Create history-aware RAG chain"""
         history_aware_retriever = create_history_aware_retriever(
             llm,
@@ -58,10 +56,10 @@ class ChatBot(AbstractBot):
         question_answer_chain = create_stuff_documents_chain(llm, self._qa_template)
         return create_retrieval_chain(history_aware_retriever, question_answer_chain)
     
-    def create_rag_chain(self, llm: HuggingFaceEndpoint):
+    def create_rag_chain(self, llm: BaseChatModel):
         pass
     
-    def create_llm_chain(self, input, llm: HuggingFaceEndpoint):
+    def create_llm_chain(self, llm: BaseChatModel):
         chain = self._llm_template | llm
         return chain
 
@@ -70,23 +68,41 @@ class ChatBot(AbstractBot):
         logging.warning(f'VECTOR COUNT REPORTING {count}')
         return count > 0
 
-    # TODO: add trimmer runnable  
-    async def runnable(self, **kwargs) -> Tuple[Callable[[], None], StreamingToClientCallbackHandler]:
-        """Invoke the chain"""
-        endpoint = self._llm.endpoint_object
-        rag_chain = self.available_vectors(kwargs['message'], kwargs['metadata'])
-        routing_chain = RunnableLambda(
-            lambda input: (
-                self.create_rag_chain_advanced(endpoint) if rag_chain
-                else self.create_llm_chain(input['input'], endpoint)
-            )
-        )
-        chain_with_history = self._message_history.get(routing_chain, rag_chain)
-        def run_llm():
-            chain_with_history.invoke(
+    async def rag_astream(self, chat_llm, kwargs):
+        routing_chain = self.create_rag_chain_advanced(chat_llm)
+        chain_with_history = self._message_history.get(routing_chain, True)
+        async def llm_astream():
+            stop_token = "<|eot_id|>"
+            async for s in chain_with_history.astream(
                 {'input': kwargs['message']},
-                config={'session_id': kwargs['session_id']}
-            )
-        return run_llm, self._llm.streaming_handler
+                    config={'session_id': kwargs['session_id']}):
+                    # Remove the stop token if it's present
+                    content = s['input']
+                    logging.warning(f'WHAT IS THE VALUE OF S ON RAG: {content}')
+                    if stop_token in content:
+                        content = s.replace(stop_token, "")
+                    yield content
+        return llm_astream
 
-    chat = runnable
+    async def chat_astream(self, chat_llm, kwargs):
+        routing_chain = self.create_llm_chain(chat_llm)
+        chain_with_history = self._message_history.get(routing_chain, False)
+        async def llm_astream():
+            stop_token = "<|eot_id|>"
+            async for s in chain_with_history.astream(
+                {'input': kwargs['message']},
+                    config={'session_id': kwargs['session_id']}):
+                    # Remove the stop token if it's present
+                    if stop_token in s.content:
+                        s.content = s.content.replace(stop_token, "")
+                    yield s.content
+        return llm_astream
+
+    # TODO: add trimmer runnable  
+    async def astream(self, **kwargs) -> Callable[[], AsyncGenerator[str, None]]:
+        """Invoke the chain"""
+        chat_llm = self._llm.endpoint_object
+        rag_chain = self.available_vectors(kwargs['message'], kwargs['metadata'])
+        return await self.rag_astream(chat_llm, kwargs) if rag_chain else await self.chat_astream(chat_llm, kwargs)
+
+    chat = astream
