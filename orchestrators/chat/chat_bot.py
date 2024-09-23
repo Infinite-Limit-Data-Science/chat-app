@@ -75,13 +75,13 @@ class ChatBot(AbstractBot):
             stop_token = "<|eot_id|>"
             async for s in chain_with_history.astream(
                 {'input': kwargs['message']},
-                    config={'session_id': kwargs['session_id']}):
-                    # Remove the stop token if it's present
-                    content = s['input']
-                    logging.warning(f'WHAT IS THE VALUE OF S ON RAG: {content}')
-                    if stop_token in content:
-                        content = s.replace(stop_token, "")
-                    yield content
+                config={'session_id': kwargs['session_id']}):
+                if 'answer' in s:
+                    s_content = s['answer']
+                    if stop_token in s_content:
+                        s_content = s_content.replace(stop_token, "")
+
+                    yield s_content
         return llm_astream
 
     async def chat_astream(self, chat_llm, kwargs):
@@ -91,7 +91,7 @@ class ChatBot(AbstractBot):
             stop_token = "<|eot_id|>"
             async for s in chain_with_history.astream(
                 {'input': kwargs['message']},
-                    config={'session_id': kwargs['session_id']}):
+                config={'session_id': kwargs['session_id']}):
                     # Remove the stop token if it's present
                     if stop_token in s.content:
                         s.content = s.content.replace(stop_token, "")

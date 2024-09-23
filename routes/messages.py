@@ -51,14 +51,13 @@ async def create_message(
     if upload_file:
         await ingest_file(embedding_models, request.state.uuid, conversation_id, upload_file)
     metadata = { 'uuid': request.state.uuid, 'conversation_id': conversation_id }
-    run_llm, streaming_handler = await chat(
+    llm_stream = await chat(
         prompt_template, 
         models,
         embedding_models,
         metadata,
         message_schema)
-    asyncio.create_task(asyncio.to_thread(run_llm))
-    return StreamingResponse(streaming_handler.get_streamed_response(), media_type="text/plain")
+    return StreamingResponse(llm_stream(), media_type="text/plain", headers={"X-Accel-Buffering": "no"})
 
 @router.get(
     '/{conversation_id}/message/{id}',
