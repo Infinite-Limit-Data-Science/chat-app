@@ -46,7 +46,7 @@ def base_mongo_factory(model: AbstractModel):
             return await cls.get_collection().count_documents(options)
 
         @classmethod
-        async def update(cls, id: str, *, schema: ChatSchema = ChatSchema, options: dict = {}):
+        async def update_one_and_return(cls, id: str, *, schema: ChatSchema = ChatSchema, options: dict = {}):
             """"Update a document"""
             # keep only fields with values
             document = {
@@ -62,8 +62,18 @@ def base_mongo_factory(model: AbstractModel):
         
         @classmethod
         async def update_one(cls, *, options: dict, assigns: dict):
+            """Update single document"""
             return await cls.get_collection().update_one(options, { '$set': assigns})
-
+        
+        @classmethod
+        async def remove_from_field(cls, id: str = None, *, options: dict = {}) -> Dict[str, Any]:
+            """Remove element from mongo field array"""
+            query = {"_id": ObjectId(id)} if id else {}
+            return await cls.get_collection().find_one_and_update(
+                query, 
+                { "$pull": options }, 
+                return_document=ReturnDocument.AFTER, )
+            
         @classmethod
         async def delete(cls, id: str, *, options: Optional[dict] = {}) -> bool:
             """"Delete a document"""

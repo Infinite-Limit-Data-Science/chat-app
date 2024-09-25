@@ -1,7 +1,17 @@
+import logging
 from typing import Dict, Any, Optional, List
 from bson import ObjectId
-import asyncio
-from fastapi import APIRouter, status, Request, Form, Body, Depends, File, UploadFile, logger
+from fastapi import (
+    APIRouter, 
+    status, 
+    Request, 
+    Form, 
+    Body, 
+    Depends, 
+    File, 
+    UploadFile, 
+    logger,
+)
 from fastapi.responses import StreamingResponse
 from models.mongo_schema import ObjectId
 from auth.bearer_authentication import get_current_user
@@ -18,8 +28,8 @@ from routes.uploads import ingest_file
 from models.message import (
     Message,
     MessageSchema,
-    BaseMessageSchema,
 )
+from repositories.conversation_mongo_repository import ConversationMongoRepository as ConversationRepo
 
 MessageRepo = factory(Message)
 
@@ -46,7 +56,7 @@ async def create_message(
     upload_file: Optional[UploadFile] = File(None)):
     """Insert new message record in configured database, returning AI Response"""
     conversation_id = ObjectId(conversation_id)
-    message_schema = MessageSchema(conversation_id=conversation_id, History=BaseMessageSchema(content=content, type='human'))
+    message_schema = MessageSchema(type='human', content=content)
     if upload_file:
         await ingest_file(embedding_models, request.state.uuid, conversation_id, upload_file)
     metadata = { 'uuid': request.state.uuid, 'conversation_id': conversation_id }
@@ -67,8 +77,9 @@ async def create_message(
 )
 async def get_message(request: Request, conversation_id: str, id: str):
     """Get message record from configured database by id"""
+    logging.warning(f'message id {id} AND conversation id {conversation_id}')
     if (
-        message := await MessageRepo.find(request.state.uuid, options={'conversation_id': conversation_id, '_id': ObjectId(id)})
+        message := await MessageRepo.find_one(id, options={'conversation_id': ObjectId(conversation_id) })
     ) is not None:
         return message
     return {'error': f'Message {id} not found'}, 404
@@ -84,5 +95,6 @@ async def delete_message(request: Request, conversation_id: str, id: str):
     if (
         deleted_message := await MessageRepo.delete(id, options={'conversation_id': ObjectId(conversation_id)})
     ) is not None:
-        return deleted_message  
+        response = await ConversationRepo.remove_from_field(conversation_id, options={'message_ids': ObjectId(id) })
+        return deleted_message
     return { 'error': f'Conversation {id} not found'}, 404

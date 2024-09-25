@@ -1,6 +1,17 @@
 import logging
 from typing import Annotated, List, Optional
-from fastapi import APIRouter, status, Request, Query, Body, Form, Depends, File, UploadFile, logger
+from fastapi import ( 
+    APIRouter, 
+    status, 
+    Request, 
+    Query, 
+    Body, 
+    Form, 
+    Depends, 
+    File, 
+    UploadFile, 
+    logger
+)
 from auth.bearer_authentication import get_current_user
 from models.mongo_schema import ObjectId
 from routes.chats import  (
@@ -15,10 +26,11 @@ from orchestrators.doc.embedding_models.embedding import BaseEmbedding
 from repositories.conversation_mongo_repository import ConversationMongoRepository as ConversationRepo
 from models.conversation import (
     ConversationSchema,
+    CreateConversationSchema,
     ConversationCollectionSchema, 
     UpdateConversationSchema,
 )
-from models.message import MessageSchema, BaseMessageSchema
+from models.message import MessageSchema
 from fastapi.responses import StreamingResponse
 
 router = APIRouter(
@@ -33,8 +45,9 @@ router = APIRouter(
     response_model_by_alias=False,
 )
 async def conversations(request: Request, record_offset: int = Query(0, description='record offset', alias='offset'), record_limit: int = Query(20, description="record limit", alias='limit')):
-    """List conversations by an offset and limit"""    
-    return ConversationCollectionSchema(conversations=await ConversationRepo.all(options={request.state.uuid_name: request.state.uuid}, offset=record_offset, limit=record_limit))
+    """List conversations by an offset and limit"""
+    conversations = await ConversationRepo.all(options={request.state.uuid_name: request.state.uuid}, offset=record_offset, limit=record_limit)
+    return ConversationCollectionSchema(conversations=conversations)
 
 @router.post(
     '/',
@@ -55,8 +68,8 @@ async def create_conversation(
     prompt_template: str = Depends(get_prompt_template),
     upload_file: Optional[UploadFile] = File(None)):
     """Insert new conversation record and message record in configured database, returning AI Response"""
-    conversation_schema = ConversationSchema(uuid=request.state.uuid, title=title)
-    message_schema = MessageSchema(History=BaseMessageSchema(content=content, type='human'))
+    conversation_schema = CreateConversationSchema(uuid=request.state.uuid, title=title)
+    message_schema = MessageSchema(type='human', content=content)
 
     if (
         created_conversation_id := await ConversationRepo.create(conversation_schema=conversation_schema)
@@ -83,7 +96,7 @@ async def create_conversation(
 async def get_conversation(request: Request, id: str):
     """Get conversation record from configured database by id"""
     if (
-        found_conversation := await ConversationRepo.find_one(id, options={request.state.uuid_name: request.state.uuid})
+        found_conversation := await ConversationRepo.find_by_aggregate(id, options={request.state.uuid_name: request.state.uuid})
     ) is not None:
         return found_conversation
     return {'error': f'Conversation {id} not found'}, 404
@@ -91,14 +104,18 @@ async def get_conversation(request: Request, id: str):
 @router.put(
     "/{id}",
     response_description="Update a single conversation",
-    response_model=ConversationSchema,
+    response_model=CreateConversationSchema,
     response_model_by_alias=False,
 )
 async def update_conversation(request: Request, id: str, conversation_schema: UpdateConversationSchema = Body(...)):
     """Update individual fields of an existing conversation record and return modified fields to client."""
     if (
-        updated_conversation := await ConversationRepo.update_one(options={'_id': ObjectId(id), request.state.uuid_name: request.state.uuid}, assigns=dict(conversation_schema))
+        updated_conversation := await ConversationRepo.update_one_and_return(
+            id, 
+            schema=conversation_schema, 
+            options={ request.state.uuid_name: request.state.uuid} )
     ) is not None:
+        logging.warning(f'UPDATED CONVERSATION PRESENTED {updated_conversation}')
         return updated_conversation
     return {'error': f'Conversation {id} not found'}, 404
     

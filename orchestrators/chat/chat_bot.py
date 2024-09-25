@@ -98,7 +98,11 @@ class ChatBot(AbstractBot):
         """On start runnable listener"""
         collection = self._message_history.chat_message_history.collection
         if(
-            _ := collection.find_one({'type': 'system', 'content': self._user_template})
+            _ := collection.find_one(
+                {
+                    'type': 'system', 
+                    'content': self._user_template, 
+                    'conversation_id': config['configurable']['session_id']})
         ) is None:
             await self.add_system_message(self._user_template)
 

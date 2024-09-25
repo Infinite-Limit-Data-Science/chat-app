@@ -1,12 +1,6 @@
-from datetime import datetime
 from typing import (
     List, 
-    Dict, 
-    Any, 
-    Union, 
-    Optional, 
-    Literal, 
-    TypedDict,
+    Optional,
 )
 from models.abstract_model import AbstractModel
 from models.mongo_schema import (
@@ -24,33 +18,14 @@ class Message(AbstractModel):
     def get_model_name(cls):
         return cls.__modelname__
 
-class AdditionalPayloadSchema(TypedDict):
-    modelDetail: Dict[str, Union[str, Dict[str, str]]]
-    files: Optional[List[str]] = Field(description='file upload data', default=None)
-
-class BaseMessageSchema(ChatSchema):
-    content: str = Field(description='The corpus')
-    type: Literal['system', 'human', 'ai'] = Field(description='Origin of Message')
-    additional_kwargs: AdditionalPayloadSchema = Field(description='Additional payload to store in message', default_factory=dict)
-
 class MessageSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):
-    conversation_id: Optional[PyObjectId] = Field(description='The session id of messages, a reference to conversation id', default=None)
-    History: Optional[BaseMessageSchema] = Field(description='shape of data for Conversational AI')
+    conversation_id: PyObjectId = Field(description='The session id of messages, a reference to conversation id')
+    History: Optional[str] = Field(description='Shape of message history for Generative AI', default=None)
+    type: str = Field(description='Type of message structure of Generative AI')
+    content: str = Field(description='Message Content')
 
     class Config:
         from_attributes = True
-        populate_by_name = True
-        arbitrary_types_allowed = True
-
-class CreatedMessageSchema(PrimaryKeyMixinSchema):
-    conversation_id: Optional[PyObjectId]
-    History: str
-
-class UpdateMessageSchema(ChatSchema):
-    History: BaseMessageSchema
-    updatedAt: datetime = Field(default_factory=datetime.now)
-    
-    class Config:
         populate_by_name = True
         arbitrary_types_allowed = True
 

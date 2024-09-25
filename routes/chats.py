@@ -100,8 +100,7 @@ async def chat(user_prompt_template: str,
             'session_id_key': database_instance.message_history_key,
         }, 
         metadata)
-    history = message_schema.model_dump(by_alias=True, include={'History'})
     return await chat_bot.chat(
         session_id=metadata['conversation_id'], 
         metadata={ 'uuid': metadata['uuid'], 'conversation_id': metadata['conversation_id'] },
-        message=history['History']['content'])
+        message=message_schema.content)
