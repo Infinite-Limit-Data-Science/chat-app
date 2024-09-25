@@ -9,6 +9,6 @@ class VectorStoreRetrieval:
 
 class AbstractVectorStore(ABC):
     @abstractmethod
-    def runnable(self, options: VectorStoreRetrieval = VectorStoreRetrieval()) -> VectorStoreRetriever:
-        """Return a runnable of vector store object"""
+    def retriever(self, options: VectorStoreRetrieval = VectorStoreRetrieval()) -> VectorStoreRetriever:
+        """Return a runnable of vector store object (a retriever is a runnable)"""
         pass

@@ -16,7 +16,8 @@ class PromptDict(TypedDict):
 
 class LLMParamSchema(ChatSchema):
     max_new_tokens: Optional[int] = Field(description='Maximum number of new tokens that model generates in response to prompt', default=512)
-    # stop_sequences: Optional[List[str]] = Field(description='Specify stop sequence that model should use to indicate the end of a response', default_factory=lambda: ["<|begin_of_text|>", "<|end_of_text|>", "<|eot_id|>", "<|im_end|>"])
+    # Note Stop Sequences is used for the LLM that implements Runnable interface
+    stop_sequences: Optional[List[str]] = Field(description='Specify stop sequence that model should use to indicate the end of a response', default_factory=lambda: ["<|eot_id|>"])
     truncate: Optional[int] = Field(description='Truncate generated text to the specified length. If generated text exceeds the specified length, it will be cut off at that point.', default=None)
     do_sample: Optional[bool] = Field(description='Control whether the model should sample from the output probability distribution or not', default=False)
     repetition_penalty: Optional[float] = Field(description='control the repetition of tokens in the generated text', default=1.2)

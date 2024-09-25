@@ -1,3 +1,4 @@
+import logging
 from typing import List, Optional, Any, Iterator, AsyncIterator
 from langchain_huggingface.chat_models.huggingface import ChatHuggingFace
 from langchain_core.messages import BaseMessage
@@ -29,27 +30,21 @@ class MyChatHuggingFace(ChatHuggingFace):
         run_manager: Optional[AsyncCallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> AsyncIterator[ChatGenerationChunk]:
-        # Convert messages to prompt using the tokenizer
         prompt = self._to_chat_prompt(messages)
 
-        # Prepare invocation parameters for HuggingFaceEndpoint's streaming
         invocation_params = self.llm._invocation_params(stop, **kwargs)
 
-        # Await the coroutine and retrieve the result, assuming it returns an async iterable
         response_stream = await self.llm.async_client.text_generation(
             prompt, **invocation_params, stream=True
         )
 
-        # Iterate over the streamed responses
         async for response in response_stream:
             stop_seq_found: Optional[str] = None
 
-            # Check for stop sequences in the response
             for stop_seq in invocation_params["stop_sequences"]:
                 if stop_seq in response:
                     stop_seq_found = stop_seq
 
-            # Identify the portion of the response to yield
             text: Optional[str] = None
             if stop_seq_found:
                 text = response[:response.index(stop_seq_found)]

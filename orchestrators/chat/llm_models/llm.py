@@ -21,6 +21,8 @@ class ParameterDict(TypedDict, total=False):
     top_k: int
     top_p: float
     temperature: float
+    # stop sequences is necessary for a component implementing the LLM Runnable
+    stop_sequences: List[str]
 
 class ServerHeaderDict(TypedDict):
     Authorization: str

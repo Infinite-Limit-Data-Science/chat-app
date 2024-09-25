@@ -1,17 +1,18 @@
-
+import logging
 from typing import Sequence
 from dataclasses import dataclass, field, asdict
-from langchain_mongodb import MongoDBChatMessageHistory
 from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, AIMessage
 from langchain_core.runnables.history import (
     RunnableWithMessageHistory, 
     Runnable, 
     MessagesOrDictWithMessages
 )
+from orchestrators.chat.messages.my_mongodb_chat_message_history import MyMongoDBChatMessageHistory
 
 @dataclass(kw_only=True, slots=True)
 class BaseMessageHistorySchema:
     """Base Schema for a data store like Redis, MongoDB, PostgreSQL, ChromaDB, etc"""
+    history_size: int = 100 # restrict message history to 100 messages
     connection_string: str
     session_id_key: str
     session_id: str
@@ -26,11 +27,13 @@ class MongoMessageHistorySchema(BaseMessageHistorySchema):
 class MongoMessageHistory:
     def __init__(self, schema: MongoMessageHistorySchema):
         self._schema = schema
-        self._message_history = MongoDBChatMessageHistory(**asdict(self._schema))
+        self._message_history = MyMongoDBChatMessageHistory(**asdict(self._schema))
 
     @property
     def messages(self) -> list[BaseMessage]:
-        return self._message_history.messages
+        messages = self._message_history.messages
+        logging.warning(f'found message history: {messages}')
+        return messages
     
     @property
     def has_no_messages(self) -> bool:

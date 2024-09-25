@@ -39,7 +39,7 @@ class RediStore(AbstractVectorStore):
         results = self._vector_store.similarity_search(query, filter=filter)
         return results
     
-    def runnable(self, options: VectorStoreRetrieval = VectorStoreRetrieval()) -> VectorStoreRetriever:
+    def retriever(self, options: VectorStoreRetrieval = VectorStoreRetrieval()) -> VectorStoreRetriever:
         """Generate a retriever which is a runnable to be incorporated in chain"""
         vector_filter = { 
             'uuid': self.uuid, 

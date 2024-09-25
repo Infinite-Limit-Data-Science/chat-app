@@ -50,7 +50,7 @@ async def get_current_models(
             'description': model_config_schema.description,
             'preprompt': model_config_schema.preprompt,
             'parameters': dict(model_config_schema.parameters),
-            'server_kwargs': { 'headers': {'Authorization': 'Bearer {request.state.authorization}' }},
+            'server_kwargs': { 'headers': {'Authorization': f'Bearer {request.state.authorization}' }},
             'endpoint': endpoint,
         })
         for endpoint in model_config_schema.endpoints
@@ -96,7 +96,7 @@ async def get_message_history(session_id: str) -> MongoMessageHistory:
         session_id=session_id
     ))
 
-async def chat(prompt_template: str,
+async def chat(user_prompt_template: str,
     models: List[LLM],
     embedding_models: List[BaseEmbedding],
     metadata: dict, 
@@ -105,9 +105,7 @@ async def chat(prompt_template: str,
     mongo_message_history = await get_message_history(metadata['conversation_id'])
     model_proxy = LLMProxy(models)
     embedding_model_proxy = EmbeddingProxy(embedding_models)
-    chat_bot = ChatBot(model_proxy, embedding_model_proxy, mongo_message_history, metadata)
-    if mongo_message_history.has_no_messages:
-        await chat_bot.add_system_message(prompt_template)
+    chat_bot = ChatBot(user_prompt_template, model_proxy, embedding_model_proxy, mongo_message_history, metadata)
     history = message_schema.model_dump(by_alias=True, include={'History'})
     return await chat_bot.chat(
         session_id=metadata['conversation_id'], 
