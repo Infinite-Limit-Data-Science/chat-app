@@ -7,7 +7,6 @@ from routes.chats import  (
     get_current_models, 
     get_current_embedding_models, 
     get_prompt_template, 
-    get_message_history, 
     chat
 )
 from routes.uploads import ingest_file

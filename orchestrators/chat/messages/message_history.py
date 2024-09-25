@@ -12,28 +12,26 @@ from orchestrators.chat.messages.my_mongodb_chat_message_history import MyMongoD
 @dataclass(kw_only=True, slots=True)
 class BaseMessageHistorySchema:
     """Base Schema for a data store like Redis, MongoDB, PostgreSQL, ChromaDB, etc"""
-    history_size: int = 100 # restrict message history to 100 messages
     connection_string: str
+    database_name: str
+    history_size: int = 100 # restrict message history to 100 messages
     session_id_key: str
-    session_id: str
+    session_id: str = None
 
 @dataclass(kw_only=True, slots=True)
 class MongoMessageHistorySchema(BaseMessageHistorySchema):
-    """Schema for MongoDB data store"""
-    database_name: str
+    """Schema for MongoDB data store"""    
     collection_name: str
     create_index: bool = True
 
 class MongoMessageHistory:
     def __init__(self, schema: MongoMessageHistorySchema):
         self._schema = schema
-        self._message_history = MyMongoDBChatMessageHistory(**asdict(self._schema))
+        self.chat_message_history = MyMongoDBChatMessageHistory(**asdict(self._schema))
 
     @property
     def messages(self) -> list[BaseMessage]:
-        messages = self._message_history.messages
-        logging.warning(f'found message history: {messages}')
-        return messages
+        return self.chat_message_history.messages
     
     @property
     def has_no_messages(self) -> bool:
@@ -41,7 +39,7 @@ class MongoMessageHistory:
 
     async def add_messages(self, messages: Sequence[BaseMessage]):
         """Add messages to store"""
-        await self._message_history.aadd_messages(messages)
+        await self.chat_message_history.aadd_messages(messages)
 
     async def system(self, prompt: str) -> SystemMessage:
         """Add system message to store"""
@@ -67,7 +65,7 @@ class MongoMessageHistory:
         return True
 
     def get_session_history(self):
-        return self._message_history
+        return self.chat_message_history
 
     def get(self, chain: Runnable[MessagesOrDictWithMessages, MessagesOrDictWithMessages | str | BaseMessage], rag_chain: bool) -> RunnableWithMessageHistory:
         """Wraps a Runnable with a Chat History Runnable"""

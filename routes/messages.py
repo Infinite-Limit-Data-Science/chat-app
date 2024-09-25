@@ -13,7 +13,6 @@ from routes.chats import (
 )
 from orchestrators.chat.llm_models.llm import LLM
 from orchestrators.doc.embedding_models.embedding import BaseEmbedding
-from orchestrators.chat.messages.message_history import MongoMessageHistory
 from repositories.base_mongo_repository import base_mongo_factory as factory
 from routes.uploads import ingest_file
 from models.message import (

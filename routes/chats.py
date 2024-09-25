@@ -1,19 +1,14 @@
 from typing import List, Callable, AsyncGenerator
 from fastapi import Request, Depends, HTTPException, logger
-from clients.mongo_strategy import mongo_instance
+from clients.mongo_strategy import mongo_instance as database_instance
 from orchestrators.chat.chat_bot import ChatBot
 from orchestrators.chat.llm_models.llm import LLM
 from orchestrators.chat.llm_models.factories import FACTORIES as LLM_FACTORIES
-from orchestrators.chat.messages.message_history import (
-    MongoMessageHistory, 
-    MongoMessageHistorySchema, 
-)
 from orchestrators.chat.llm_models.model_proxy import ModelProxy as LLMProxy
 from orchestrators.doc.embedding_models.model_proxy import ModelProxy as EmbeddingProxy
 from orchestrators.doc.embedding_models.embedding import BaseEmbedding
 from orchestrators.doc.embedding_models.factories import FACTORIES as EMBEDDING_FACTORIES
 from repositories.base_mongo_repository import base_mongo_factory as factory
-from models.llm_schema import PromptDict
 from models.model_config import (
     ModelConfigSchema,
     ModelConfig,
@@ -86,26 +81,25 @@ async def get_prompt_template(
         return prompt.content
     return model_config_schema.preprompt or _DEFAULT_PREPROMPT
 
-async def get_message_history(session_id: str) -> MongoMessageHistory:
-    """Return Message History delegator"""
-    return MongoMessageHistory(MongoMessageHistorySchema(
-        connection_string=mongo_instance.connection_string,
-        database_name=mongo_instance.name,
-        collection_name=mongo_instance.message_history_collection,
-        session_id_key=mongo_instance.message_history_key,
-        session_id=session_id
-    ))
-
 async def chat(user_prompt_template: str,
     models: List[LLM],
     embedding_models: List[BaseEmbedding],
     metadata: dict, 
     message_schema: MessageSchema) -> Callable[[], AsyncGenerator[str, None]]:
     """Chat"""
-    mongo_message_history = await get_message_history(metadata['conversation_id'])
     model_proxy = LLMProxy(models)
     embedding_model_proxy = EmbeddingProxy(embedding_models)
-    chat_bot = ChatBot(user_prompt_template, model_proxy, embedding_model_proxy, mongo_message_history, metadata)
+    chat_bot = ChatBot(
+        user_prompt_template, 
+        model_proxy, 
+        embedding_model_proxy, 
+        {
+            'connection_string': database_instance.connection_string,
+            'database_name': database_instance.name,
+            'collection_name': database_instance.message_history_collection,
+            'session_id_key': database_instance.message_history_key,
+        }, 
+        metadata)
     history = message_schema.model_dump(by_alias=True, include={'History'})
     return await chat_bot.chat(
         session_id=metadata['conversation_id'], 

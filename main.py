@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from clients.mongo_strategy import mongo_instance
+from clients.mongo_strategy import mongo_instance as database_instance
 from routes.home import router as home_router
 from routes.conversations import router as conversations_router
 from routes.messages import router as messages_router
@@ -18,15 +18,15 @@ logging.basicConfig(level=logging.DEBUG)
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     try:
-        await mongo_instance.connect()
+        await database_instance.connect()
     except Exception as e:
-        msg = 'MongoDB connection error'
+        msg = 'Database connection error'
         logging.critical(f'{msg} {e}')
         raise RuntimeError(msg)
 
     logging.info(f'Database connection established')
     yield
-    await mongo_instance.close()
+    await database_instance.close()
 
 app = FastAPI(lifespan=lifespan)
 
