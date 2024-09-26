@@ -15,7 +15,7 @@ class PromptDict(TypedDict):
     content: str
 
 class LLMParamSchema(ChatSchema):
-    max_new_tokens: Optional[int] = Field(description='Maximum number of new tokens that model generates in response to prompt', default=512)
+    max_new_tokens: Optional[int] = Field(description='Maximum number of new tokens that model generates in response to prompt', default=1024)
     # Note Stop Sequences is used for the LLM that implements Runnable interface
     stop_sequences: Optional[List[str]] = Field(description='Specify stop sequence that model should use to indicate the end of a response', default_factory=lambda: ["<|eot_id|>"])
     truncate: Optional[int] = Field(description='Truncate generated text to the specified length. If generated text exceeds the specified length, it will be cut off at that point.', default=None)

@@ -9,7 +9,7 @@ from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, AI
 class MyChatHuggingFace(ChatHuggingFace):
     """Wrapper to ChatHuggingFace. See https://github.com/langchain-ai/langchain/issues/17779"""
     def _resolve_model_id(self) -> None:
-        self.model_id = 'meta-llama/Meta-Llama-3.1-8B-Instruct'
+        pass
     
     def _stream(
         self,

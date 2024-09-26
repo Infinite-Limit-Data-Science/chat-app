@@ -57,14 +57,25 @@ def qa_template():
         ('human', "{input}"),
     ])
 
-LLM_TEMPLATE = """
-    You are a helpful assistant. Answer all the question to the best of your ability
+CHAT_HISTORY_TEMPLATE = """
+    You are a helpful assistant. Answer all the questions to the best of your ability
 """
-@register('llm_template')
-def llm_template():
+@register('chat_history_template')
+def chat_history_template():
         """Returns runnable"""
         return ChatPromptTemplate.from_messages([
-            ("system",LLM_TEMPLATE),
+            ("system",CHAT_HISTORY_TEMPLATE),
             MessagesPlaceholder('chat_history'),
             ('human', "{input}"),
         ])
+
+SUMMARIZATION_TEMPLATE = """Provide a concise summary in a few words, and prefix the summary with an emoji that reflects the tone of the summary:
+
+Text:
+{input}
+
+Summary:"""
+@register('summarization_template')
+def summarization_template():
+     """Returns runnable"""
+     return ChatPromptTemplate.from_template(SUMMARIZATION_TEMPLATE)

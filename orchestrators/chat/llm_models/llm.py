@@ -40,3 +40,4 @@ class LLM:
     endpoint: EndpointDict = field(default=None)
     # endpoint_object must implement BaseChatModel (integrated with Runnable and SequenceRunnable)
     endpoint_object: MyChatHuggingFace | ChatHuggingFace = field(init=False, repr=False)
+    summary_object: MyChatHuggingFace | ChatHuggingFace = field(init=False, repr=False)

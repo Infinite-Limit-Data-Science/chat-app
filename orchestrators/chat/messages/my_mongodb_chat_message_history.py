@@ -33,3 +33,9 @@ class MyMongoDBChatMessageHistory(MongoDBChatMessageHistory):
         
         except errors.WriteError as err:
             logger.error(err)
+
+    def add_summary(self, summary: str) -> None:
+        self.db[_ROOT_COLLECTION].update_one(
+            { '_id': self.session_id },
+            { '$set': { 'title': summary } }
+        )

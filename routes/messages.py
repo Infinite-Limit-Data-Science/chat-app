@@ -56,9 +56,9 @@ async def create_message(
     upload_file: Optional[UploadFile] = File(None)):
     """Insert new message record in configured database, returning AI Response"""
     conversation_id = ObjectId(conversation_id)
-    message_schema = MessageSchema(type='human', content=content)
     if upload_file:
         await ingest_file(embedding_models, request.state.uuid, conversation_id, upload_file)
+    message_schema = MessageSchema(type='human', content=content, conversation_id=conversation_id)
     metadata = { 'uuid': request.state.uuid, 'conversation_id': conversation_id }
     llm_stream = await chat(
         prompt_template, 

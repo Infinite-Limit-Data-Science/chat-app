@@ -1,5 +1,6 @@
 import logging
 from typing import Callable, AsyncGenerator, Optional, List
+from pymongo import DESCENDING
 from langchain_core.runnables import Runnable, RunnablePassthrough, RunnableLambda
 from langchain.chains.retrieval import create_retrieval_chain
 from langchain.chains.history_aware_retriever import create_history_aware_retriever
@@ -37,7 +38,8 @@ class ChatBot(AbstractBot):
             MongoMessageHistorySchema(session_id=vector_config['conversation_id'], **history_config))
         self._contextualized_template = registry['contextualized_template']()
         self._qa_template = registry['qa_template']()
-        self._llm_template = registry['llm_template']()
+        self._chat_history_template = registry['chat_history_template']()
+        self._summarization_template = registry['summarization_template']()
 
     async def add_system_message(self, message: str) -> SystemMessage:
         """Add system message to data store"""
@@ -71,7 +73,7 @@ class ChatBot(AbstractBot):
         pass
     
     def create_llm_chain(self, llm: BaseChatModel) -> Runnable:
-        chain = self._llm_template | llm
+        chain = self._chat_history_template | llm
         return chain
 
     def available_vectors(self, context, metadata):
@@ -106,10 +108,27 @@ class ChatBot(AbstractBot):
         ) is None:
             await self.add_system_message(self._user_template)
 
+    async def _aexit_chat_chain(self, run: Run, config: RunnableConfig) -> None:
+        """On end runnable listener"""
+        collection = self._message_history.chat_message_history.collection
+        if(
+            ai_message := collection.find_one(
+                {
+                    'type': { '$in': ['ai', 'AIMessageChunk'] }, 
+                    'conversation_id': config['configurable']['session_id']
+                }, 
+                sort=[("createdAt", DESCENDING)])
+        ) is not None:
+            chain = self._summarization_template | self._llm.summary_object
+            summary = await chain.ainvoke({'input': ai_message['content']})
+            self._message_history.chat_message_history.add_summary(summary.content)
+
     async def rag_astream(self, chat_llm, options):
         chain = self.create_rag_chain_advanced(chat_llm)
         chain_with_history = self._message_history.get(chain, True)
-        chain_with_history = chain_with_history.with_alisteners(on_start=self._aenter_chat_chain)
+        chain_with_history = chain_with_history.with_alisteners(
+            on_start=self._aenter_chat_chain,
+            on_end=self._aexit_chat_chain)
         config=self.runnable_config(options)
         async def llm_astream():
             stop_token = "<|eot_id|>"
@@ -127,7 +146,9 @@ class ChatBot(AbstractBot):
     async def chat_astream(self, chat_llm, options):
         chain = self.create_llm_chain(chat_llm)
         chain_with_history = self._message_history.get(chain, False)
-        chain_with_history = chain_with_history.with_alisteners(on_start=self._aenter_chat_chain)
+        chain_with_history = chain_with_history.with_alisteners(
+            on_start=self._aenter_chat_chain,
+            on_end=self._aexit_chat_chain)
         config=self.runnable_config(options)
         async def llm_astream():
             stop_token = "<|eot_id|>"

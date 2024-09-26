@@ -45,7 +45,7 @@ class ConversationSchema(PrimaryKeyMixinSchema, TimestampMixinSchema, LegacyAttr
 
 class CreateConversationSchema(PrimaryKeyMixinSchema, TimestampMixinSchema, LegacyAttributes):
     uuid: Optional[str] = Field(alias="sessionId", description='downcased alphanumeric session id', default=None)
-    title: str = Field(description='title of conversation')
+    title: Optional[str] = Field(description='title of conversation', default=None)
     message_ids: Optional[List[PyObjectId]] = Field(description='Messages associated with Conversation', default_factory=list)
 
     class Config:
