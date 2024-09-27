@@ -36,4 +36,4 @@ class HFTGI(LLM):
             task='summarization',
             server_kwargs=dict(self.server_kwargs)
         )
-        self.summary_object = MyChatHuggingFace(llm=summary_llm, model_id=self.name)
+        self.summary_object = MyChatHuggingFace(llm=summary_llm, tokenizer=tokenizer, model_id=self.name)

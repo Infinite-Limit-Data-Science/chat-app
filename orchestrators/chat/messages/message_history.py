@@ -1,6 +1,7 @@
 import logging
 from typing import Sequence
 from dataclasses import dataclass, field, asdict
+from bson import ObjectId
 from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, AIMessage
 from langchain_core.runnables.history import (
     RunnableWithMessageHistory, 
@@ -16,13 +17,13 @@ class BaseMessageHistorySchema:
     database_name: str
     history_size: int = 100 # restrict message history to 100 messages
     session_id_key: str
-    session_id: str = None
 
 @dataclass(kw_only=True, slots=True)
 class MongoMessageHistorySchema(BaseMessageHistorySchema):
     """Schema for MongoDB data store"""    
     collection_name: str
     create_index: bool = True
+    session_id: ObjectId
 
 class MongoMessageHistory:
     def __init__(self, schema: MongoMessageHistorySchema):

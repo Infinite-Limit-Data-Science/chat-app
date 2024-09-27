@@ -5,11 +5,13 @@ from langchain_core.runnables import Runnable, RunnablePassthrough, RunnableLamb
 from langchain.chains.retrieval import create_retrieval_chain
 from langchain.chains.history_aware_retriever import create_history_aware_retriever
 from langchain.chains.combine_documents import create_stuff_documents_chain
-from orchestrators.doc.redistore import RediStore as VectorStore
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.runnables.config import RunnableConfig
 from langchain_core.tracers.schemas import Run
+from orchestrators.doc.ingestors.ingest import ingest
+from orchestrators.doc.vector_stores.factories import FACTORIES as V_FACTORIES
 from orchestrators.doc.embedding_models.model_proxy import ModelProxy as EmbeddingProxy
+from orchestrators.doc.runnable_extensions.wrapper_runnable_config import WrapperRunnableConfig
 from orchestrators.chat.messages.prompts import registry
 from orchestrators.chat.abstract_bot import AbstractBot
 from orchestrators.chat.llm_models.model_proxy import ModelProxy as LLMProxy
@@ -25,17 +27,21 @@ from orchestrators.chat.messages.message_history import (
 
 class ChatBot(AbstractBot):
     def __init__(
-            self, 
+            self,
+            store: str,
             user_prompt_template: str, 
             llm: LLMProxy, 
             embeddings: EmbeddingProxy, 
             history_config: dict,
-            vector_config: dict):
+            wrapper_runnable_config: WrapperRunnableConfig):
         self._user_template = user_prompt_template
         self._llm = llm.get()
-        self._vector_store = VectorStore(embeddings, vector_config['uuid'], vector_config['conversation_id'])
+        self._wrapper_runnable_config = wrapper_runnable_config
+        self._vector_store = V_FACTORIES[store](embeddings, self._wrapper_runnable_config)
         self._message_history = MongoMessageHistory(
-            MongoMessageHistorySchema(session_id=vector_config['conversation_id'], **history_config))
+            MongoMessageHistorySchema(
+                session_id=self._wrapper_runnable_config['configurable']['session_id'], 
+                **history_config))
         self._contextualized_template = registry['contextualized_template']()
         self._qa_template = registry['qa_template']()
         self._chat_history_template = registry['chat_history_template']()
@@ -76,15 +82,16 @@ class ChatBot(AbstractBot):
         chain = self._chat_history_template | llm
         return chain
 
-    def available_vectors(self, context, metadata):
-        count = len(self._vector_store.similarity_search(context, metadata))
+    async def aavailable_vectors(self, context):
+        """Async Available Vector Search"""
+        vectors = await self._vector_store.asimilarity_search(context)
+        count = len(vectors)
         logging.warning(f'VECTOR COUNT REPORTING {count}')
         return count > 0
 
-    @staticmethod
-    def runnable_config(options) -> dict:
+    def runnable_config(self) -> dict:
         return {
-            'configurable': {'session_id': options['session_id']}
+            'configurable': self._wrapper_runnable_config['configurable']
         }
 
     def _trace_history_chain(self) -> None:
@@ -123,17 +130,17 @@ class ChatBot(AbstractBot):
             summary = await chain.ainvoke({'input': ai_message['content']})
             self._message_history.chat_message_history.add_summary(summary.content)
 
-    async def rag_astream(self, chat_llm, options):
+    async def rag_astream(self, chat_llm: BaseChatModel, message: str):
         chain = self.create_rag_chain_advanced(chat_llm)
         chain_with_history = self._message_history.get(chain, True)
         chain_with_history = chain_with_history.with_alisteners(
             on_start=self._aenter_chat_chain,
             on_end=self._aexit_chat_chain)
-        config=self.runnable_config(options)
+        config=self.runnable_config()
         async def llm_astream():
             stop_token = "<|eot_id|>"
             async for s in chain_with_history.astream(
-                {'input': options['message']},
+                {'input': message},
                 config=config):
                 if 'answer' in s:
                     s_content = s['answer']
@@ -143,17 +150,17 @@ class ChatBot(AbstractBot):
                     yield s_content
         return llm_astream
 
-    async def chat_astream(self, chat_llm, options):
+    async def chat_astream(self, chat_llm: BaseChatModel, message: str):
         chain = self.create_llm_chain(chat_llm)
         chain_with_history = self._message_history.get(chain, False)
         chain_with_history = chain_with_history.with_alisteners(
             on_start=self._aenter_chat_chain,
             on_end=self._aexit_chat_chain)
-        config=self.runnable_config(options)
+        config=self.runnable_config()
         async def llm_astream():
             stop_token = "<|eot_id|>"
             async for s in chain_with_history.astream(
-                {'input': options['message']},
+                {'input': message},
                 config=config):
                     # Remove the stop token if it's present
                     if stop_token in s.content:
@@ -162,11 +169,11 @@ class ChatBot(AbstractBot):
         return llm_astream
 
     # TODO: add trimmer runnable  
-    async def astream(self, **kwargs) -> Callable[[], AsyncGenerator[str, None]]:
+    async def astream(self, message: str) -> Callable[[], AsyncGenerator[str, None]]:
         """Invoke the chain"""
         self._trace_history_chain()
         chat_llm = self._llm.endpoint_object
-        rag_chain = self.available_vectors(kwargs['message'], kwargs['metadata'])
-        return await self.rag_astream(chat_llm, kwargs) if rag_chain else await self.chat_astream(chat_llm, kwargs)
+        rag_chain = await self.aavailable_vectors(message)
+        return await self.rag_astream(chat_llm, message) if rag_chain else await self.chat_astream(chat_llm, message)
 
     chat = astream

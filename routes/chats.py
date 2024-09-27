@@ -20,6 +20,8 @@ from models.setting import (
 )
 from models.message import MessageSchema
 
+_DEFAULT_VECTOR_STORE='redis'
+
 _DEFAULT_PREPROMPT='You are a helpful assistant. Answer all the questions to the best of your ability.'
 
 SettingRepo = factory(Setting)
@@ -84,12 +86,13 @@ async def get_prompt_template(
 async def chat(user_prompt_template: str,
     models: List[LLM],
     embedding_models: List[BaseEmbedding],
-    metadata: dict, 
+    data: dict, 
     message_schema: MessageSchema) -> Callable[[], AsyncGenerator[str, None]]:
     """Chat"""
     model_proxy = LLMProxy(models)
     embedding_model_proxy = EmbeddingProxy(embedding_models)
     chat_bot = ChatBot(
+        _DEFAULT_VECTOR_STORE,
         user_prompt_template, 
         model_proxy, 
         embedding_model_proxy, 
@@ -99,8 +102,23 @@ async def chat(user_prompt_template: str,
             'collection_name': database_instance.message_history_collection,
             'session_id_key': database_instance.message_history_key,
         }, 
-        metadata)
-    return await chat_bot.chat(
-        session_id=metadata['conversation_id'], 
-        metadata={ 'uuid': metadata['uuid'], 'conversation_id': metadata['conversation_id'] },
-        message=message_schema.content)
+        {
+            'metadata': {
+                'uuid': data['uuid'], 
+                'conversation_id': data['conversation_id'],
+                'schema': [
+                    {
+                        'name': 'uuid', 
+                        'type': 'tag'
+                    },
+                    {
+                        'name': 'conversation_id', 
+                        'type': 'tag'
+                    },
+                ]
+            },
+            'configurable': {
+                'session_id': data['conversation_id'],
+            }
+        })
+    return await chat_bot.chat(message_schema.content)
