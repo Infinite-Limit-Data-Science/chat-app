@@ -2,15 +2,11 @@ import logging
 from typing import Dict, Any, Optional, List
 from pydantic import BaseModel
 from models.mongo_schema import ObjectId
-from models.message import Message, MessageSchema
 from models.conversation import (
     Conversation, 
     ConversationSchema, 
-    UpdateConversationSchema,
 )
 from repositories.base_mongo_repository import base_mongo_factory as factory
-
-MessageRepo = factory(Message)
 
 _JOIN = {
             '$lookup': {
@@ -49,6 +45,7 @@ class ConversationMongoRepository(factory(Conversation)):
     async def all(cls, *, options: Optional[dict] = {}, offset: int = 0, limit: int = 20) -> List[Dict[str, Any]]:
         """Fetch all documents in database filtered by user, limit, and offset"""
         stages = []
+        stages.append({ '$match': options })
         stages.append(_JOIN)
         stages.append(_PROJECT)
         stages.append({ '$skip': offset })
