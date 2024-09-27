@@ -66,4 +66,4 @@ class ConversationMongoRepository(factory(Conversation)):
         stages.append(_JOIN)
         stages.append(_PROJECT)
         result = await cls.get_collection().aggregate(stages).to_list(length=None)
-        return result[0]
+        return result and result[0]

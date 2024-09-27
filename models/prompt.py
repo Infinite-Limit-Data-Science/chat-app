@@ -18,7 +18,7 @@ class Prompt(AbstractModel):
         return cls.__modelname__
     
 class PromptSchema(LLMPrompt, PrimaryKeyMixinSchema, TimestampMixinSchema):
-    model_configs: List[PyObjectId] = Field(description='Model configs associated with the Prompt', default_factory=[])
+    my_model_configs: List[PyObjectId] = Field(alias='model_configs', description='Model configs associated with the Prompt', default_factory=list)
 
     class Config:
         from_attributes = True

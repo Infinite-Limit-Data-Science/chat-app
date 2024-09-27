@@ -1,6 +1,7 @@
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Coroutine
 from pymongo import ReturnDocument
+from pymongo.results import UpdateResult
 from motor.motor_asyncio import AsyncIOMotorCollection
 from clients.mongo_strategy import mongo_instance as instance
 from models.mongo_schema import ObjectId
@@ -61,7 +62,7 @@ def base_mongo_factory(model: AbstractModel):
             return update_result
         
         @classmethod
-        async def update_one(cls, *, options: dict, assigns: dict):
+        async def update_one(cls, *, options: dict, assigns: dict) -> Coroutine[Any, Any, UpdateResult]:
             """Update single document"""
             return await cls.get_collection().update_one(options, { '$set': assigns})
         
@@ -75,12 +76,10 @@ def base_mongo_factory(model: AbstractModel):
                 return_document=ReturnDocument.AFTER, )
             
         @classmethod
-        async def delete(cls, id: str, *, options: Optional[dict] = {}) -> bool:
+        async def delete(cls, id: str, *, options: Optional[dict] = {}) -> int:
             """"Delete a document"""
             delete_result = await cls.get_collection().delete_one({"_id": ObjectId(id), **options})
-            if delete_result.deleted_count == 1:
-                return True
-            return False
+            return delete_result.deleted_count
         
         @classmethod
         async def sync(cls, *, options: dict, source: List[ChatSchema], attribute: str, identifier: str) -> List[dict]:

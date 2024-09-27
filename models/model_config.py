@@ -22,7 +22,8 @@ class EndpointDict(TypedDict):
 class ModelConfigSchema(LLMBase):
     endpoints: Optional[List[EndpointDict]] = Field(description='Valid if using TGI', default=None)
     model: Optional[str] = Field(description='Valid if using pipeline', default=None)
-    
+    prompts: List[PyObjectId] = Field(alias='prompts', description='Prompts associated with this model config', default_factory=list)
+
     class Config:
         from_attributes = True
         populate_by_name = True

@@ -1,3 +1,4 @@
+from typing import Union
 from fastapi import APIRouter, Request, status, Query, Body, Depends
 from auth.bearer_authentication import get_current_user
 from repositories.base_mongo_repository import base_mongo_factory as factory
@@ -19,22 +20,22 @@ router = APIRouter(
 @router.get(
     '/{id}',
     response_description="Get a single setting",
-    response_model=SettingSchema,
+    response_model=Union[SettingSchema, dict],
     response_model_by_alias=False,
 )
 async def get_setting(request: Request, id: str):
     """Get setting record from configured database by id"""
     if (
-        setting := await SettingRepo.find(id)
+        setting := await SettingRepo.find_one(id)
     ) is not None:
         return setting
-    return {'error': f'Setting {id} not found'}, 404
+    return {}
 
 # TODO: update this below
 @router.put(
     '/{id}',
     response_description="update a single setting",
-    response_model=SettingSchema,
+    response_model=Union[SettingSchema, dict],
     response_model_by_alias=False,
 )
 async def update_setting(request: Request, id: str, setting_schema: UpdateSettingSchema = Body(...)):
@@ -43,4 +44,4 @@ async def update_setting(request: Request, id: str, setting_schema: UpdateSettin
         updated_setting := await SettingRepo.update(request.state.uuid, id, setting_schema)
     ) is not None:
         return updated_setting
-    return {'error': f'Setting {id} not found'}, 404
+    return {}

@@ -24,13 +24,11 @@ class SettingSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):
     hideEmojiOnSidebar: Optional[bool] = Field(description='hide emoji on sidebar', default=False)
     ethicsModalAcceptedAt: datetime = Field(default_factory=datetime.now)
     prompts: Optional[List[PromptSchema]] = Field(description='List of prompts associated with user setting', default_factory=list)
-    model_configs: Optional[List[ModelConfigSchema]] = Field(description='List of model configs associated with user settings', default_factory=list)
+    my_model_configs: Optional[List[ModelConfigSchema]] = Field(alias='model_configs', description='List of model configs associated with user settings', default_factory=list)
     # Legacy attributes
     customPrompts: Optional[Dict[str,str]] = Field(description='Legacy attribute', default = None)
     shareConversationsWithModelAuthors: Optional[bool] = Field(description='Legacy attribute', default=None)
     modelParameters: Optional[dict] = Field(description='Legacy attribute', default=None)
-
-
 
     class Config:
         from_attributes = True

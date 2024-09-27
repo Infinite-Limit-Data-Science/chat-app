@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Union
 from bson import ObjectId
 from fastapi import (
     APIRouter, 
@@ -42,7 +42,6 @@ router = APIRouter(
 @router.post(
     '/{conversation_id}/message',
     response_description="Add new message",
-    response_model=MessageSchema,
     status_code=status.HTTP_201_CREATED,
     tags=['message']
 )
@@ -71,18 +70,17 @@ async def create_message(
 @router.get(
     '/{conversation_id}/message/{id}',
     response_description="Get a single message",
-    response_model=MessageSchema,
+    response_model=Union[MessageSchema, dict],
     response_model_by_alias=False,
     tags=['message']
 )
 async def get_message(request: Request, conversation_id: str, id: str):
     """Get message record from configured database by id"""
-    logging.warning(f'message id {id} AND conversation id {conversation_id}')
     if (
         message := await MessageRepo.find_one(id, options={'conversation_id': ObjectId(conversation_id) })
     ) is not None:
         return message
-    return {'error': f'Message {id} not found'}, 404
+    return {}
 
 # Note Conversational AI does not allow the edit of existing messages
 @router.delete(
@@ -93,8 +91,8 @@ async def get_message(request: Request, conversation_id: str, id: str):
 async def delete_message(request: Request, conversation_id: str, id: str):
     """Remove a single message record from the database."""
     if (
-        deleted_message := await MessageRepo.delete(id, options={'conversation_id': ObjectId(conversation_id)})
+        delete_count := await MessageRepo.delete(id, options={'conversation_id': ObjectId(conversation_id)})
     ) is not None:
-        response = await ConversationRepo.remove_from_field(conversation_id, options={'message_ids': ObjectId(id) })
-        return deleted_message
-    return { 'error': f'Conversation {id} not found'}, 404
+        await ConversationRepo.remove_from_field(conversation_id, options={'message_ids': ObjectId(id) })
+        return {'delete_count': delete_count}  
+    return {'delete_count': 0}
