@@ -5,7 +5,7 @@ from orchestrators.doc.ingestors.text_ingestor import TextIngestor
 
 FACTORIES = {
     'pdf': PdfIngestor,
-    'ppt': PowerPointIngestor,
+    'pptx': PowerPointIngestor,
     'txt': TextIngestor,
     'docx': WordIngestor,
 }

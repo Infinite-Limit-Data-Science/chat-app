@@ -8,17 +8,17 @@ from orchestrators.doc.ingestors.document_ingestor import DocumentIngestor
 class PdfIngestor(DocumentIngestor):
     def load(self) -> List[Document]:
         loader = PyPDFLoader(self._file)
-        doc = loader.load()
-        return doc
+        docs = loader.load()
+        return docs
     
     def chunk(
             self, 
-            doc: List[Document], 
+            docs: List[Document], 
             metadata: dict, 
             chunk_size: int = 500, 
             chunk_overlap: int = 100) -> List[Document]:
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
-        chunks = text_splitter.split_documents(doc)
+        chunks = text_splitter.split_documents(docs)
         chunks_with_metadata = [
             Document(
                 page_content=chunk.page_content, 
@@ -26,8 +26,3 @@ class PdfIngestor(DocumentIngestor):
             ) for chunk in chunks
         ]
         return chunks_with_metadata
-    
-    async def embed(self, chunks: List[Document]) -> List[str]:
-        ids = await self._vector_store_bridge.aadd(chunks)
-        logging.warning(f'first embedded id {ids[:1]}')
-        return ids

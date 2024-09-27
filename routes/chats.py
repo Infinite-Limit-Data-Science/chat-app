@@ -68,6 +68,7 @@ async def get_current_embedding_models(request: Request) -> List[BaseEmbedding]:
             'description': active_model_config.description,
             'task': active_model_config.task,
             'endpoint': endpoint,
+            'dimensions': active_model_config.dimensions,
             'token': request.state.authorization,
         })
         for endpoint in active_model_config.endpoints

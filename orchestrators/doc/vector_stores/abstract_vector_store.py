@@ -1,8 +1,11 @@
 from typing import List
-from langchain_core.documents import Document
 from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
+from functools import reduce
+from operator import and_
 from langchain_core.vectorstores import VectorStoreRetriever
+from langchain_core.documents import Document
+from redisvl.query.filter import Tag
 
 @dataclass
 class VectorStoreRetrieval:
@@ -22,3 +25,20 @@ class AbstractVectorStore(ABC):
     def retriever(self, options: VectorStoreRetrieval = VectorStoreRetrieval()) -> VectorStoreRetriever:
         """Return a runnable of vector store object (a retriever is a runnable)"""
         pass
+
+    @abstractmethod
+    async def inspect(self, query: str) -> str:
+        """Inspect a query"""
+        pass
+
+    def generate_expression(self, wrapper_runnable_config):
+        metadata = wrapper_runnable_config['metadata']
+        schema_keys = [item['name'] for item in metadata['schema']]
+        filter_expression = reduce(
+            and_,
+            [
+                (Tag(key) == str(metadata[key]))
+                for key in schema_keys
+            ]
+        )
+        return filter_expression

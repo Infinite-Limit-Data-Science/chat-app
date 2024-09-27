@@ -9,6 +9,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.runnables.config import RunnableConfig
 from langchain_core.tracers.schemas import Run
 from orchestrators.doc.ingestors.ingest import ingest
+from orchestrators.doc.vector_stores.abstract_vector_store import AbstractVectorStore
 from orchestrators.doc.vector_stores.factories import FACTORIES as V_FACTORIES
 from orchestrators.doc.embedding_models.model_proxy import ModelProxy as EmbeddingProxy
 from orchestrators.doc.runnable_extensions.wrapper_runnable_config import WrapperRunnableConfig
@@ -37,7 +38,7 @@ class ChatBot(AbstractBot):
         self._user_template = user_prompt_template
         self._llm = llm.get()
         self._wrapper_runnable_config = wrapper_runnable_config
-        self._vector_store = V_FACTORIES[store](embeddings, self._wrapper_runnable_config)
+        self._vector_store: AbstractVectorStore = V_FACTORIES[store](embeddings, self._wrapper_runnable_config)
         self._message_history = MongoMessageHistory(
             MongoMessageHistorySchema(
                 session_id=self._wrapper_runnable_config['configurable']['session_id'], 
@@ -67,7 +68,7 @@ class ChatBot(AbstractBot):
         return await self._message_history.bulk_add(messages)
     
     def create_rag_chain_advanced(self, llm: BaseChatModel) -> Runnable:
-        """Create history-aware RAG chain"""
+        """Create history-aware Retriever chain (`create_retriever_chain` populates context)"""
         history_aware_retriever = create_history_aware_retriever(
             llm,
             self._vector_store.retriever(),
@@ -86,7 +87,6 @@ class ChatBot(AbstractBot):
         """Async Available Vector Search"""
         vectors = await self._vector_store.asimilarity_search(context)
         count = len(vectors)
-        logging.warning(f'VECTOR COUNT REPORTING {count}')
         return count > 0
 
     def runnable_config(self) -> dict:
@@ -171,6 +171,7 @@ class ChatBot(AbstractBot):
     # TODO: add trimmer runnable  
     async def astream(self, message: str) -> Callable[[], AsyncGenerator[str, None]]:
         """Invoke the chain"""
+        # await self._vector_store.inspect(message)
         self._trace_history_chain()
         chat_llm = self._llm.endpoint_object
         rag_chain = await self.aavailable_vectors(message)

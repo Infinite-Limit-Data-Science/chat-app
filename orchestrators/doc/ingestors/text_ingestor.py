@@ -26,8 +26,3 @@ class TextIngestor(DocumentIngestor):
             ) for chunk in chunks
         ]
         return chunks_with_metadata
-    
-    async def embed(self, chunks) -> List[str]:
-        ids = await self._vector_store_bridge.aadd(chunks)
-        logging.warning(f'first embedded id {ids[:1]}')
-        return ids

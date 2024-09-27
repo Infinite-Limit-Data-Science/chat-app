@@ -17,6 +17,9 @@ sentence-transformers = "*"
 langchain-redis = "*"
 langchain-huggingface = "*"
 langchain-mongodb = "*"
+tabulate2 = "*"
+python-docx = "*"
+python-pptx = "*"
 
 [dev-packages]
 

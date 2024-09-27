@@ -16,5 +16,6 @@ class BaseEmbedding:
     description: str
     task: str
     endpoint: EndpointDict
+    dimensions: int
     token: str
     endpoint_object: AbstractEmbedding = field(init=False, repr=False)

@@ -29,9 +29,9 @@ class DocumentIngestor(ABC):
         chunk_overlap: int = 100) -> List[Document]:
         pass
 
-    @abstractmethod
-    async def embed(self, chunks: List[Document]) -> List[str]:
-        pass
+    async def embed(self, chunks) -> List[str]:
+        ids = await self._vector_store_bridge.aadd(chunks)
+        return ids
 
     @property
     def fetch_metadata(self):
