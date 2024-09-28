@@ -6,6 +6,7 @@ from models.jwt_token import JWTToken as Token
 from auth.users import (
     CURRENT_UUID_NAME,
     get_model_config,
+    fetch_user,
     UserRepo,
     SettingRepo,
     UserSchema,
@@ -43,20 +44,7 @@ async def get_current_user(request: Request, authorization: str = Depends(securi
         ) is None:
             await SettingRepo.create(schema=SettingSchema(uuid=token.sub))
 
-    if user_attributes['__incompatible__']:
-        user_attributes.pop('__incompatible__')
-        user = UserSchema(user_attributes)
-        await UserRepo.update_one(
-            options={'sessionId': user.uuid }, 
-            assigns=user.model_dump(by_alias=True, exclude={'sessionId'}))
-        setting_attributes = await SettingRepo.find_one(options={CURRENT_UUID_NAME: token.sub}) 
-        if setting_attributes['__incompatible__']:
-            setting_attributes.pop('__incompatible__')
-            setting = SettingSchema(user_attributes)
-            await SettingRepo.update_one(
-                options={'sessionId': setting.uuid }, 
-                assigns=setting.model_dump(by_alias=True, exclude={'sessionId'}))
-
+    user = await fetch_user(user_attributes, token)
     # TODO: fix issue where cannot update config in .env after loaded in db
     await get_model_config(user.uuid)
     request.state.uuid = user.uuid
