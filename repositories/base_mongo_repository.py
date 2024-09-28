@@ -3,11 +3,12 @@ from typing import List, Dict, Any, Optional, Coroutine
 from pymongo import ReturnDocument
 from pymongo.results import UpdateResult
 from motor.motor_asyncio import AsyncIOMotorCollection
+from pydantic import BaseModel
 from clients.mongo_strategy import mongo_instance as instance
 from models.mongo_schema import ObjectId
 from models.abstract_model import AbstractModel
 from models.mongo_schema import ChatSchema
-from pydantic import BaseModel
+from hf_chat_ui_decorators.decorators import chat_ui 
 
 def base_mongo_factory(model: AbstractModel):
     """Abstract the data storage and retrieval logic from the business logic of the application using first-class object BaseMongoRepository"""
@@ -35,6 +36,7 @@ def base_mongo_factory(model: AbstractModel):
             query = {"_id": ObjectId(id)} if id else {} 
             return await cls.get_collection().find({**query, **options})
         
+        @chat_ui(model)
         @classmethod
         async def find_one(cls, id: str = None, *, options: dict = {}) -> Dict[str, Any]:
             """"Find a document by filter"""

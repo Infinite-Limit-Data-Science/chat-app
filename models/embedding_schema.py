@@ -12,3 +12,8 @@ class EmbeddingBase(PrimaryKeyMixinSchema, TimestampMixinSchema):
     task: _TextTask = Field(description='Specify task for what kind of processing or output to use for embedding model', default='feature-extraction')
     dimensions: int = Field(description='In the statistical sense, the number of features embodying a vector and conveyed as numerical vector representations of data')
     active: bool = Field(description='Specify if the model is active', default=False)
+
+    class Config:
+        from_attributes = True
+        populate_by_name = True
+        arbitrary_types_allowed = True

@@ -12,6 +12,13 @@ class User(AbstractModel):
     @classmethod
     def get_model_name(cls):
         return cls.__modelname__
+    
+    @staticmethod
+    def backward_compatible() -> List[str]:
+        return ['roles', 'createdAt', 'updatedAt']
+
+class ChatUIUser(AbstractModel):
+    pass
 
 class UserSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):
     uuid: str = Field(alias="sessionId", description='Unique identifer working across LDAP, ForgeRock, Microsoft Azure Entra ID, and AWS IAM Identity Center', frozen=True)

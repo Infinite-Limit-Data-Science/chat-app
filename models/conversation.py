@@ -20,30 +20,11 @@ class Conversation(AbstractModel):
     def get_model_name(cls) -> str:
         return cls.__modelname__
 
-# Legacy attributes
-class LegacyEmbeddedMessage(PrimaryKeyMixinSchema, TimestampMixinSchema):
-    from_whom: str = Field(alias='from', description='Legacy attribute', default=None)
-    content: str = Field(description='Legacy attribute', default=None)
-    children: List[str] = Field(description='Legacy attribute', default=None)
-    ancestors: List[Optional[str]] = Field(description='Legacy attribute', default=None)
-    name: str = Field(description='Legacy attribute', default=None)
-    parameters: Dict[str,Any] = Field(description='Legacy attributes', default=None)
-
-# Legacy attributes
-class LegacyAttributes(ChatSchema):
-    rootMessageId: Optional[str] = Field(description='Legacy attribute', default=None)
-    # legacy_messages: Optional[List[LegacyEmbeddedMessage]] = Field(alias='messages', description='Legacy attribute', default=None)
-    model: Optional[str] = Field(description='Legacy attributes', default=None)
-    preprompt: Optional[str] = Field(description='Legacy attributes', default=None)
-    assistantId: Optional[str] = Field(description='Legacy attribute', default=None)
-    userAgent: Optional[str] = Field(description='Legacy attribute', default=None)
-    embeddingModel: Optional[str] = Field(description='Legacy attribute', default=None)
-
-class ConversationSchema(PrimaryKeyMixinSchema, TimestampMixinSchema, LegacyAttributes):
+class ConversationSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):
     title: str = Field(description='title of conversation')
     messages: List[MessageSchema] = Field(description='List of messages associated with conversation')
 
-class CreateConversationSchema(PrimaryKeyMixinSchema, TimestampMixinSchema, LegacyAttributes):
+class CreateConversationSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):
     uuid: Optional[str] = Field(alias="sessionId", description='downcased alphanumeric session id', default=None)
     title: Optional[str] = Field(description='title of conversation', default=None)
     message_ids: Optional[List[PyObjectId]] = Field(description='Messages associated with Conversation', default_factory=list)

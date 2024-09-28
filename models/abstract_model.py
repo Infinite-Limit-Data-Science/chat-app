@@ -1,3 +1,4 @@
+from typing import List
 from abc import ABC, abstractmethod
 
 class AbstractModel(ABC):
@@ -7,6 +8,6 @@ class AbstractModel(ABC):
         """Get model by name"""
         pass
 
-    def template_method():
-        """Not Yet Implemented"""
-        pass
+    @staticmethod
+    def backward_compatible() -> List[str]:
+        return []

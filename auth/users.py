@@ -1,8 +1,6 @@
 import os
 import json
-import datetime
-from pymongo.results import UpdateResult
-from models.user import UserSchema, User
+from models.user import User, UserSchema
 from models.model_config import ModelConfigSchema
 from models.setting import Setting, SettingSchema
 from repositories.base_mongo_repository import base_mongo_factory as factory
@@ -21,18 +19,3 @@ async def get_model_config(uuid: str) -> dict:
     active_model_dict = next((model_dict for model_dict in synced_model_dicts if model_dict['active']), None)
     await SettingRepo.update_one(options={CURRENT_UUID_NAME: uuid}, assigns={'activeModel': active_model_dict['name']})
     return active_model_dict
-
-async def grandfathered_user(user_attributes: dict) -> UserSchema:
-    options = {
-        CURRENT_UUID_NAME: user_attributes[CURRENT_UUID_NAME] 
-    }
-    assigns = { 
-        'roles': [],
-        'createdAt': timestamp,
-        'updatedAt': timestamp
-    }
-    timestamp = datetime.now()
-    result: UpdateResult = await UserRepo.update_one(
-            options=options, 
-            assigns=assigns)
-    return UserSchema(**{ '_id': result.upserted_id, **options, **assigns })

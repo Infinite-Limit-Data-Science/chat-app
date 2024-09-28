@@ -18,6 +18,10 @@ class Setting(AbstractModel):
     def get_model_name(cls):
         return cls.__modelname__
 
+    @staticmethod
+    def backward_compatible() -> List[str]:
+        return ['prompts', 'model_configs', 'createdAt', 'updatedAt']
+
 class SettingSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):
     uuid: str = Field(alias="sessionId", description='downcased alphanumeric session id')
     activeModel: Optional[str] = Field(description='active model of user', default=None)
@@ -25,10 +29,6 @@ class SettingSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):
     ethicsModalAcceptedAt: datetime = Field(default_factory=datetime.now)
     prompts: Optional[List[PromptSchema]] = Field(description='List of prompts associated with user setting', default_factory=list)
     my_model_configs: Optional[List[ModelConfigSchema]] = Field(alias='model_configs', description='List of model configs associated with user settings', default_factory=list)
-    # Legacy attributes
-    customPrompts: Optional[Dict[str,str]] = Field(description='Legacy attribute', default = None)
-    shareConversationsWithModelAuthors: Optional[bool] = Field(description='Legacy attribute', default=None)
-    modelParameters: Optional[dict] = Field(description='Legacy attribute', default=None)
 
     class Config:
         from_attributes = True
@@ -40,7 +40,6 @@ class SettingIdSchema(ChatSchema):
 
 class UpdateSettingSchema(ChatSchema):
     activeModel: Optional[str] = None
-    # customPrompts: Optional[Dict[str,str]] = None
     hideEmojiOnSidebar: Optional[bool] = None
     prompts: Optional[List[PromptSchema]] = None
     model_configs: Optional[List[ModelConfigSchema]] = None
