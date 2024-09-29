@@ -13,11 +13,12 @@ from fastapi import (
     logger
 )
 from auth.bearer_authentication import get_current_user
-from routes.chats import  (
+from routes.chats import chat 
+from routes.configs import (
     get_current_models, 
     get_current_embedding_models, 
     get_prompt_template, 
-    chat
+    
 )
 from routes.uploads import ingest_file
 from orchestrators.chat.llm_models.llm import LLM

@@ -8,14 +8,14 @@ class EndpointDict(TypedDict):
     url: str
     type: str
 
-class EmbeddingConfig(AbstractModel):
-    __modelname__ = 'embedding_configs'
+class SystemEmbeddingConfig(AbstractModel):
+    __modelname__ = 'system_embedding_configs'
     
     @classmethod
     def get_model_name(cls):
         return cls.__modelname__
 
-class EmbeddingConfigSchema(EmbeddingBase):
+class SystemEmbeddingConfigSchema(EmbeddingBase):
     endpoints: Optional[List[EndpointDict]] = Field(description='Valid if using TEI', default=None)
     
     class Config:

@@ -1,7 +1,10 @@
+import logging
 import os
 from motor import motor_asyncio
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from clients.database_strategy import DatabaseStrategy
+
+logging.getLogger('pymongo').setLevel(logging.WARNING)
 
 _MESSAGE_HISTORY_COLLECTION = 'messages'
 _MESSAGE_HISTORY_KEY = 'conversation_id'

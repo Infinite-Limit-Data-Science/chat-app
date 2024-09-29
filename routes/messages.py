@@ -15,11 +15,12 @@ from fastapi import (
 from fastapi.responses import StreamingResponse
 from models.mongo_schema import ObjectId
 from auth.bearer_authentication import get_current_user
-from routes.chats import ( 
+from routes.chats import chat 
+from routes.configs import (
     get_current_models, 
     get_current_embedding_models, 
     get_prompt_template, 
-    chat
+    
 )
 from orchestrators.chat.llm_models.llm import LLM
 from orchestrators.doc.embedding_models.embedding import BaseEmbedding
@@ -30,6 +31,9 @@ from models.message import (
     MessageSchema,
 )
 from repositories.conversation_mongo_repository import ConversationMongoRepository as ConversationRepo
+
+
+_DATABASE_STRATEGY = 'mongodb'
 
 MessageRepo = factory(Message)
 
@@ -54,7 +58,8 @@ async def create_message(
     prompt_template: str = Depends(get_prompt_template),
     upload_file: Optional[UploadFile] = File(None)):
     """Insert new message record in configured database, returning AI Response"""
-    conversation_id = ObjectId(conversation_id)
+    if _DATABASE_STRATEGY == 'mongodb':
+        conversation_id = ObjectId(conversation_id)
     data = { 'uuid': request.state.uuid, 'conversation_id': conversation_id }
     if upload_file:
         await ingest_file(embedding_models, upload_file, data)

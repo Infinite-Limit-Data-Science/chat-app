@@ -5,12 +5,10 @@ from jwt import decode, DecodeError
 from models.jwt_token import JWTToken as Token
 from auth.users import (
     CURRENT_UUID_NAME,
-    get_model_config,
     fetch_user,
+    load_user_settings,
     UserRepo,
-    SettingRepo,
     UserSchema,
-    SettingSchema,
 )
 
 security = HTTPBearer()
@@ -34,20 +32,18 @@ def validate_jwt(authorization: HTTPAuthorizationCredentials = Depends(security)
         raise HTTPException(status_code=401, detail='Invalid Token, decoding failed')
     return token
 
-async def get_current_user(request: Request, authorization: str = Depends(security), token: Token = Depends(validate_jwt)) -> UserSchema:
+async def get_current_user(
+        request: Request, 
+        authorization: HTTPAuthorizationCredentials = Depends(security), 
+        token: Token = Depends(validate_jwt)) -> UserSchema:
     if (
         user_attributes := await UserRepo.find_one(options={CURRENT_UUID_NAME: token.sub}) 
     ) is None:
         user_attributes = await UserRepo.create(schema=UserSchema(uuid=token.sub, roles=token.roles))
-        if (
-            _ := await SettingRepo.find_one(options={CURRENT_UUID_NAME: token.sub}) 
-        ) is None:
-            await SettingRepo.create(schema=SettingSchema(uuid=token.sub))
-
-    user = await fetch_user(user_attributes, token)
-    # TODO: fix issue where cannot update config in .env after loaded in db
-    await get_model_config(user.uuid)
+    user = await fetch_user(user_attributes)
     request.state.uuid = user.uuid
     request.state.uuid_name = CURRENT_UUID_NAME
     request.state.authorization = authorization.credentials
+    await load_user_settings(request)
+    
     return user

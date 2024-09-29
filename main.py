@@ -13,7 +13,7 @@ from routes.default import router as default_router
 
 load_dotenv()
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.WARNING)
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):

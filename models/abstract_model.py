@@ -8,6 +8,7 @@ class AbstractModel(ABC):
         """Get model by name"""
         pass
 
-    @staticmethod
-    def backward_compatible() -> List[str]:
+    @classmethod
+    def chat_ui_compatible(cls) -> List[str]:
+        """For backward compatibility with HuggingFace chat-ui"""
         return []

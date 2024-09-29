@@ -9,7 +9,7 @@ from models.mongo_schema import (
     PyObjectId
 )
 from models.prompt import PromptSchema
-from models.model_config import ModelConfigSchema
+from models.user_model_config import UserModelConfigSchema
 
 class Setting(AbstractModel):
     __modelname__ = 'settings'
@@ -18,9 +18,9 @@ class Setting(AbstractModel):
     def get_model_name(cls):
         return cls.__modelname__
 
-    @staticmethod
-    def backward_compatible() -> List[str]:
-        return ['prompts', 'model_configs', 'createdAt', 'updatedAt']
+    @classmethod
+    def chat_ui_compatible(cls) -> List[str]:
+        return ['prompts', 'user_model_configs', 'createdAt', 'updatedAt']
 
 class SettingSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):
     uuid: str = Field(alias="sessionId", description='downcased alphanumeric session id')
@@ -28,10 +28,9 @@ class SettingSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):
     hideEmojiOnSidebar: Optional[bool] = Field(description='hide emoji on sidebar', default=False)
     ethicsModalAcceptedAt: datetime = Field(default_factory=datetime.now)
     prompts: Optional[List[PromptSchema]] = Field(description='List of prompts associated with user setting', default_factory=list)
-    my_model_configs: Optional[List[ModelConfigSchema]] = Field(alias='model_configs', description='List of model configs associated with user settings', default_factory=list)
+    user_model_configs: Optional[List[UserModelConfigSchema]] = Field(description='List of user model configs associated with user settings', default_factory=list)
 
     class Config:
-        from_attributes = True
         populate_by_name = True
         arbitrary_types_allowed = True
 
@@ -42,7 +41,7 @@ class UpdateSettingSchema(ChatSchema):
     activeModel: Optional[str] = None
     hideEmojiOnSidebar: Optional[bool] = None
     prompts: Optional[List[PromptSchema]] = None
-    model_configs: Optional[List[ModelConfigSchema]] = None
+    user_model_configs: Optional[List[UserModelConfigSchema]] = None
     updatedAt: datetime = Field(default_factory=datetime.now)
     
     class Config:

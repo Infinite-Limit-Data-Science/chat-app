@@ -13,8 +13,8 @@ class User(AbstractModel):
     def get_model_name(cls):
         return cls.__modelname__
     
-    @staticmethod
-    def backward_compatible() -> List[str]:
+    @classmethod
+    def chat_ui_compatible(cls) -> List[str]:
         return ['roles', 'createdAt', 'updatedAt']
 
 class ChatUIUser(AbstractModel):

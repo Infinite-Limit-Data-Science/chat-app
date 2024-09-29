@@ -18,24 +18,17 @@ class Prompt(AbstractModel):
         return cls.__modelname__
     
 class PromptSchema(LLMPrompt, PrimaryKeyMixinSchema, TimestampMixinSchema):
-    my_model_configs: List[PyObjectId] = Field(alias='model_configs', description='Model configs associated with the Prompt', default_factory=list)
+    user_model_configs: List[PyObjectId] = Field(description='Model configs associated with the Prompt', default_factory=list)
 
     class Config:
-        from_attributes = True
         populate_by_name = True
         arbitrary_types_allowed = True
 
 class PromptIdSchema(ChatSchema):
     id: PyObjectId = Field(alias="_id", description='bson object id')
 
-class UpdatePromptSchema(ChatSchema):
-    title: str = Field(description='Title of Prompt Template')
-    prompt: str = Field(description='Content of Prompt Template')
+class UpdatePromptSchema(LLMPrompt):
     updatedAt: datetime = Field(default_factory=datetime.now)
-    
-    class Config:
-        populate_by_name = True
-        arbitrary_types_allowed = True
 
 class PromptCollectionSchema(ChatSchema):
     prompts: List[PromptSchema]

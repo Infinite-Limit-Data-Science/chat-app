@@ -36,8 +36,8 @@ def base_mongo_factory(model: AbstractModel):
             query = {"_id": ObjectId(id)} if id else {} 
             return await cls.get_collection().find({**query, **options})
         
-        @chat_ui(model)
         @classmethod
+        @chat_ui(model)  
         async def find_one(cls, id: str = None, *, options: dict = {}) -> Dict[str, Any]:
             """"Find a document by filter"""
             query = {"_id": ObjectId(id)} if id else {} 
@@ -64,9 +64,10 @@ def base_mongo_factory(model: AbstractModel):
             return update_result
         
         @classmethod
-        async def update_one(cls, *, options: dict, assigns: dict) -> Coroutine[Any, Any, UpdateResult]:
+        async def update_one(cls, id: str, *, options: dict = {}, set: dict = {}, push: dict = {}) -> Coroutine[Any, Any, UpdateResult]:
             """Update single document"""
-            return await cls.get_collection().update_one(options, { '$set': assigns})
+            query = {"_id": ObjectId(id)} if id else {} 
+            return await cls.get_collection().update_one({ **query, **options }, { '$set': set, '$push': push})
         
         @classmethod
         async def remove_from_field(cls, id: str = None, *, options: dict = {}) -> Dict[str, Any]:
@@ -82,36 +83,6 @@ def base_mongo_factory(model: AbstractModel):
             """"Delete a document"""
             delete_result = await cls.get_collection().delete_one({"_id": ObjectId(id), **options})
             return delete_result.deleted_count
-        
-        @classmethod
-        async def sync(cls, *, options: dict, source: List[ChatSchema], attribute: str, identifier: str) -> List[dict]:
-            """Synchronize an array of documents in data store with a specified data source"""
-            def key_in_dicts(key, dicts):
-                return any(d.get(identifier) == key for d in dicts)
-            
-            source = [ { **config.model_dump(by_alias=True) } for config in source]
-            document = await cls.find_one(options=options)
-            if document and attribute in document:
-                target = document[attribute]
-            else:
-                target = []
-            target_dicts = {config[identifier]: config for config in target}
-            updated_configs = []
-            for config in source:
-                if key_in_dicts(config[identifier], target):
-                    current_config = target_dicts[config[identifier]]
-                    if current_config != config:
-                        target_dicts[config[identifier]] = config
-                        updated_configs.append(config)
-                else:
-                    target_dicts[config[identifier]] = config
-            target_dicts = {name: config for name, config in target_dicts.items() if name in [c[identifier] for c in source]}
-            sync_attributes = list(target_dicts.values())
-
-            if updated_configs or len(sync_attributes) != len(target):
-                await cls.update_one(options=options, assigns={attribute: sync_attributes})
-
-            return sync_attributes
 
     BaseMongoRepository.model = model
     return BaseMongoRepository

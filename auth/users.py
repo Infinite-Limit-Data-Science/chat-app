@@ -1,43 +1,45 @@
-import os
-import json
+import logging
+from fastapi import Request
 from models.user import User, UserSchema
-from models.model_config import ModelConfigSchema
 from models.setting import Setting, SettingSchema
 from models.jwt_token import JWTToken as Token
 from repositories.base_mongo_repository import base_mongo_factory as factory
+from routes.configs import refresh_model_configs, load_system_model_config
 
-# for backward compatibility with chat-ui
+# for compatibility with HuggingFace chat-ui
 CURRENT_UUID_NAME = 'sessionId'
 
 UserRepo = factory(User)
 
 SettingRepo = factory(Setting)
 
-async def get_model_config(uuid: str) -> dict:
-    model_dict = json.loads(os.environ['MODELS'])
-    model_configs = [ModelConfigSchema(**config) for config in model_dict]
-    synced_model_dicts = await SettingRepo.sync(options={CURRENT_UUID_NAME: uuid}, source=model_configs, attribute='model_configs', identifier='name')
-    active_model_dict = next((model_dict for model_dict in synced_model_dicts if model_dict['active']), None)
-    await SettingRepo.update_one(options={CURRENT_UUID_NAME: uuid}, assigns={'activeModel': active_model_dict['name']})
-    return active_model_dict
+def chat_ui_data(attributes: dict) -> bool:
+    special_key = '__chat_ui__'
+    if attributes.get(special_key):
+        del attributes[special_key]
+        return True
+    else:
+        return False
 
-async def validate_settings(token: Token) -> None:
-    setting_attributes = await SettingRepo.find_one(options={CURRENT_UUID_NAME: token.sub}) 
-    if setting_attributes['__incompatible__']:
-        setting_attributes.pop('__incompatible__')
-        setting = SettingSchema(setting_attributes)
-        await SettingRepo.update_one(
-            options={'sessionId': setting.uuid }, 
-            assigns=setting.model_dump(by_alias=True, exclude={'sessionId'}))
-
-async def fetch_user(user_attributes: dict, token: Token) -> UserSchema:
-    if user_attributes['__incompatible__']:
-        user_attributes.pop('__incompatible__')
+async def load_user_settings(request: Request) -> None:
+    if (
+        setting_attributes := await SettingRepo.find_one(options={CURRENT_UUID_NAME: request.state.uuid}) 
+    ) is not None:
+        if chat_ui_data(setting_attributes):
+            await SettingRepo.update_one(
+                options={'sessionId': setting_attributes['sessionId'] }, 
+                set=SettingSchema(setting_attributes).model_dump(by_alias=True, exclude='sessionId'))
+    if not setting_attributes:
+        setting_attributes = await SettingRepo.create(schema=SettingSchema(uuid=request.state.uuid))
+    system_model_configs = load_system_model_config()
+    await refresh_model_configs(SettingSchema(**setting_attributes), system_model_configs)
+    
+async def fetch_user(user_attributes: dict) -> UserSchema:
+    if chat_ui_data(user_attributes):
         user = UserSchema(user_attributes)
         await UserRepo.update_one(
             options={'sessionId': user.uuid }, 
-            assigns=user.model_dump(by_alias=True, exclude={'sessionId'}))
+            set=user.model_dump(by_alias=True, exclude={'sessionId'}))
     else:
-        user = UserSchema(user_attributes)
-    await validate_settings(token)
+        user = UserSchema(**user_attributes)
     return user
