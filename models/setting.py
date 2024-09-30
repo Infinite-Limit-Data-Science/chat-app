@@ -8,6 +8,7 @@ from models.mongo_schema import (
     Field,
     PyObjectId
 )
+from bson import ObjectId
 from models.prompt import PromptSchema
 from models.user_model_config import UserModelConfigSchema
 
@@ -33,6 +34,9 @@ class SettingSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):
     class Config:
         populate_by_name = True
         arbitrary_types_allowed = True
+        json_encoders = {
+            ObjectId: str,  # In case there are any ObjectId fields left
+        }
 
 class SettingIdSchema(ChatSchema):
     id: PyObjectId = Field(alias="_id", description='bson object id')

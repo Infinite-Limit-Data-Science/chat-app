@@ -39,7 +39,7 @@ async def get_setting(request: Request, id: str):
 )
 async def update_setting(id: str, setting_schema: UpdateSettingSchema = Body(...)):
     """Update settings, where associations are expected to be set up on client"""
-    # TODO: make this serializer
+    # TODO: make this serializer; also prompt id not being saved
     from bson import ObjectId
     user_model_configs = setting_schema.user_model_configs
     prompts = setting_schema.prompts
