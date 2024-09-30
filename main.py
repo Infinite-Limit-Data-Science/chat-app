@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from clients.mongo_strategy import mongo_instance as database_instance
 from routes.home import router as home_router
 from routes.conversations import router as conversations_router
@@ -37,6 +38,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"]
 )
+
+app.mount('/', StaticFiles(directory='ui/dist', html=True), name='ui')
 
 @app.get('/health')
 def health_check():
