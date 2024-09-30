@@ -64,10 +64,15 @@ def base_mongo_factory(model: AbstractModel):
             return update_result
         
         @classmethod
-        async def update_one(cls, id: str, *, options: dict = {}, set: dict = {}, push: dict = {}) -> Coroutine[Any, Any, UpdateResult]:
+        async def update_one(cls, id: str, *, options: dict = {}, _set: Dict[str, Any] = {}, push: dict = {}) -> Coroutine[Any, Any, UpdateResult]:
             """Update single document"""
-            query = {"_id": ObjectId(id)} if id else {} 
-            return await cls.get_collection().update_one({ **query, **options }, { '$set': set, '$push': push})
+            query = {"_id": ObjectId(id)} if id else {}
+            operation = {}
+            if _set:
+                operation['$set'] = _set
+            if push:
+                operation['$push'] = push
+            return await cls.get_collection().update_one({ **query, **options }, operation)
         
         @classmethod
         async def remove_from_field(cls, id: str = None, *, options: dict = {}) -> Dict[str, Any]:

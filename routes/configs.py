@@ -2,7 +2,6 @@ import logging
 import os
 import json
 from typing import List, Dict, Optional
-from bson import ObjectId
 from fastapi import Request, Depends, HTTPException
 from models.system_model_config import SystemModelConfigSchema
 from models.setting import Setting, SettingSchema
@@ -12,6 +11,7 @@ from orchestrators.chat.llm_models.factories import FACTORIES as LLM_FACTORIES
 from orchestrators.doc.embedding_models.factories import FACTORIES as EMBEDDING_FACTORIES
 from orchestrators.doc.embedding_models.embedding import BaseEmbedding
 from models.system_model_config import SystemModelConfigSchema
+from models.user_model_config import UserModelConfigSchema
 from models.system_embedding_config import SystemEmbeddingConfigSchema
 
 _DEFAULT_PREPROMPT='You are a helpful assistant. Answer all the questions to the best of your ability.'
@@ -38,7 +38,7 @@ async def get_active_model_config(setting_id: str, configs: Dict[str, SystemMode
     else:
         model_config = next(iter(configs.values()))
         active_model = model_config.name
-    await SettingRepo.update_one(setting_id, set={'activeModel': active_model})
+    await SettingRepo.update_one(setting_id, _set={'activeModel': active_model})
     return model_config
 
 async def refresh_model_configs(
@@ -60,20 +60,20 @@ async def refresh_model_configs(
             if user_config.active:
                 active_model_name = system_model_name
         else:
+            active_configs[system_model_name] = system_config
+            update_attributes = {
+                'name': system_model_name,
+                'parameters': system_config.parameters.model_dump(by_alias=True),
+            }
+            if not active_model_name and system_config.active:
+                active_model_name = system_model_name
+                update_attributes['active'] = True
             await SettingRepo.update_one(
                 setting_schema.id,
                 push={
-                    'user_model_configs': {
-                        '_id': ObjectId(),
-                        'name': system_model_name,
-                        'parameters': system_config.parameters.model_dump(by_alias=True)
-                    }
+                    'user_model_configs': UserModelConfigSchema(**update_attributes).model_dump(by_alias=True),
                 }
             )
-            active_configs[system_model_name] = system_config
-
-            if not active_model_name and system_config.active:
-                active_model_name = system_model_name
 
     return await get_active_model_config(setting_schema.id, active_configs, active_model_name)
 

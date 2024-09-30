@@ -28,7 +28,7 @@ async def load_user_settings(request: Request) -> None:
         if chat_ui_data(setting_attributes):
             await SettingRepo.update_one(
                 options={'sessionId': setting_attributes['sessionId'] }, 
-                set=SettingSchema(setting_attributes).model_dump(by_alias=True, exclude='sessionId'))
+                _set=SettingSchema(setting_attributes).model_dump(by_alias=True, exclude='sessionId'))
     if not setting_attributes:
         setting_attributes = await SettingRepo.create(schema=SettingSchema(uuid=request.state.uuid))
     system_model_configs = load_system_model_config()
@@ -39,7 +39,7 @@ async def fetch_user(user_attributes: dict) -> UserSchema:
         user = UserSchema(user_attributes)
         await UserRepo.update_one(
             options={'sessionId': user.uuid }, 
-            set=user.model_dump(by_alias=True, exclude={'sessionId'}))
+            _set=user.model_dump(by_alias=True, exclude={'sessionId'}))
     else:
         user = UserSchema(**user_attributes)
     return user
