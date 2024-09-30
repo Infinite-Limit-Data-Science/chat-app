@@ -36,7 +36,7 @@ async def load_user_settings(request: Request) -> None:
     
 async def fetch_user(user_attributes: dict) -> UserSchema:
     if chat_ui_data(user_attributes):
-        user = UserSchema(user_attributes)
+        user = UserSchema(**user_attributes)
         await UserRepo.update_one(
             options={'sessionId': user.uuid }, 
             _set=user.model_dump(by_alias=True, exclude={'sessionId'}))
