@@ -122,3 +122,15 @@ async def delete_conversation(request: Request, id: str):
     ) is not None:
         return {'delete_count': delete_count}  
     return {'delete_count': 0}
+
+@router.delete(
+    '/delete/all', 
+    response_description='Delete all conversations',
+)
+async def delete_conversations(request: Request):
+    """Remove a single conversation record from the database."""
+    if (
+        delete_count := await ConversationRepo.delete_many(options={request.state.uuid_name: request.state.uuid})
+    ) is not None:
+        return {'delete_count': delete_count}  
+    return {'delete_count': 0}

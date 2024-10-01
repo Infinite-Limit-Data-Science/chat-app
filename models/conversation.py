@@ -21,7 +21,7 @@ class Conversation(AbstractModel):
         return cls.__modelname__
 
 class ConversationSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):
-    title: str = Field(description='title of conversation')
+    title: str = Field(description='title of conversation', default='')
     messages: List[MessageSchema] = Field(description='List of messages associated with conversation')
 
 class CreateConversationSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):

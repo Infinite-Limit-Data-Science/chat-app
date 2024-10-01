@@ -34,7 +34,7 @@ def base_mongo_factory(model: AbstractModel):
         async def find(cls, id: str = None, *, options: dict = {}) -> List[Dict[str, Any]]:
             """"Find documents by filter"""
             query = {"_id": ObjectId(id)} if id else {} 
-            return await cls.get_collection().find({**query, **options})
+            return await cls.get_collection().find({**query, **options}).to_list()
         
         @classmethod
         @chat_ui(model)  
@@ -87,6 +87,12 @@ def base_mongo_factory(model: AbstractModel):
         async def delete(cls, id: str, *, options: Optional[dict] = {}) -> int:
             """"Delete a document"""
             delete_result = await cls.get_collection().delete_one({"_id": ObjectId(id), **options})
+            return delete_result.deleted_count
+
+        @classmethod
+        async def delete_many(cls, *, options: dict) -> int:
+            """"Delete all documents by filter"""
+            delete_result = await cls.get_collection().delete_many(options)
             return delete_result.deleted_count
 
     BaseMongoRepository.model = model

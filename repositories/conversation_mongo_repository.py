@@ -6,7 +6,10 @@ from models.conversation import (
     Conversation, 
     ConversationSchema, 
 )
+from models.message import Message
 from repositories.base_mongo_repository import base_mongo_factory as factory
+
+MessageRepo = factory(Message)
 
 _JOIN = {
             '$lookup': {
@@ -67,3 +70,12 @@ class ConversationMongoRepository(factory(Conversation)):
         stages.append(_PROJECT)
         result = await cls.get_collection().aggregate(stages).to_list(length=None)
         return result and result[0]
+    
+    @classmethod
+    async def delete_many(cls, *, options: dict) -> int:
+        conversations = await cls.find(options=options)
+        conversation_ids = [conversation['_id'] for conversation in conversations]
+        deleted_count = await super().delete_many(options=options)
+        if deleted_count > 0:
+            await MessageRepo.delete_many(options={'conversation_id': {'$in': conversation_ids}})
+        return deleted_count
