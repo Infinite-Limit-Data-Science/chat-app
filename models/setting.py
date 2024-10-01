@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import List, Dict, Optional
+from pydantic import model_validator, field_validator
 from models.abstract_model import AbstractModel
 from models.mongo_schema import (
     ChatSchema,

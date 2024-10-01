@@ -9,7 +9,7 @@ from models.mongo_schema import (
     PyObjectId
 )
 from models.llm_schema import LLMPrompt
-
+    
 class Prompt(AbstractModel):
     __modelname__ = 'prompts'
     
@@ -18,7 +18,7 @@ class Prompt(AbstractModel):
         return cls.__modelname__
     
 class PromptSchema(LLMPrompt, PrimaryKeyMixinSchema, TimestampMixinSchema):
-    user_model_configs: List[PyObjectId] = Field(description='Model configs associated with the Prompt', default_factory=list)
+    user_model_configs: List[PyObjectId] = Field(description='Associate zero, one, or many user model configs with a prompt', default_factory=list)
 
     class Config:
         populate_by_name = True

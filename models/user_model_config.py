@@ -23,7 +23,6 @@ class UserModelConfigSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):
     name: str = Field(description='Name of model')
     active: bool = Field(description='Specify if the model is active', default=False)
     parameters: LLMParamSchema = Field(description='Parameters for the model')
-    prompts: List[PyObjectId] = Field(alias='prompts', description='Prompts associated with this model config', default_factory=list)
 
     class Config:
         populate_by_name = True

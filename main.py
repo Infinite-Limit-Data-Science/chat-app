@@ -40,7 +40,7 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
-app.mount('/ui', StaticFiles(directory='ui/dist'), name='ui')
+app.mount('/assets', StaticFiles(directory='ui/dist/assets'), name='assets')
 
 @app.get('/')
 async def serve_root():

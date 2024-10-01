@@ -114,10 +114,15 @@ async def get_current_embedding_models(request: Request) -> List[BaseEmbedding]:
     return models
 
 async def get_prompt_template(
-    setting_schema: SettingSchema = Depends(get_user_settings), 
-    model_config_schema: SystemModelConfigSchema = Depends(refresh_model_configs)) -> str:
+    setting_schema: SettingSchema = Depends(get_user_settings),
+    system_config_schema: SystemModelConfigSchema = Depends(refresh_model_configs)) -> str:
     """Derive system prompt from either custom prompts or default system prompt"""
-    prompt = next((prompt for prompt in setting_schema.prompts for id in prompt.user_model_configs if id == model_config_schema.id), None)
-    if prompt is not None:
-        return prompt.content
-    return model_config_schema.preprompt or _DEFAULT_PREPROMPT
+    if(
+        active_user_config_id := next((config.id for config in setting_schema.user_model_configs if config.active), None)
+    ) is not None:
+        if(
+            prompt := next((prompt for prompt in setting_schema.prompts for id in prompt.user_model_configs if id == active_user_config_id), None)
+        ) is not None:
+            return prompt.content
+    
+    return system_config_schema.preprompt or _DEFAULT_PREPROMPT
