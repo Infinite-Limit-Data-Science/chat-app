@@ -30,6 +30,6 @@ async def dashboard(request: Request, record_offset: int = Query(0, description=
     
     return {
         'uuid': request.state.uuid,
-        'settings': settings.model_dump(by_alias=True),
-        'conversations': conversation_collection.model_dump(by_alias=True),
+        'settings': settings,
+        'conversations': conversation_collection,
     }

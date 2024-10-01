@@ -97,7 +97,7 @@ async def get_conversation(request: Request, id: str):
 @router.put(
     "/{id}",
     response_description="Update a single conversation",
-    response_model=Union[ConversationSchema, dict],
+    response_model=Union[UpdateConversationSchema, dict],
     response_model_by_alias=False,
 )
 async def update_conversation(request: Request, id: str, conversation_schema: UpdateConversationSchema = Body(...)):
@@ -108,7 +108,7 @@ async def update_conversation(request: Request, id: str, conversation_schema: Up
             schema=conversation_schema, 
             options={ request.state.uuid_name: request.state.uuid} )
     ) is not None:
-        return updated_conversation
+        return UpdateConversationSchema(**updated_conversation)
     return {}
     
 @router.delete(
