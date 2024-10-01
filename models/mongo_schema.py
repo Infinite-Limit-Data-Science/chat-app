@@ -40,7 +40,7 @@ class PrimaryKeyMixinSchema(ChatSchema):
 
     @model_serializer(mode='plain', when_used='json')
     def serialize_object_id(self) -> dict:
-        dict = self.model_dump(by_alias=True)
+        dict = self.model_dump()
         json_compatible_data = jsonify_object_ids(dict)
         return json_compatible_data
 
