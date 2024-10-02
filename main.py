@@ -50,8 +50,8 @@ async def serve_root():
 def health_check():
     return { 'message': 'ok' }
 
-app.include_router(home_router)
-app.include_router(conversations_router)
-app.include_router(messages_router)
-app.include_router(settings_router)
-app.include_router(default_router)
+app.include_router(home_router, prefix='/api')
+app.include_router(conversations_router, prefix='/api')
+app.include_router(messages_router, prefix='/api')
+app.include_router(settings_router, prefix='/api')
+app.include_router(default_router, prefix='/api')
