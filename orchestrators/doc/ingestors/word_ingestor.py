@@ -15,8 +15,8 @@ class WordIngestor(DocumentIngestor):
             self,
             docs: List[Document], 
             metadata: dict, 
-            chunk_size: int = 500, 
-            chunk_overlap: int = 100) -> List[Document]:
+            chunk_size: int = 1000, 
+            chunk_overlap: int = 150) -> List[Document]:
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
         chunks = text_splitter.split_documents(docs)
         chunks_with_metadata = [
