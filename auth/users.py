@@ -26,9 +26,10 @@ async def load_user_settings(request: Request) -> None:
         setting_attributes := await SettingRepo.find_one(options={CURRENT_UUID_NAME: request.state.uuid}) 
     ) is not None:
         if chat_ui_data(setting_attributes):
+            setting = SettingSchema(**setting_attributes)
             await SettingRepo.update_one(
-                options={'sessionId': setting_attributes['sessionId'] }, 
-                _set=SettingSchema(setting_attributes).model_dump(by_alias=True, exclude='sessionId'))
+                setting.id, 
+                _set=setting.model_dump(by_alias=True, exclude={'uuid','id'}))
     if not setting_attributes:
         setting_attributes = await SettingRepo.create(schema=SettingSchema(uuid=request.state.uuid))
     system_model_configs = load_system_model_config()
