@@ -40,7 +40,7 @@ app.add_middleware(
     allow_headers=["*"]
 )
 
-app.mount('/assets', StaticFiles(directory='ui/dist/assets'), name='assets')
+app.mount('/ui/assets', StaticFiles(directory='ui/dist/assets'), name='assets')
 
 @app.get('/')
 async def serve_root():
@@ -54,4 +54,4 @@ app.include_router(home_router, prefix='/api')
 app.include_router(conversations_router, prefix='/api')
 app.include_router(messages_router, prefix='/api')
 app.include_router(settings_router, prefix='/api')
-app.include_router(default_router, prefix='/api')
+app.include_router(default_router)
