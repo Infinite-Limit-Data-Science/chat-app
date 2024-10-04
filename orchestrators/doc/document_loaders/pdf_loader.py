@@ -56,7 +56,6 @@ class PyPDFImageParser(BaseBlobParser):
         for page_num in range(len(self._reader.pages)):
             page = self._reader.pages[page_num]
             content_stream = page.get_contents()
-            
             operations = self._operators_from_stream(content_stream)
             
             if self._tabular(operations):
@@ -87,12 +86,9 @@ class PyPDFImageParser(BaseBlobParser):
         
         for _, (x_position, y_position) in operations:
             h_pos.add(x_position)
-            
             if v_gaps and abs(y_position - v_gaps[-1]) < 15:
                 return True
-            
             v_gaps.append(y_position)
-            
             if len(h_pos) > 1:
                 return True
         
