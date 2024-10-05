@@ -121,15 +121,14 @@ class RedisVectorStore(AbstractVectorStore):
     
     def retriever(self, options: VectorStoreRetrieval = VectorStoreRetrieval()) -> VectorStoreRetriever:
         """Generate a retriever which implements the Runnable interface"""
-        vector_filter = {
-            item['name']: str(self._wrapper_runnable_config['metadata'][item['name']])
-            for item in self._wrapper_runnable_config['metadata']['schema']
-        }
+        filter_expression = self.generate_expression(self._wrapper_runnable_config)
         retriever = self._vector_store.as_retriever(
-            search_type='similarity', 
-            k=options.k, 
-            score_threshold=options.score_threshold, 
-            filter=vector_filter)
+            search_type='similarity',
+            search_kwargs={
+                'k': options.k, 
+                'score_threshold': options.score_threshold, 
+                'filter': filter_expression,
+            })
         return retriever
 
     async def inspect(self, query: str, k: int = 4) -> str:
