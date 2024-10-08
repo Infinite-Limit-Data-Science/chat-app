@@ -1,11 +1,10 @@
 import os
-from typing import Union, List
+from typing import Union, Iterator
 from pathlib import Path
 import tempfile
 import requests
 from urllib.parse import urlparse
 from langchain_core.documents import Document
-
 from abc import ABC, abstractmethod
 
 class BaseLoader(ABC):
@@ -35,7 +34,7 @@ class BaseLoader(ABC):
             self._temp_file.close()
 
     @abstractmethod
-    def load(self) -> List[Document]:
+    def load(self) -> Iterator[Document]:
         pass
 
     @staticmethod

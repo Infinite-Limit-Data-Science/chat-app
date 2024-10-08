@@ -1,17 +1,17 @@
 import logging
 from typing import Iterator
 from langchain_core.documents import Document
-from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from orchestrators.doc.ingestors.document_ingestor import DocumentIngestor
+from orchestrators.doc.document_loaders.word_loader import WordLoader
 
-class LazyPdfIngestor(DocumentIngestor):
+class LazyWordIngestor(DocumentIngestor):
     def lazy_load(self) -> Iterator[Document]:
-        loader = PyPDFLoader(self._file)
+        loader = WordLoader(self._file)
         for doc in loader.lazy_load():
             yield doc
     load = lazy_load
-    
+
     def chunk(
         self, 
         docs: Iterator[Document], 
