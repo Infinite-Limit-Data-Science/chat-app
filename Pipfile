@@ -20,6 +20,7 @@ langchain-mongodb = "*"
 tabulate2 = "*"
 python-docx = "*"
 python-pptx = "*"
+openai = "*"
 
 [dev-packages]
 

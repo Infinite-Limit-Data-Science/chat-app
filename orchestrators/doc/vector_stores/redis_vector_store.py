@@ -1,7 +1,8 @@
 import logging
 import os
 import asyncio
-from typing import List, TypedDict, Any
+from itertools import islice
+from typing import List, TypedDict, Any, Iterator, TypeVar, Dict, Literal
 from redis.connection import ConnectionPool
 from langchain_core.documents import Document
 from langchain_redis import RedisConfig as Config, RedisVectorStore as VectorStore
@@ -39,12 +40,22 @@ _redis_client = Redis.from_pool(ConnectionPool.from_url(
     max_connections=_MAX_CONNECTIONS,
     socket_timeout=_SOCKET_TIMEOUT))
 
+T = TypeVar('T')
+
+def chunked_iterable(it: Iterator[T], size: int) -> Iterator[list[T]]:
+    while True:
+        chunk = list(islice(it, size))
+        if not chunk:
+            break
+        yield chunk
+
 class RedisVectorStoreWithTTL(VectorStore):
     async def aadd_documents_with_ttl(
-            self, 
-            documents: list[Document], 
-            ttl_seconds: int, 
-            **kwargs: Any) -> List[str]:
+        self, 
+        documents: list[Document], 
+        ttl_seconds: int,
+        batch_size: Literal[32, 64] = 64,
+        **kwargs: Any) -> List[str]:
         """
         Example:
         > EXISTS user_conversations:a2c8a48073ee4a429b6910b1cfefb9f4
@@ -52,11 +63,27 @@ class RedisVectorStoreWithTTL(VectorStore):
         > TTL user_conversations:a2c8a48073ee4a429b6910b1cfefb9f4
         (integer) 2591813
         """
-        document_ids = await self.aadd_documents(documents, **kwargs)
         redis_client = self.config.redis()
-        for doc_id in document_ids:
-            await asyncio.to_thread(redis_client.expire, doc_id, ttl_seconds)
+        batches = chunked_iterable(documents, batch_size)
+        tasks = [
+            asyncio.create_task(self._process_batch(batch, ttl_seconds, redis_client, **kwargs))
+            for batch in batches
+        ]
+        results = await asyncio.gather(*tasks)
+        document_ids = [doc_id for batch_ids in results for doc_id in batch_ids]
         return document_ids
+    
+    async def _process_batch(
+        self, 
+        batch: List[Document], 
+        ttl_seconds: int, 
+        redis_client, 
+        **kwargs: Any) -> List[str]:
+        batch_ids = await self.aadd_documents(batch, **kwargs)
+        for doc_id in batch_ids:
+            await asyncio.to_thread(redis_client.expire, doc_id, ttl_seconds)
+
+        return batch_ids
 
 class RedisConfig(TypedDict):
     index_name: str
@@ -65,9 +92,9 @@ class RedisConfig(TypedDict):
 
 class RedisVectorStore(AbstractVectorStore):
     def __init__(
-            self, 
-            embeddings: ModelProxy, 
-            wrapper_runnable_config: WrapperRunnableConfig):
+        self, 
+        embeddings: ModelProxy, 
+        wrapper_runnable_config: WrapperRunnableConfig):
         self._primary_embedding = embeddings.get()
         self._wrapper_runnable_config = wrapper_runnable_config
         self.config = Config(
