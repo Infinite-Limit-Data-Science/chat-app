@@ -16,7 +16,7 @@ class WordLoader(BaseLoader):
     """
     def __init__(self, file_path: Union[str, Path]):
         self._file_path = file_path
-        self.doc = docx.Document(file_path)
+        self.doc = docx.Document(self._file_path)
 
     def lazy_load(self) -> Iterator[Document]:
         """Lazily load document"""

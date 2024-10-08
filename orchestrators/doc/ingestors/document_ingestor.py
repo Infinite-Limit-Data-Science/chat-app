@@ -2,6 +2,7 @@ import logging
 from typing import List, Iterator
 from abc import ABC, abstractmethod
 from langchain_core.documents import Document
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from orchestrators.doc.vector_stores.abstract_vector_store import AbstractVectorStore
 from orchestrators.doc.runnable_extensions.wrapper_runnable_config import WrapperRunnableConfig
 
@@ -20,18 +21,21 @@ class DocumentIngestor(ABC):
     def load(self) -> Iterator[Document]:
         pass
 
-    @abstractmethod
     def chunk(
         self, 
         docs: Iterator[Document], 
         metadata: dict, 
         chunk_size: int = 1000, 
-        chunk_overlap: int = 150) -> Iterator[List[Document]]:
-        pass
+        chunk_overlap: int = 150) -> Iterator[Document]:
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+        chunks = text_splitter.split_documents(docs)
+        for chunk in chunks:
+            yield Document(
+                page_content=chunk.page_content,
+                metadata={**chunk.metadata, **metadata})
 
-    async def embed(self, chunks) -> List[str]:
-        ids = await self._vector_store_bridge.aadd(chunks)
-        return ids
+    async def embed(self, chunks: Iterator[Document]) -> List[str]:
+        return await self._vector_store_bridge.aadd(chunks)
 
     @property
     def fetch_metadata(self):
@@ -41,7 +45,7 @@ class DocumentIngestor(ABC):
         }
 
     async def ingest(self) -> List[str]:
-        """Factory Method"""
+        """Template Method"""
         docs = self.load()
         chunks = self.chunk(docs, self.fetch_metadata)
         return await self.embed(chunks)
