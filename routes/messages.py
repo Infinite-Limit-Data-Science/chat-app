@@ -57,14 +57,14 @@ async def create_message(
     embedding_models: List[BaseEmbedding]  = Depends(get_current_embedding_models),
     prompt_template: str = Depends(get_prompt_template)):
     """Insert new message record in configured database, returning AI Response"""
-    ingestors = None
+    retrievers = []
     if _DATABASE_STRATEGY == 'mongodb':
         conversation_id = ObjectId(conversation_id)
     data = { 'uuid': request.state.uuid, 'conversation_id': conversation_id }
     if upload_files:
-        ingestors = await ingest_files(upload_files, data)
+        retrievers = await ingest_files(request, upload_files, data)
     message_schema = MessageSchema(type='human', content=content, conversation_id=conversation_id)
-    llm_stream = await chat(prompt_template, models, embedding_models, data, ingestors, message_schema)
+    llm_stream = await chat(prompt_template, models, embedding_models, data, retrievers, message_schema)
     return StreamingResponse(llm_stream(), media_type="text/plain", headers={"X-Accel-Buffering": "no"})
 
 @router.get(

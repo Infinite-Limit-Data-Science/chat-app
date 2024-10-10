@@ -3,8 +3,9 @@ import asyncio
 import shutil
 from typing import List, Dict
 from fastapi import UploadFile, logger, Request
+from langchain_core.vectorstores import VectorStoreRetriever
 from orchestrators.doc.embedding_models.embedding import BaseEmbedding
-from orchestrators.doc.ingestors.ingest import ingest, DocumentIngestor
+from orchestrators.doc.ingestors.ingest import ingest
 from routes.configs import get_current_embedding_models
 
 _CURRENT_VECTOR_STORE = 'redis'
@@ -12,7 +13,8 @@ _CURRENT_VECTOR_STORE = 'redis'
 def format_file_for_storage(uuid: str, conversation_id: str, filename: str):
     return f'files/{uuid}/conversations/{conversation_id}/{filename}'
 
-async def ingest_file(embedding_models: List[BaseEmbedding], upload_file: UploadFile, data: dict) -> DocumentIngestor:
+async def ingest_file(embedding_models: List[BaseEmbedding], upload_file: UploadFile, data: dict) -> VectorStoreRetriever:
+    """Ingest vectors and return retriever to retrieve them"""
     path = format_file_for_storage(data['uuid'], str(data['conversation_id']), upload_file.filename)
     dir_path = os.path.dirname(path)
     if not os.path.exists(dir_path):
@@ -20,7 +22,7 @@ async def ingest_file(embedding_models: List[BaseEmbedding], upload_file: Upload
     with open(path, 'wb') as f:
         shutil.copyfileobj(upload_file.file, f)
 
-    ingestor = await ingest(
+    retriever = await ingest(
         path, 
         _CURRENT_VECTOR_STORE, 
         embedding_models, 
@@ -43,9 +45,9 @@ async def ingest_file(embedding_models: List[BaseEmbedding], upload_file: Upload
         ]
     )
 
-    return ingestor
+    return retriever
 
-async def ingest_files(request: Request, upload_files: List[UploadFile], data: dict) -> List[DocumentIngestor]:
+async def ingest_files(request: Request, upload_files: List[UploadFile], data: dict) -> List[VectorStoreRetriever]:
     embedding_models = await get_current_embedding_models(request)
     tasks = [
         asyncio.create_task(
@@ -53,5 +55,5 @@ async def ingest_files(request: Request, upload_files: List[UploadFile], data: d
         ) 
         for upload_file in upload_files
     ]
-    ingestors = await asyncio.gather(*tasks)
-    return ingestors
+    retrievers = await asyncio.gather(*tasks)
+    return retrievers

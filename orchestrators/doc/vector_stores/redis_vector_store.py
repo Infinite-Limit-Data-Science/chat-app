@@ -182,6 +182,7 @@ class RedisVectorStore(AbstractVectorStore):
         filter_expression: Optional[FilterExpression] = None) -> List[Document]:
         """Use Async Cosine Similarity Search to get immediate results"""
         filter = filter_expression if filter_expression else self.flexi_schema.get_default_filter()
+        logging.warning(f'WHAT ARE THE FILTERS APPLIED {filter}')
         return await self._vector_store.asimilarity_search(query, filter=filter)
     
     async def adelete(

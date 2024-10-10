@@ -1,5 +1,6 @@
 import logging
 from typing import List, Optional, Callable, AsyncGenerator
+from langchain_core.vectorstores import VectorStoreRetriever
 from orchestrators.chat.chat_bot import ChatBot, ChatBotBuilder
 from orchestrators.chat.llm_models.llm import LLM
 from orchestrators.doc.embedding_models.embedding import BaseEmbedding
@@ -14,14 +15,14 @@ async def chat(
     models: List[LLM],
     embedding_models: List[BaseEmbedding],
     data: dict,
-    ingestors: Optional[List[DocumentIngestor]],
+    retrievers: Optional[List[VectorStoreRetriever]],
     message_schema: MessageSchema) -> Callable[[], AsyncGenerator[str, None]]:
     """Invoke chat bot"""
     chat_bot = ChatBot()
     builder = ChatBotBuilder(chat_bot)
     builder.build_vector_part(
         _DEFAULT_VECTOR_STORE,
-        ingestors, 
+        retrievers, 
         embedding_models, 
         [
             {

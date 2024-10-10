@@ -79,3 +79,22 @@ Summary:"""
 def summarization_template():
      """Returns runnable"""
      return ChatPromptTemplate.from_template(SUMMARIZATION_TEMPLATE)
+
+"""
+Note the actual "context" of this ChatPromptTemplate are dynamically generated
+based on the number of documents to compare
+"""
+HISTORY_COMPARE_TEMPLATE = """
+You are tasked with answering questions based on the context provided below.
+Please compare and analyze the information from different documents.
+
+{context}
+"""
+@register('history_compare_template')
+def history_compare_template():
+    """Returns runnable"""
+    return ChatPromptTemplate.from_messages([
+        ("system",HISTORY_COMPARE_TEMPLATE),
+        MessagesPlaceholder('chat_history'),
+        ('human', "{input}"),
+    ])

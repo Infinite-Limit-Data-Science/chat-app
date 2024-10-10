@@ -62,15 +62,15 @@ async def create_conversation(
     prompt_template: str = Depends(get_prompt_template)):
     """Insert new conversation record and message record in configured database, returning AI Response"""
     conversation_schema = CreateConversationSchema(uuid=request.state.uuid)
-    ingestors = None
+    retrievers = []
     if (
         created_conversation_id := await ConversationRepo.create(conversation_schema=conversation_schema)
     ) is not None:
         data = { 'uuid': conversation_schema.uuid, 'conversation_id': created_conversation_id }
         if upload_files:
-            ingestors = await ingest_files(request, upload_files, data)
+            retrievers = await ingest_files(request, upload_files, data)
         message_schema = MessageSchema(type='human', content=content, conversation_id=created_conversation_id)     
-        llm_stream = await chat(prompt_template, models, embedding_models, data, ingestors, message_schema)
+        llm_stream = await chat(prompt_template, models, embedding_models, data, retrievers, message_schema)
         return StreamingResponse(llm_stream(), media_type="text/plain", headers={"X-Accel-Buffering": "no"})
         
     return {'error': f'Conversation not created'}, 400
