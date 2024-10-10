@@ -30,7 +30,7 @@ class PowerPointLoader(BaseLoader):
         for slide in self.doc.slides:
             full_text.extend(self._extract_text_from_shapes(slide.shapes))
         
-        metadata = {'source': str(self._file_path)}
+        metadata = {'source': self.sourcify(self._file_path)}
         yield Document(page_content="\n".join(full_text), metadata=metadata)
     load = lazy_load
 

@@ -33,7 +33,7 @@ class WordLoader(BaseLoader):
         for section in self.doc.sections:
             full_text.append(self.extract_header_footer_text(section))
 
-        metadata = {'source': str(self._file_path)}
+        metadata = {'source': self.sourcify(self._file_path)}
         yield Document(page_content="\n".join(full_text), metadata=metadata)
     load = lazy_load
 

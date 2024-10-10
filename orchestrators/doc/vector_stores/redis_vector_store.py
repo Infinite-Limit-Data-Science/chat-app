@@ -2,18 +2,21 @@ import logging
 import os
 import asyncio
 from itertools import islice
-from typing import List, TypedDict, Any, Iterator, TypeVar, Dict, Literal
+from typing import List, TypedDict, Any, Iterator, TypeVar, Dict, Literal, Union, Optional
 from redis.connection import ConnectionPool
 from langchain_core.documents import Document
 from langchain_redis import RedisConfig as Config, RedisVectorStore as VectorStore
 from langchain_redis.config import Redis
 from langchain_core.vectorstores import VectorStoreRetriever
+from orchestrators.doc.embedding_models.embedding import BaseEmbedding
 from orchestrators.doc.vector_stores.abstract_vector_store import (
     AbstractVectorStore, 
     VectorStoreRetrieval,
+    AbstractFlexiSchemaFields,
+    AbstractFlexiSchema,
+    FilterExpression,
+    Tag,
 )
-from orchestrators.doc.embedding_models.model_proxy import ModelProxy
-from orchestrators.doc.runnable_extensions.wrapper_runnable_config import WrapperRunnableConfig
 
 _MAX_CONNECTIONS = 50
 
@@ -90,26 +93,68 @@ class RedisConfig(TypedDict):
     redis_url: str
     schema: List[dict]
 
+class FlexiSchema(AbstractFlexiSchema):
+    def __init__(self, schema: List[Dict[str, Any]]):
+        self.schema = schema
+
+    def _get_defaults(self) -> List[FilterExpression]:
+        return [
+            Tag(field['name']) == field['value']
+            for field in self.schema
+            if 'value' in field and field['value'] is not None
+        ]
+
+    def get_default_filter(self) -> FilterExpression:
+        return self._combine_filters(self._get_defaults())
+
+    def get_all_filters(
+        self, 
+        additional_filters: Dict[str, Any] = None) -> FilterExpression:
+        filters = self._get_defaults()
+        if additional_filters:
+            for field in self.schema:
+                field_name = field['name']
+                if 'value' not in field and field_name in additional_filters:
+                    filters.append(Tag(field_name) == additional_filters[field_name])
+
+        return self._combine_filters(filters)
+
+    @staticmethod
+    def _combine_filters(filters: List[Any]) -> FilterExpression:
+        if not filters:
+            return None
+        combined_filter = filters[0]
+        for f in filters[1:]:
+            combined_filter &= f
+        return combined_filter
+
+def _metadata_schema(schema):
+    return [
+        {key: field[key] for key in field if key != 'value'}
+        for field in schema
+    ]
+
 class RedisVectorStore(AbstractVectorStore):
     def __init__(
         self, 
-        embeddings: ModelProxy, 
-        wrapper_runnable_config: WrapperRunnableConfig):
-        self._primary_embedding = embeddings.get()
-        self._wrapper_runnable_config = wrapper_runnable_config
+        embeddings: BaseEmbedding, 
+        metadata: List[AbstractFlexiSchemaFields]):
+        self._embeddings = embeddings
+        self.flexi_schema = FlexiSchema(metadata)
+        self._metadata_schema = _metadata_schema(metadata)
         self.config = Config(
             index_name=_INDEX_NAME,
             redis_client=_redis_client,
-            metadata_schema=self._wrapper_runnable_config['metadata']['schema'],
+            metadata_schema=self._metadata_schema,
             distance_metric=_DISTANCE_METRIC,
             indexing_algorithm=_INDEXING_ALGORITHM,
             vector_datatype=_VECTOR_DATATYPE,
             storage_type=_STORAGE_TYPE,
             content_field=_CONTENT_FIELD_NAME,
             embedding_field=_EMBEDDING_VECTOR_FIELD_NAME,
-            embedding_dimensions=self._primary_embedding.dimensions,
+            embedding_dimensions=self._embeddings.dimensions,
         )
-        self._vector_store = RedisVectorStoreWithTTL(self._primary_embedding.endpoint_object, config=self.config)
+        self._vector_store = RedisVectorStoreWithTTL(self._embeddings.endpoint_object, config=self.config)
 
     @property
     def content_field_name(self) -> str:
@@ -130,14 +175,22 @@ class RedisVectorStore(AbstractVectorStore):
         """Add documents to the vector store asynchronously, expecting metadata per document"""
         return await self._vector_store.aadd_documents_with_ttl(documents, _VECTOR_TTL_30_DAYS)
     
-    async def asimilarity_search(self, query: str) -> List[Document]:
+    async def asimilarity_search(
+        self, 
+        query: str, 
+        *, 
+        filter_expression: Optional[FilterExpression] = None) -> List[Document]:
         """Use Async Cosine Similarity Search to get immediate results"""
-        filter_expression = self.generate_expression(self._wrapper_runnable_config)
-        return await self._vector_store.asimilarity_search(query, filter=filter_expression)
+        filter = filter_expression if filter_expression else self.flexi_schema.get_default_filter()
+        return await self._vector_store.asimilarity_search(query, filter=filter)
     
-    async def adelete(self, query: str = '') -> bool:
-        filter_expression = self.generate_expression(self._wrapper_runnable_config)
-        documents = await self._vector_store.asimilarity_search(query=query, filter=filter_expression)
+    async def adelete(
+        self, 
+        query: str = '', 
+        *, 
+        filter_expression: Optional[FilterExpression] = None) -> bool:
+        filter = filter_expression if filter_expression else self.flexi_schema.get_default_filter()
+        documents = await self._vector_store.asimilarity_search(query=query, filter=filter)
         document_ids = [doc.metadata['id'] for doc in documents]
         if document_ids:
             result = self._vector_store.adelete(ids=document_ids)
@@ -146,26 +199,34 @@ class RedisVectorStore(AbstractVectorStore):
                 return True
         return False
     
-    def retriever(self, options: VectorStoreRetrieval = VectorStoreRetrieval()) -> VectorStoreRetriever:
-        """Generate a retriever which implements the Runnable interface"""
-        filter_expression = self.generate_expression(self._wrapper_runnable_config)
+    def retriever(
+        self, 
+        options: VectorStoreRetrieval = VectorStoreRetrieval(),
+        *,
+        filter_expression: Optional[FilterExpression] = None) -> VectorStoreRetriever:
+        """Generate a retriever from filter expression"""
+        filter = filter_expression if filter_expression else self.flexi_schema.get_default_filter()
         retriever = self._vector_store.as_retriever(
             search_type='similarity',
             search_kwargs={
                 'k': options.k, 
                 'score_threshold': options.score_threshold, 
-                'filter': filter_expression,
+                'filter': filter,
             })
         return retriever
 
-    async def inspect(self, query: str, k: int = 4) -> str:
-        from tabulate import tabulate
-        query_vector = await self._primary_embedding.endpoint_object.aembed_query(query)
-        filter_expression = self.generate_expression(self._wrapper_runnable_config)
+    async def inspect(
+        self, 
+        query: str, 
+        k: int = 4, *, 
+        filter_expression: Optional[FilterExpression] = None) -> str:
+        from tabulate2 import tabulate
+        query_vector = await self._embeddings.endpoint_object.aembed_query(query)
+        filter = filter_expression if filter_expression else self.flexi_schema.get_default_filter()
         results = await self._vector_store.asimilarity_search_by_vector(
             embedding=query_vector,
             k=k,
-            filter=filter_expression,
+            filter=filter,
         )
         table_data = []
         for result in results:
@@ -207,6 +268,6 @@ class RedisVectorStore(AbstractVectorStore):
                         'datatype': self.config.vector_datatype,
                     },
                 },
-                *self._wrapper_runnable_config['metadata']['schema'],
+                *self._metadata_schema,
             ],
         })

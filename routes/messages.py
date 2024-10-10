@@ -13,19 +13,18 @@ from fastapi import (
     logger,
 )
 from fastapi.responses import StreamingResponse
+from orchestrators.chat.llm_models.llm import LLM
+from orchestrators.doc.embedding_models.embedding import BaseEmbedding
 from models.mongo_schema import ObjectId
 from auth.bearer_authentication import get_current_user
-from routes.chats import chat 
+from routes.chats import chat
 from routes.configs import (
     get_current_models, 
     get_current_embedding_models, 
-    get_prompt_template, 
-    
+    get_prompt_template,   
 )
-from orchestrators.chat.llm_models.llm import LLM
-from orchestrators.doc.embedding_models.embedding import BaseEmbedding
 from repositories.base_mongo_repository import base_mongo_factory as factory
-from routes.uploads import ingest_file
+from routes.uploads import ingest_files
 from models.message import (
     Message,
     MessageSchema,
@@ -53,23 +52,19 @@ async def create_message(
     request: Request,
     conversation_id: str,
     content: str = Form(...),
-    models: LLM = Depends(get_current_models),
-    embedding_models: List[BaseEmbedding] = Depends(get_current_embedding_models),
-    prompt_template: str = Depends(get_prompt_template),
-    upload_file: Optional[UploadFile] = File(None)):
+    upload_files: Optional[List[UploadFile]] = File(None),
+    models: List[LLM] = Depends(get_current_models),
+    embedding_models: List[BaseEmbedding]  = Depends(get_current_embedding_models),
+    prompt_template: str = Depends(get_prompt_template)):
     """Insert new message record in configured database, returning AI Response"""
+    ingestors = None
     if _DATABASE_STRATEGY == 'mongodb':
         conversation_id = ObjectId(conversation_id)
     data = { 'uuid': request.state.uuid, 'conversation_id': conversation_id }
-    if upload_file:
-        await ingest_file(embedding_models, upload_file, data)
+    if upload_files:
+        ingestors = await ingest_files(upload_files, data)
     message_schema = MessageSchema(type='human', content=content, conversation_id=conversation_id)
-    llm_stream = await chat(
-        prompt_template, 
-        models,
-        embedding_models,
-        data,
-        message_schema)
+    llm_stream = await chat(prompt_template, models, embedding_models, data, ingestors, message_schema)
     return StreamingResponse(llm_stream(), media_type="text/plain", headers={"X-Accel-Buffering": "no"})
 
 @router.get(

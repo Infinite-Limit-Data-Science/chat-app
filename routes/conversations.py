@@ -12,17 +12,16 @@ from fastapi import (
     UploadFile, 
     logger
 )
+from orchestrators.chat.llm_models.llm import LLM
+from orchestrators.doc.embedding_models.embedding import BaseEmbedding
 from auth.bearer_authentication import get_current_user
-from routes.chats import chat 
+from routes.chats import chat
 from routes.configs import (
     get_current_models, 
     get_current_embedding_models, 
-    get_prompt_template, 
-    
+    get_prompt_template,   
 )
-from routes.uploads import ingest_file
-from orchestrators.chat.llm_models.llm import LLM
-from orchestrators.doc.embedding_models.embedding import BaseEmbedding
+from routes.uploads import ingest_files
 from repositories.conversation_mongo_repository import ConversationMongoRepository as ConversationRepo
 from models.conversation import (
     ConversationSchema,
@@ -57,28 +56,21 @@ async def conversations(request: Request, record_offset: int = Query(0, descript
 async def create_conversation(
     request: Request,
     content: str = Form(...),
-    # conversation: Annotated[ConversationSchema, Form()],
-    # message: Annotated[MessageSchema, Form()],
+    upload_files: Optional[List[UploadFile]] = File(None),
     models: List[LLM] = Depends(get_current_models),
-    embedding_models: List[BaseEmbedding]  = Depends(get_current_embedding_models),
-    prompt_template: str = Depends(get_prompt_template),
-    upload_file: Optional[UploadFile] = File(None)):
+    embedding_models: List[BaseEmbedding] = Depends(get_current_embedding_models),
+    prompt_template: str = Depends(get_prompt_template)):
     """Insert new conversation record and message record in configured database, returning AI Response"""
     conversation_schema = CreateConversationSchema(uuid=request.state.uuid)
-
+    ingestors = None
     if (
         created_conversation_id := await ConversationRepo.create(conversation_schema=conversation_schema)
     ) is not None:
         data = { 'uuid': conversation_schema.uuid, 'conversation_id': created_conversation_id }
-        if upload_file:
-            await ingest_file(embedding_models, upload_file, data)
+        if upload_files:
+            ingestors = await ingest_files(request, upload_files, data)
         message_schema = MessageSchema(type='human', content=content, conversation_id=created_conversation_id)     
-        llm_stream = await chat(
-            prompt_template, 
-            models,
-            embedding_models,
-            data,
-            message_schema)
+        llm_stream = await chat(prompt_template, models, embedding_models, data, ingestors, message_schema)
         return StreamingResponse(llm_stream(), media_type="text/plain", headers={"X-Accel-Buffering": "no"})
         
     return {'error': f'Conversation not created'}, 400
@@ -128,7 +120,7 @@ async def delete_conversation(request: Request, id: str):
     response_description='Delete all conversations',
 )
 async def delete_conversations(request: Request):
-    """Remove a single conversation record from the database."""
+    """Remove all conversation records from the database for given user."""
     if (
         delete_count := await ConversationRepo.delete_many(options={request.state.uuid_name: request.state.uuid})
     ) is not None:

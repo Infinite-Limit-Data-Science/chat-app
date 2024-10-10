@@ -42,3 +42,6 @@ class BaseLoader(ABC):
         """Check if the url is valid."""
         parsed = urlparse(url)
         return bool(parsed.netloc) and bool(parsed.scheme)
+    
+    def sourcify(self, path: Union[str, Path]) -> str:
+        return os.path.basename(str(path))
