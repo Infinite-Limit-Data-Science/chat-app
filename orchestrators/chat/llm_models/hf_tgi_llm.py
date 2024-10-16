@@ -13,10 +13,13 @@ from orchestrators.chat.llm_models.my_chat_huggingface import MyChatHuggingFace
 current_file_path = os.path.abspath(__file__)
 current_directory = os.path.dirname(current_file_path)
 new_folder_path = os.path.join(current_directory, 'local_tokenizer')
-tokenizer = AutoTokenizer.from_pretrained(new_folder_path)
 
 @dataclass(kw_only=True, slots=True)
 class HFTGI(LLM):
+    def _load_tokenizer(self):
+        tokenizer = AutoTokenizer.from_pretrained(os.path.join(new_folder_path, self.name.split(os.path.sep)[-1]))
+        return tokenizer
+
     def __post_init__(self) -> None:
         streaming_handler = StreamingStdOutCallbackHandler()
         callbacks = [streaming_handler]
@@ -25,7 +28,7 @@ class HFTGI(LLM):
             callbacks=callbacks, 
             **{'endpoint_url': self.endpoint['url'], **self.parameters, 'server_kwargs': dict(self.server_kwargs)})
         
-        chat = MyChatHuggingFace(llm=llm, tokenizer=tokenizer, model_id=self.name)
+        chat = MyChatHuggingFace(llm=llm, tokenizer=self._load_tokenizer(), model_id=self.name)
         self.endpoint_object = chat
 
         summary_llm = HuggingFaceEndpoint(
@@ -36,4 +39,4 @@ class HFTGI(LLM):
             task='summarization',
             server_kwargs=dict(self.server_kwargs)
         )
-        self.summary_object = MyChatHuggingFace(llm=summary_llm, tokenizer=tokenizer, model_id=self.name)
+        self.summary_object = MyChatHuggingFace(llm=summary_llm, tokenizer=self._load_tokenizer(), model_id=self.name)

@@ -594,8 +594,186 @@ For more information on the HuggingFace TGI, please use this documentation as a 
 
 ### HF TGI Argument Reference
 
-Source: https://huggingface.co/docs/text-generation-inference/reference/launcher
+Here is an example of how to use the HF TGI arguments:
 
-MAX_STOP_SEQUENCES
+model=meta-llama/Llama-3.1-70B-Instruct
+token=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
+volume=$PWD/data
 
-MAX_INPUT_TOKENS
+```shell
+model=meta-llama/Llama-3.1-70B-Instruct
+token=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
+volume=$PWD/data
+docker container run --gpus all --shm-size 1g -e HUGGING_FACE_HUB_TOKEN=$token -p 8080:80 -v $volume:/data ghcr.io/huggingface/text-generation-inference:2.2.0 --model-id $model --max-batch-prefill-tokens 4800 --max-input-length 4768 --max-total-tokens 10960  --num-shard 4
+```
+
+Note shared memory (/dev/shm), which is managed by the --shm-size flag in Docker, is part of the system's CPU memory and does not directly impact GPU memory usage. GPU memory is managed separately by the GPU drivers and frameworks like PyTorch, which handle loading models into GPU memory for inference and training.
+
+In the context of PyTorch inference APIs (like those used in Hugging Face TGI), GPU memory is used to store model weights, activations, and other data necessary for inference. Shared memory is more relevant to CPU-based processes that might require inter-process communication or that share data structures between processes running on the same machine, such as if multiple workers are handling requests and need access to the same memory space.
+
+### --sharded and --num-shard
+
+The --sharded parameter specifies whether to shard the model across multiple GPUs. By default text-generation-inference will use all available GPUs to run the model.  Setting it to `false` deactivates `num_shard`. So you should keep this to true, which is the default. 
+
+The --num-shard parameter allows you to specify the number of shards to use if you don't want to use all GPUs on a given machine. You can use `CUDA_VISIBLE_DEVICES=0,1 text-generation-launcher... --num_shard 2` and `CUDA_VISIBLE_DEVICES=2,3 text-generation-launcher... --num_shard 2` to launch 2 copies with 2 shard each on a given machine with 4 GPUs for instance.
+
+### --quantize
+
+This option specifies the quantization method to use for the model. It is not necessary to specify this option for pre-quantized models, since the quantization method is read from the model configuration. Marlin kernels will be used automatically for GPTQ/AWQ models. Possible values:
+
+- awq:  4 bit quantization. Requires a specific AWQ quantized model: <https://hf.co/models?search=awq>. In here, you will find the popular hugging-quants/Meta-Llama-3.1-70B-Instruct-AWQ-INT4 !
+- eetq: 8 bit quantization, doesn't require specific model. Should be a drop-in replacement to bitsandbytes with much better performance. Kernels are from <https://github.com/NetEase-FuXi/EETQ.git>
+- gptq: 4 bit quantization. Requires a specific GTPQ quantized model: <https://hf.co/models?search=gptq>. text-generation-inference will use exllama (faster) kernels wherever possible, and use triton kernel (wider support) when it's not. AWQ has faster kernels
+- marlin: 4 bit quantization. Requires a specific Marlin quantized model: <https://hf.co/models?search=marlin>
+- bitsandbytes: Bitsandbytes 8bit. Can be applied on any model, will cut the memory requirement in half, but it is known that the model will be much slower to run than the native f16
+- bitsandbytes-nf4: Bitsandbytes 4bit. Can be applied on any model, will cut the memory requirement by 4x, but it is known that the model will be much slower to run than the native f16
+
+Given that you're running Meta Llama 3.1 70B Instruct on a system with 4 A10G GPUs, each with 24 GiB of memory, and need to optimize memory usage while maintaining performance, here’s how the available quantization options fit into your scenario:
+
+- Total GPU memory: 96 GiB when sharding across 4 GPUs.
+- Model size: 70 billion parameters, which is very large and requires significant memory.
+- Performance: You want good inference speed but also need to manage memory efficiently.
+
+GPTQ (4-bit):
+
+- Advantages: 4-bit quantization that significantly reduces memory usage, but only works with models already quantized for GPTQ.
+- Why it fits: GPTQ is known for its balance between memory savings and performance. It uses exllama kernels for faster inference wherever possible. For a large model like Llama 3.1 70B, GPTQ’s 4-bit quantization can help fit the model within your 96 GiB memory limit, while maintaining relatively fast performance.
+- Drawback: Requires a GPTQ-quantized model. You need to ensure the model is available in GPTQ format from Hugging Face.
+
+AWQ (4-bit):
+
+- Advantages: AWQ also offers 4-bit quantization but tends to have faster kernels compared to GPTQ. It provides good memory savings and can be a strong choice for multi-GPU setups like yours.
+- Why it fits: AWQ quantization is an excellent choice if you're looking for a balance between memory efficiency and speed, especially with the faster kernels. With 4 GPUs and a 4-bit model, you should be able to load the 70B model comfortably.
+- Drawback: Like GPTQ, AWQ requires a specific AWQ-quantized model.
+
+Bitsandbytes (8-bit or 4-bit):
+
+- Advantages: Can be applied to any model, offering memory reduction by half (8-bit) or four times (4-bit).
+- Why it fits: While Bitsandbytes is more flexible and can be applied to any model, it is slower than native FP16. If memory is a critical concern, but speed is less important, you could use the 8-bit or 4-bit options.
+- Drawback: Significantly slower than AWQ or GPTQ. It might not be ideal if you're looking for optimal inference speed.
+
+Best Option: AWQ (4-bit) if the model is available in AWQ format. It offers faster kernels and the memory reduction you need to fit the model across your GPUs.
+
+Alternative: GPTQ (4-bit) if you prefer faster inference but still want to reduce memory.
+
+Fallback: Bitsandbytes (8-bit or 4-bit) if you're unable to find pre-quantized models, though it will be slower.
+
+Using a prebuilt quantized model:
+
+```shell
+model=hugging-quants/Meta-Llama-3.1-70B-Instruct-AWQ-INT4
+token=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
+volume=$PWD/data
+docker container run --gpus all --shm-size 1g -e HUGGING_FACE_HUB_TOKEN=$token -p 8080:80 -v $volume:/data ghcr.io/huggingface/text-generation-inference:2.2.0 --model-id $model --max-batch-prefill-tokens 4800 --max-input-length 4768 --max-total-tokens 10960 --num-shard 4
+```
+
+### --dtype
+
+The --dtype argument in machine learning frameworks and tools such as PyTorch or Hugging Face’s TGI refers to the data type of the tensors used during model execution, particularly during inference or training. This argument controls how numerical computations are performed and the amount of memory the model consumes.
+
+- float32 (or fp32): 32-bit floating point precision. It is the default and provides the highest precision. Uses more memory but provides better accuracy.
+- float16 (or fp16): 16-bit floating point precision. Requires half the memory of float32, which helps in reducing memory usage and enabling faster computations. Often used for inference or mixed precision training to accelerate performance on GPUs. It is well-supported by most modern GPUs, particularly those optimized for mixed-precision computation (e.g., NVIDIA’s A100, V100, T4).
+
+Why --dtype Matters: 
+
+- Memory Efficiency: Lower precision types like float16 or bfloat16 significantly reduce memory consumption, making them ideal for deploying large models like Meta Llama 70B on hardware with limited memory.
+- Speed: Using float16 or bfloat16 can accelerate computations because GPUs can perform mixed-precision operations more efficiently.
+- Model Precision: The trade-off between lower precision and potential small accuracy losses must be considered, especially for tasks requiring high numerical stability.
+
+The dtype option cannot be used with `--quantize`.
+
+### --trust-remote-code
+
+ Whether you want to execute hub modelling code. Explicitly passing a `revision` is encouraged when loading a model with custom code to ensure no malicious code has been contributed in a newer revision
+
+ ### --max-concurrent-requests
+
+The maximum amount of concurrent requests for this particular deployment. Having a low limit will refuse clients requests instead of having them wait for too long and is usually good to handle backpressure correctly
+
+### --max-stop-sequences
+
+This is the maximum allowed value for clients to set `stop_sequences`. Stop sequences are used to allow the model to stop on more than just the EOS token, and enable more complex "prompting" where users can preprompt the model in a specific way and define their "own" stop token aligned with their prompt
+
+### --max-top-n-tokens
+
+This is the maximum allowed value for clients to set `top_n_tokens`. `top_n_tokens` is used to return information about the the `n` most likely tokens at each generation step, instead of just the sampled token. This information can be used for downstream tasks like for classification or ranking
+
+### --max-input-tokens & --max-input-length
+
+This is the maximum allowed input length (expressed in number of tokens) for users. The larger this value, the longer prompt users can send which can impact the overall memory required to handle the load. Please note that some models have a finite range of sequence they can handle. 
+
+### --max-total-tokens 
+
+This is the most important value to set as it defines the "memory budget" of running clients requests. Clients will send input sequences and ask to generate `max_new_tokens` on top. with a value of `1512` users can send either a prompt of `1000` and ask for `512` new tokens, or send a prompt of `1` and ask for `1511` max_new_tokens. The larger this value, the larger amount each request will be in your RAM and the less effective batching can be.
+
+--max-input-tokens defines the maximum number of tokens a user can send in their prompt (i.e., the input sequence) for a single inference request. The larger this value, the longer prompts users can submit. Impact on memory: Allowing larger input prompts increases memory consumption since the model has to process all those tokens. Important for managing input constraints: This setting ensures that user input does not exceed the model’s sequence handling capabilities. --max-total-tokens s is the most crucial value to define because it sets the overall "token budget" for a request, which includes both the input tokens and the tokens generated by the model. It governs how many tokens can be handled by a request in total, which includes: 1) The prompt tokens (input_tokens), and 2) The new tokens that the model generates in response (max_new_tokens). Memory management: This value is directly tied to memory usage because it dictates the total amount of tokens (input + output) the system will process for each request. Impact on batching: If this value is large, individual requests will consume more memory, making it harder to batch multiple requests together. For instance, with a max-total-tokens value of 1512, a request could either be a prompt of 1000 tokens plus 512 generated tokens, or just a 1-token prompt with 1511 new tokens generated.
+
+### --max-batch-prefill-tokens
+
+The --max-batch-prefill-tokens parameter in Hugging Face TGI controls the upper limit on the number of tokens that can be handled during the "prefill" phase of the generation process for all requests in a batch. The "prefill" operation refers to the initial processing of input tokens before generating any new tokens (i.e., when the model encodes the input prompt).
+
+In sequence generation models (like GPT or LLaMA), the prefill operation happens during the first step of processing an input prompt. It involves running the input tokens through the model to prepare its internal state (e.g., key-value caches, activations, etc.) so that the model is ready to generate new tokens. This stage requires more computation and memory because the model has to process the entire input prompt all at once before it can start generating outputs.
+
+Purpose of --max-batch-prefill-tokens:
+
+- Limits memory usage: Prefill is memory-intensive, especially when handling multiple requests in a batch. By limiting the total number of tokens used during prefill, this parameter helps manage memory consumption and prevent out-of-memory (OOM) errors.
+- Limits computational load: Since the prefill stage is also compute-bound (it requires a lot of computation), setting a limit helps to prevent overloading the system with too many tokens at once, which could slow down the inference process.
+
+By default, --max-batch-prefill-tokens is set to max_input_tokens + 50, meaning it allows a little extra room (50 additional tokens) over the max_input_tokens setting. This gives some flexibility for handling multiple requests without exceeding memory or computational limits.
+
+You might want to lower this value if you're experiencing memory or performance issues, especially if your system is running out of memory (OOM) or the inference time is becoming too slow during the prefill stage. Limiting the number of tokens during prefill helps control the resource usage, especially in high-concurrency or memory-constrained environments.
+
+### --max-client-batch-size
+
+The --max-client-batch-size parameter in Hugging Face TGI defines the maximum number of input requests a single client can send to the server in one API call. Essentially, it controls how many sequences (or input prompts) can be processed in a single batch by a client request. For example: If you set --max-client-batch-size 4 (the default), the client can send up to 4 different input sequences in a single request. If a client tries to send more than 4 sequences at once, the server will reject the request or process only up to the allowed limit. 
+
+The --max-client-batch-size and --max-input-tokens parameters serve different purposes in Hugging Face TGI, even though both control aspects of input handling. 
+
+--max-client-batch-size:
+
+- Purpose: Controls how many separate input sequences (or input prompts) a single client can send in one request.
+- Focus: Limits the number of requests in a single batch, not their size in terms of token count.
+- Example: If you set this to 4, the client can send 4 different input sequences in one API call.
+
+--max-input-tokens:
+
+- Purpose: Controls the maximum length (in tokens) of each input sequence (prompt) that a client can send.
+- Focus: Limits the size of each individual input sequence in terms of the number of tokens.
+- Example: If you set this to 30,000, each input sequence can be up to 30,000 tokens long, regardless of how many sequences are sent in the request.
+
+### --max-batch-size
+
+The --max-batch-size parameter in Hugging Face TGI defines the maximum number of requests that can be handled together in a single batch during inference. It controls how many separate client requests are processed in parallel by the system at any given time.
+
+Key Points about --max-batch-size:
+
+- Purpose: It enforces a maximum limit on the number of individual requests that are batched together for inference.
+- Target: This parameter is particularly important for hardware targets that do not support unpadded inference, meaning systems that require consistent batch sizes with no variation in sequence lengths (i.e., they can't handle variable input sizes efficiently).
+- Batching in Inference: Batching is a technique that allows multiple requests to be processed simultaneously, which can lead to better hardware utilization, especially for GPUs. However, when using hardware that requires padding (e.g., to equalize input sizes across the batch), batching too many requests can negatively impact performance.
+
+f you set --max-batch-size to 8, no more than 8 separate client requests will be processed together in a single batch. This can be useful for hardware optimization, ensuring that the system doesn't process overly large batches that might slow down or exceed memory limits.
+
+How It Differs from Other Parameters:
+
+- --max-client-batch-size limits the number of input sequences in a single request.
+- --max-input-tokens limits the number of tokens in each input sequence.
+- --max-batch-size limits the total number of client requests batched together for inference.
+
+### --tokenizer-config-path
+
+The --tokenizer-config-path argument in Hugging Face's TGI (Text Generation Inference) specifies the path to a configuration file that defines how the tokenizer should behave for a given model.
+
+Purpose:
+
+- Custom Tokenizer Behavior: This allows users to customize how input text is tokenized, including how to handle special tokens, unknown tokens, padding, and truncation.
+- Consistency with Model: The tokenizer config ensures that the tokenization process matches the model's requirements for tokenizing text inputs. This is particularly important when using models that were trained with specific tokenization settings.
+
+Common Uses:
+
+- Predefined Tokenizer Configurations: If you are using a model with a tokenizer that requires specific behavior (e.g., different vocabulary, max length, or special token treatment), you can pass a config file path that dictates how to handle these.
+- Custom Tokenizer Implementations: If you have modified a tokenizer or want to add specific rules for tokenization, this file provides the flexibility to define such customizations.
+
+In summary, the --tokenizer-config-path flag is useful for specifying a tokenizer's behavior to ensure it aligns with model requirements or any custom tokenization rules you might have defined.
+
+
+Spot Instances don't failover to on-demand. In order to accomplish this, you need to use CloudWatch Alarms. First, you need to create AutoScaling Group. Add Creat Launch Template. The AMI is required. In Launch Template specify the AMI, Instance Type, Key Pair, Security Group, EBS ROOT AMI Volume including size of 2000. Purchasing Optin set to Spot Instances. Create Launch Template. Now select the Launch Template from AutoScaling Groups. Now select ALL Availability Zones so the instance can be launched in any of the AZs when the Instance Type is available. Desired Capacity is 1, min is 1 and max is 1. No need to add Scaling Policy. Instance Maintenance Policy set to "Launch before terminating". The underlying data will be preserved because all the instances will use the same EBS volume!!!!

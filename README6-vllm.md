@@ -333,3 +333,320 @@ response = processor.batch_decode(generate_ids,
 
 print(response)
 ```
+
+Now let's try running meta-llama/Llama-3.2-11B-Vision-Instruct (as you will find out, it won't run on 24GB of GPU) 
+
+```shell
+docker run --runtime nvidia --gpus all -v ~/.cache/huggingface:/root/.cache/huggingface --env "HUGGING_FACE_HUB_TOKEN=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" -p 8000:8000 --ipc=host vllm/vllm-openai:latest --model meta-llama/Llama-3.2-11B-Vision-Instruct --trust-remote-code
+
+...
+
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 3.59 GiB. GPU 0 has a total capacity of 21.98 GiB of which 1.58 GiB is free. Including non-PyTorch memory, this process has 0 bytes memory in use. Of the allocated memory 19.95 GiB is allocated by PyTorch, and 164.39 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+```
+
+You might think the immediate solution is to quantize using bitsandbytes quantization algorithm. But let's also look at the context length of the model. The Llama-3.2-11B-Vision-Instruct model has a context length of 128,000 tokens, which allows it to process and understand extensive sequences of text and images during inference. This large context window supports more complex reasoning and detailed analysis, especially useful for tasks involving multimodal inputs such as image captioning and document-based queries.
+
+How does reducing the context length reduce the memory that is required? Reducing the context length in a model like Llama-3.2-11B-Vision-Instruct reduces the amount of memory required by decreasing the number of tokens that the model needs to keep track of during computation. This has a direct impact on GPU memory usage for the following reasons:
+
+- During forward and backward passes, the model has to store intermediate activations for each token in the context window. A longer context window means storing more activations, which consumes more memory. Reducing the number of tokens reduces the number of activations the model has to store.
+- Self-Attention Mechanism: Transformers, like Llama, use self-attention, where each token interacts with all other tokens in the context window. The memory consumption of this process grows quadratically with the context length. Reducing the context length decreases the number of token interactions, thereby reducing the memory used by the self-attention mechanism.
+- Buffer and Memory Allocations: Models allocate memory buffers based on the maximum sequence length, so a smaller context length requires smaller buffer allocations. This can save memory for both the model's forward computations and the backpropagation steps during fine-tuning.
+- Batch Processing: With a shorter context length, it may be possible to fit larger batch sizes or more complex models into the same memory, as fewer resources are used per sequence.
+
+Now we try a context length of 80000:
+
+```shell
+docker run --runtime nvidia --gpus all -v ~/.cache/huggingface:/root/.cache/huggingface --env "HUGGING_FACE_HUB_TOKEN=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" -p 8000:8000 --ipc=host vllm/vllm-openai:latest --model meta-llama/Llama-3.2-11B-Vision-Instruct --trust-remote-code --max-model-len 80000
+
+...
+
+WARNING 10-14 23:23:16 arg_utils.py:963] The model has a long context length (80000). This may cause OOM errors during the initial memory profiling phase, or result in low performance due to small KV cache space. Consider setting --max-model-len to a smaller value.
+WARNING 10-14 23:23:20 arg_utils.py:963] The model has a long context length (80000). This may cause OOM errors during the initial memory profiling phase, or result in low performance due to small KV cache space. Consider setting --max-model-len to a smaller value.
+
+...
+
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 3.59 GiB. GPU 0 has a total capacity of 21.98 GiB of which 1.58 GiB is free. Including non-PyTorch memory, this process has 0 bytes memory in use. Of the allocated memory 19.95 GiB is allocated by PyTorch, and 163.56 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+```
+
+Notice the warning above of "The model has a long context length (80000)". 
+
+The warning message you're seeing indicates that, even with a context length of 80,000 tokens, the system is concerned about potential out-of-memory (OOM) issues or performance degradation due to small Key-Value (KV) cache space.
+
+Here’s what’s happening:
+
+- KV Cache: This stores intermediate states during the model's self-attention mechanism. A longer context length increases the memory required for the KV cache, which can exhaust the available GPU memory.
+- Memory Profiling Phase: During the initialization of vLLM, it profiles the memory usage to determine how much can be allocated for various components (e.g., KV cache). With such a large context length, it may require more memory than the GPU can provide.
+
+The solution is to reduce Context Length Further: The warning suggests lowering the context length further. Try a value lower than 80,000 (e.g., 50,000 or 40,000 tokens), which can help reduce memory pressure.
+
+```shell
+# 50,000 fails too:
+docker run --runtime nvidia --gpus all -v ~/.cache/huggingface:/root/.cache/huggingface --env "HUGGING_FACE_HUB_TOKEN=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" -p 8000:8000 --ipc=host vllm/vllm-openai:latest --model meta-llama/Llama-3.2-11B-Vision-Instruct --trust-remote-code --max-model-len 50000
+
+# 30,000 fails too:
+docker run --runtime nvidia --gpus all -v ~/.cache/huggingface:/root/.cache/huggingface --env "HUGGING_FACE_HUB_TOKEN=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" -p 8000:8000 --ipc=host vllm/vllm-openai:latest --model meta-llama/Llama-3.2-11B-Vision-Instruct --trust-remote-code --max-model-len 30000
+
+# and notice it tries to allocate the same memory as in the case of 120,000k:
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 3.59 GiB. GPU 0 has a total capacity of 21.98 GiB of which 1.58 GiB is free. Including non-PyTorch memory, this process has 0 bytes memory in use. Of the allocated memory 19.94 GiB is allocated by PyTorch, and 164.71 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+
+# So it appears adjusting context length is not reducing the memory requirements! 
+
+# Use PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True: Since the error mentions fragmentation issues, you should try setting the environment variable that PyTorch recommends:
+
+docker run --runtime nvidia --gpus all -v ~/.cache/huggingface:/root/.cache/huggingface --env "HUGGING_FACE_HUB_TOKEN=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" --env "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True" -p 8000:8000 --ipc=host vllm/vllm-openai:latest --model meta-llama/Llama-3.2-11B-Vision-Instruct --trust-remote-code --max-model-len 30000
+```
+
+### --gpu-memory-utilization
+The default --gpu-memory-utilization value for the vllm/vllm-openai Docker image is 0.8, which means it uses 80% of the available GPU memory by default. This configuration allows some buffer for other processes, reducing the risk of out-of-memory (OOM) errors. You can adjust this value if needed by passing a different value when starting the container to utilize more or less GPU memory depending on the requirements of your model. This increases the memory utilization to 90%, giving your model more memory to work with while leaving a smaller buffer for system operations:
+
+```shell
+# using 90 percent GPU still caused OOM error
+docker run --runtime nvidia --gpus all -v ~/.cache/huggingface:/root/.cache/huggingface --env "HUGGING_FACE_HUB_TOKEN=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" --env "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True" -p 8000:8000 --ipc=host vllm/vllm-openai:latest --model meta-llama/Llama-3.2-11B-Vision-Instruct --trust-remote-code --max-model-len 30000 --gpu-memory-utilization 0.9
+
+# using 95 percent GPU still caused OOM error
+docker run --runtime nvidia --gpus all -v ~/.cache/huggingface:/root/.cache/huggingface --env "HUGGING_FACE_HUB_TOKEN=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" --env "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True" -p 8000:8000 --ipc=host vllm/vllm-openai:latest --model meta-llama/Llama-3.2-11B-Vision-Instruct --trust-remote-code --max-model-len 30000 --gpu-memory-utilization 0.95
+```
+
+Mixed Precision (float16) is a technique in deep learning that involves using lower precision data types, specifically 16-bit floating point (float16), alongside 32-bit floating point (float32), to accelerate training and inference while reducing memory usage. This method leverages the computational efficiency of float16 without significantly impacting the accuracy of the model.
+
+```shell
+docker run --runtime nvidia --gpus all -v ~/.cache/huggingface:/root/.cache/huggingface --env "HUGGING_FACE_HUB_TOKEN=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" --env "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True" -p 8000:8000 --ipc=host vllm/vllm-openai:latest --model meta-llama/Llama-3.2-11B-Vision-Instruct --trust-remote-code --max-model-len 30000 --gpu-memory-utilization 0.95 --dtype float16
+
+# but even with all these options passed in now, it still tries to use the same amount of memory when loading the docker container:
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 3.59 GiB. GPU 0 has a total capacity of 21.98 GiB of which 1.72 GiB is free. Including non-PyTorch memory, this process has 0 bytes memory in use. Of the allocated memory 19.94 GiB is allocated by PyTorch, and 21.49 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+```
+
+The model may still require more memory than what's available on the GPU, despite optimizations. Even though float16 reduces memory consumption during runtime, the INITIAL MODEL LOADING still demands a significant amount of memory, especially for large models like Llama 3.2 11B Vision-Instruct.
+
+### --max-model-len
+In vLLM, the --max-model-len argument defines the maximum context length the model can handle, i.e., how much text or tokens the model can process within a single session. This is a critical parameter when working with large models and affects memory allocation for the key-value (KV) cache. However, there is no direct --max-seq-len argument in vLLM. Instead, --max-model-len functions similarly to what other frameworks might refer to as a maximum sequence length. This parameter limits the context window size, affecting the length of text the model can "remember" and reference during inference. Reducing this value helps decrease memory usage.
+
+Model context length in a Large Language Model (LLM) is the maximum number of tokens or words that a model can consider when making predictions. It's similar to the model's memory or attention span. Context length is important because it allows models to understand and respond to complex information, such as in question answering, dialogue generation, and text summarization.
+
+### --tensor-parallel-size flag
+The --tensor-parallel-size flag in vLLM specifies the number of tensor parallel replicas that the model will use during execution. Tensor parallelism is a technique used to split a model's operations across multiple GPUs, allowing each GPU to process a portion of the model's tensors (e.g., weight matrices) simultaneously. This enables the model to handle larger models or workloads than a single GPU could manage on its own, by distributing the computation across multiple GPUs.
+
+Key aspects of --tensor-parallel-size:
+
+- Value: The value you specify represents how many GPUs will share the model's tensor computation load. For example, if you set --tensor-parallel-size 2, the model will be divided into two parts, each handled by a separate GPU.
+- Purpose: It helps to maximize the use of available GPU memory and compute power when running large models. By dividing the work across GPUs, you can efficiently scale up the model size and execution speed.
+- Trade-off: Using a larger tensor parallel size increases inter-GPU communication overhead but enables handling larger models that may not fit in the memory of a single GPU.
+
+```shell
+docker run --runtime nvidia --gpus all -v ~/.cache/huggingface:/root/.cache/huggingface --env "HUGGING_FACE_HUB_TOKEN=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" --env "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True" -p 8000:8000 --ipc=host vllm/vllm-openai:latest --model meta-llama/Llama-3.2-11B-Vision-Instruct --trust-remote-code --max-model-len 30000 --gpu-memory-utilization 0.95 --dtype float16 --tensor-parallel-size 2
+
+...
+
+ValueError: The number of required GPUs exceeds the total number of available GPUs in the placement group.
+Traceback (most recent call last):
+```
+
+The error message ValueError: The number of required GPUs exceeds the total number of available GPUs in the placement group indicates that the --tensor-parallel-size 2 parameter requires two GPUs, but your current setup has fewer than two available GPUs.
+
+### --cpu-offload-gb argument
+The --cpu-offload-gb argument in vLLM allows you to offload a portion of the model's data to the CPU, essentially extending the effective memory available for the GPU. This argument is particularly useful when your model size exceeds the available GPU memory.
+
+- Offloading to CPU: By setting a value for --cpu-offload-gb, you offload part of the model's data to the CPU memory. For example, if your GPU has 24 GB of memory and you set this parameter to 10 GB, the system will utilize 10 GB of CPU memory in addition to the 24 GB of GPU memory, virtually giving you 34 GB of total memory for the model.
+- Trade-offs: While this method allows for larger models to be loaded, it introduces some overhead due to the slower CPU-GPU memory transfer. Therefore, a fast CPU-GPU interconnect (such as NVLink or PCIe) is recommended to minimize the performance penalty.
+- Use case: It is especially useful when you are working with models that require more memory than your GPU can handle. For example, a 13B parameter model with BF16 weights that needs around 26 GB of memory can run on a 24 GB GPU by offloading 2 GB to the CPU.
+- Limitations: The performance will depend on how frequently data needs to be transferred between the CPU and GPU during inference or training. Frequent transfers may lead to significant slowdowns, so it's best suited for workloads where such transfers are minimal.
+
+```shell
+docker run --runtime nvidia --gpus all -v ~/.cache/huggingface:/root/.cache/huggingface --env "HUGGING_FACE_HUB_TOKEN=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" -p 8000:8000 --ipc=host vllm/vllm-openai:latest --model meta-llama/Llama-3.2-11B-Vision-Instruct --trust-remote-code --max-model-len 30000 --gpu-memory-utilization 0.90 --dtype float16 --cpu-offload-gb 4 --quantization awq
+```
+
+The --cpu-offload-gb argument is not being honored: https://github.com/vllm-project/vllm/issues/9367
+
+### --quantization
+
+Nothing has worked insofar. I have resorted to quantization. This is the option available on vLLM website: 
+
+--quantization, -q 
+Possible choices: aqlm, awq, deepspeedfp, tpu_int8, fp8, fbgemm_fp8, modelopt, marlin, gguf, gptq_marlin_24, gptq_marlin, awq_marlin, gptq, compressed-tensors, bitsandbytes, qqq, experts_int8, neuron_quant, ipex, None
+
+Which quantization option should I use which doesn't do too much sacrifice to the data? After all, It complains it needs 3 more GiB of GPU where I only have 1 GiB remaining. So it seems close but 3 GiB more it needs.
+
+Since your GPU memory is only a few GiB short of the requirement, and you want to minimize the loss in model performance, AWQ (Activation-aware Weight Quantization) or GPTQ (Quantized Kernels for Transformer Models) are good options. These methods tend to reduce memory usage with minimal impact on accuracy.
+
+```shell
+docker run --runtime nvidia --gpus all -v ~/.cache/huggingface:/root/.cache/huggingface --env "HUGGING_FACE_HUB_TOKEN=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" -p 8000:8000 --ipc=host vllm/vllm-openai:latest --model meta-llama/Llama-3.2-11B-Vision-Instruct --trust-remote-code --max-model-len 30000 --gpu-memory-utilization 0.90 --dtype float16 --cpu-offload-gb 4 --quantization awq
+
+    raise ValueError(
+ValueError: Cannot find the config file for awq
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/openai/api_server.py", line 585, in <module>
+    uvloop.run(run_server(args))
+  File "/usr/local/lib/python3.12/dist-packages/uvloop/__init__.py", line 109, in run
+    return __asyncio.run(
+           ^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/runners.py", line 194, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "uvloop/loop.pyx", line 1517, in uvloop.loop.Loop.run_until_complete
+  File "/usr/local/lib/python3.12/dist-packages/uvloop/__init__.py", line 61, in wrapper
+    return await main
+           ^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/openai/api_server.py", line 552, in run_server
+    async with build_async_engine_client(args) as engine_client:
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/contextlib.py", line 210, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/openai/api_server.py", line 107, in build_async_engine_client
+    async with build_async_engine_client_from_engine_args(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.12/contextlib.py", line 210, in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/local/lib/python3.12/dist-packages/vllm/entrypoints/openai/api_server.py", line 194, in build_async_engine_client_from_engine_args
+    raise RuntimeError(
+RuntimeError: Engine process failed to start
+```
+
+The error you're encountering regarding the "Cannot find the config file for awq" is related to vLLM expecting that the model weights are already quantized using the AWQ quantization method. vLLM assumes that when you specify a quantization method like "awq," the model you're trying to load has already been pre-quantized and includes a configuration file for that quantization method.
+
+The post from the vLLM GitHub page explains that the model directory must contain a configuration file for the AWQ quantization. To resolve this, you would need to quantize the model using a tool like AutoAWQ, which is specifically designed to apply AWQ quantization to LLaMA and other large language models. Once the model is quantized, it will contain the necessary files that vLLM can recognize and load without errors.
+
+Here's a brief outline of the solution:
+
+- Quantize the model: Use a tool like AutoAWQ to apply AWQ quantization to your model.
+- Ensure the config file is present: After quantization, the model directory should contain the required quantization configuration file.
+- Load the quantized model: With the model properly quantized, vLLM should now be able to load the model without throwing the "Cannot find the config file" error.
+
+```shell
+pip install autoawq
+
+ERROR: Could not find a version that satisfies the requirement autoawq (from versions: none)
+ERROR: No matching distribution found for autoawq
+
+pip install --upgrade pip setuptools wheel
+pip install autoawq
+
+ERROR: Could not find a version that satisfies the requirement autoawq (from versions: none)
+ERROR: No matching distribution found for autoawq
+
+pip config list
+
+pip config set global.index-url https://pypi.org/simple
+
+pip config list
+global.index-url='https://pypi.org/simple'
+
+pip install autoawq
+
+ERROR: Could not find a version that satisfies the requirement autoawq (from versions: none)
+ERROR: No matching distribution found for autoawq
+
+# First, ensure that autoawq is compatible with your Python version (3.12). Since autoawq is a relatively new package, it might not yet have been built for Python 3.12.
+
+# similar errors
+docker run --runtime nvidia --gpus all -v ~/.cache/huggingface:/root/.cache/huggingface --env "HUGGING_FACE_HUB_TOKEN=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" -p 8000:8000 --ipc=host vllm/vllm-openai:latest --model meta-llama/Llama-3.2-11B-Vision-Instruct --trust-remote-code --max-model-len 30000 --gpu-memory-utilization 0.90 --dtype float16 --cpu-offload-gb 4 --quantization aqlm
+
+# similar errors
+docker run --runtime nvidia --gpus all -v ~/.cache/huggingface:/root/.cache/huggingface --env "HUGGING_FACE_HUB_TOKEN=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" -p 8000:8000 --ipc=host vllm/vllm-openai:latest --model meta-llama/Llama-3.2-11B-Vision-Instruct --trust-remote-code --max-model-len 30000 --gpu-memory-utilization 0.90 --dtype float16 --cpu-offload-gb 4 --quantization gptq
+
+# similar errors
+docker run --runtime nvidia --gpus all -v ~/.cache/huggingface:/root/.cache/huggingface --env "HUGGING_FACE_HUB_TOKEN=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" -p 8000:8000 --ipc=host vllm/vllm-openai:latest --model meta-llama/Llama-3.2-11B-Vision-Instruct --trust-remote-code --max-model-len 30000 --gpu-memory-utilization 0.90 --dtype float16 --cpu-offload-gb 4 --quantization bitsandbytes --load-format bitsandbytes
+```
+
+After a 5 hour struggle, I tried the g5g.16xlarge which offers 4 GPUS, each with 16GiB of memory. But it didn't distribute the workload correctly. I tried adding --disable-custom-all-reduce but that was to no avail:
+
+
+```shell
+docker run --runtime nvidia --gpus all -v ~/.cache/huggingface:/root/.cache/huggingface --env "HUGGING_FACE_HUB_TOKEN=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" -p 8000:8000 --ipc=host vllm/vllm-openai:latest --model meta-llama/Llama-3.2-11B-Vision-Instruct --trust-remote-code --max-model-len 30000 --gpu-memory-utilization 0.90 --dtype float16 --disable-custom-all-reduce --tensor-parallel-size 2
+
+
+watch -n 1 nvidia-smi
+
+Tue Oct 15 10:18:48 2024
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 550.90.07              Driver Version: 550.90.07      CUDA Version: 12.4     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  Tesla T4                       On  |   00000000:00:1B.0 Off |                    0 |
+| N/A   30C    P0             31W /   70W |    5521MiB /  15360MiB |     22%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+|   1  Tesla T4                       On  |   00000000:00:1C.0 Off |                    0 |
+| N/A   28C    P0             31W /   70W |    5521MiB /  15360MiB |     28%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+|   2  Tesla T4                       On  |   00000000:00:1D.0 Off |                    0 |
+| N/A   28C    P0             32W /   70W |    5521MiB /  15360MiB |     27%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+|   3  Tesla T4                       On  |   00000000:00:1E.0 Off |                    0 |
+| N/A   28C    P0             32W /   70W |    5521MiB /  15360MiB |     15%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI        PID   Type   Process name                              GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|    0   N/A  N/A     33171      C   /usr/bin/python3                             5518MiB |
+|    1   N/A  N/A     33435      C   /usr/bin/python3                             5518MiB |
+|    2   N/A  N/A     33436      C   /usr/bin/python3                             5518MiB |
+|    3   N/A  N/A     33437      C   /usr/bin/python3                             5518MiB |
++-------------------------------------------
+
+# But then at the end it uses only 1 and crashes out at 100 percent
+
+```
+
+g5.12xlarge
+
+Visit Instances > Spot Requests
+
+Total Spot cost (USD)
+$2.70
+You saved 52%
+
+ Deep Learning OSS Nvidia Driver AMI GPU PyTorch 2.3.1
+
+docker run --runtime nvidia --gpus all -v ~/.cache/huggingface:/root/.cache/huggingface --env "HUGGING_FACE_HUB_TOKEN=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" -p 8000:8000 --ipc=host vllm/vllm-openai:latest --model meta-llama/Llama-3.2-11B-Vision-Instruct --trust-remote-code --max-model-len 30000 --gpu-memory-utilization 0.90 --dtype float16 --disable-custom-all-reduce --tensor-parallel-size 4
+
+Every 1.0s: nvidia-smi                                                             ip-172-31-64-123: Tue Oct 15 10:55:23 2024
+
+Tue Oct 15 10:55:23 2024
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 550.90.07              Driver Version: 550.90.07      CUDA Version: 12.4     |
+|-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA A10G                    On  |   00000000:00:1B.0 Off |                    0 |
+|  0%   23C    P8             10W /  300W |       1MiB /  23028MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+|   1  NVIDIA A10G                    On  |   00000000:00:1C.0 Off |                    0 |
+|  0%   23C    P8             41W /  300W |       1MiB /  23028MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+|   2  NVIDIA A10G                    On  |   00000000:00:1D.0 Off |                    0 |
+|  0%   23C    P0             40W /  300W |       1MiB /  23028MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+|   3  NVIDIA A10G                    On  |   00000000:00:1E.0 Off |                    0 |
+|  0%   22C    P0             28W /  300W |       1MiB /  23028MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI        PID   Type   Process name                              GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+
