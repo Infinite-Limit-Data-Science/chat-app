@@ -14,7 +14,7 @@ from models.system_model_config import SystemModelConfigSchema
 from models.user_model_config import UserModelConfigSchema
 from models.system_embedding_config import SystemEmbeddingConfigSchema
 
-_DEFAULT_PREPROMPT='You are a helpful assistant. Answer all the questions to the best of your ability.'
+_DEFAULT_PREPROMPT='You are an assistant for question-answering tasks. Answer the questions to the best of your ability.'
 
 SettingRepo = factory(Setting)
 

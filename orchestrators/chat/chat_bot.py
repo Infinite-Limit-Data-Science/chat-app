@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import logging
-from typing import Callable, AsyncGenerator, Optional, List, Any
+from typing import Callable, AsyncGenerator, Optional, List, Any, Dict
 from pymongo import DESCENDING
 from langchain_core.runnables import Runnable, RunnablePassthrough, RunnableLambda, RunnableParallel, RunnableBranch
+from langchain_core.language_models import LanguageModelLike
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import BasePromptTemplate
+from langchain_core.retrievers import RetrieverLike, RetrieverOutputLike
+from langchain_core.output_parsers import StrOutputParser
 from langchain_core.vectorstores import VectorStoreRetriever
 from langchain.chains.retrieval import create_retrieval_chain
-from langchain.chains.history_aware_retriever import create_history_aware_retriever
-from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.runnables.config import RunnableConfig
 from langchain_core.tracers.schemas import Run
@@ -46,17 +49,77 @@ class ChatBot(AbstractBot):
         self.prompt_part: ChatBotBuilder.PromptPart = None
         self.message_part: ChatBotBuilder.MessagePart = None
     
-    def create_chain(self, llm: BaseChatModel) -> Runnable:
-        chain = self.prompt_part.registry['chat_history_template']() | llm
-        return chain
+    @staticmethod
+    def preprompt_filter() -> RunnableLambda:
+        def create_preprompt_filter(input_data: Dict[str, Any]) -> Dict[str, Any]:
+            return {
+                **input_data,
+                'chat_history': [
+                    message for message in input_data.get('chat_history', [])
+                    if not isinstance(message, SystemMessage) or not message.additional_kwargs.get('preprompt', False)
+                ]
+            }
+        
+        return RunnableLambda(create_preprompt_filter).with_config(run_name='filter_preprompt_chain')
+
+    def create_history_aware_retriever(
+        self,
+        llm: LanguageModelLike,
+        retriever: RetrieverLike,
+        prompt: BasePromptTemplate,
+        preprompt_filter: Optional[Runnable] = None,
+    ) -> Runnable:
+        """Custom implementation to handle preprompt messages"""
+        retrieve_documents: RetrieverOutputLike = RunnableBranch(
+            (
+                lambda input_data: not input_data.get("chat_history", False),
+                (lambda input_data: input_data['input']) | retriever,
+            ),
+            (preprompt_filter or RunnablePassthrough())
+            | prompt
+            | llm
+            | StrOutputParser()
+            | retriever,
+        ).with_config(run_name="history_aware_retriever_chain")
+        
+        return retrieve_documents
     
+    def create_stuff_documents_chain(
+        self,
+        llm: LanguageModelLike,
+        prompt: BasePromptTemplate,
+        preprompt_filter: Optional[Runnable] = None,
+    ) -> Runnable[Dict[str, Any], Any]:
+        """Custom implementation to handle preprompt messages"""        
+        def format_docs(inputs: dict) -> str:
+            return DEFAULT_DOCUMENT_SEPARATOR.join(
+                format_document(doc, DEFAULT_DOCUMENT_PROMPT)
+                for doc in inputs['context']
+            )
+
+        return (
+            (preprompt_filter or RunnablePassthrough())
+            | RunnablePassthrough.assign(context=format_docs).with_config(run_name='format_inputs')
+            | prompt
+            | llm
+            | StrOutputParser()
+        ).with_config(run_name='stuff_documents_chain')    
+
+    def create_chain(self, llm: BaseChatModel) -> Runnable:
+        chain = self.prompt_part.registry['chat_preprompt_template'](self.prompt_part.user_prompt) | llm
+        return chain
+
     def create_context_aware_chain(self, llm: BaseChatModel) -> Runnable:
         """ """
-        history_aware_retriever = create_history_aware_retriever(
+        history_aware_retriever = self.create_history_aware_retriever(
             llm,
             self.vector_part.vector_store.retriever(),
-            self.prompt_part.registry['contextualized_template']())
-        question_answer_chain = create_stuff_documents_chain(llm, self.prompt_part.registry['qa_template']())
+            self.prompt_part.registry['contextualized_template'](),
+            preprompt_filter=self.preprompt_filter())
+        question_answer_chain = self.create_stuff_documents_chain(
+            llm, 
+            self.prompt_part.registry['qa_template'](self.prompt_part.user_prompt),
+            preprompt_filter=self.preprompt_filter())
         return create_retrieval_chain(history_aware_retriever, question_answer_chain)
 
     def create_multi_retriever_chain(self, llm: BaseChatModel, retrievers: List[VectorStoreRetriever]) -> Runnable:
@@ -73,42 +136,24 @@ class ChatBot(AbstractBot):
                 )
 
             return combined_results
+        
         combine_contexts_runnable = RunnableLambda(combine_contexts)
 
-        retrieve_documents = RunnableBranch(
-            (
-                lambda prompt: not prompt.get('chat_history', False),
-                (lambda prompt: prompt['input']) | parallel_retrieval,
-            ),
-            context_prompt | llm | StrOutputParser() | parallel_retrieval,
-        ).with_config(run_name='parallel_retrieval_chain')
+        retrieve_documents = self.create_history_aware_retriever(
+            llm,
+            parallel_retrieval,
+            context_prompt,
+            preprompt_filter=self.preprompt_filter())
 
-        retrieved_documents_chain = (
-            retrieve_documents
-            | combine_contexts_runnable
-        ).with_config(run_name='combine_context_chain')
-
-        return retrieved_documents_chain
+        return retrieve_documents | combine_contexts_runnable.with_config(run_name='combine_context_chain')
 
     def create_multi_stuff_chain(self, llm: BaseChatModel) -> Runnable:
-        qa_template = self.prompt_part.registry['qa_template']()
+        qa_template = self.prompt_part.registry['qa_template'](self.prompt_part.user_prompt)
 
-        def format_docs(inputs: dict) -> str:
-            return DEFAULT_DOCUMENT_SEPARATOR.join(
-                format_document(doc, DEFAULT_DOCUMENT_PROMPT)
-                for doc in inputs['context']
-            )
-
-        stuff_chain_with_llm_resp = (
-            RunnablePassthrough.assign(context=format_docs).with_config(
-                run_name='format_retriever_docs'
-            )
-            | qa_template
-            | llm
-            | StrOutputParser()
-        ).with_config(run_name='multi_stuff_chain')
-
-        return stuff_chain_with_llm_resp        
+        return self.create_stuff_documents_chain(
+            llm,
+            qa_template,
+            preprompt_filter=self.preprompt_filter())      
 
     def create_multicontext_aware_chain(self, llm: BaseChatModel, source_retrievers: List[VectorStoreRetriever]):
         multi_retriever_chain = self.create_multi_retriever_chain(llm, source_retrievers)
@@ -133,15 +178,23 @@ class ChatBot(AbstractBot):
 
     async def _aenter_chat_chain(self, run: Run, config: RunnableConfig) -> Optional[SystemMessage]:
         """On start runnable listener"""
+        import json
         collection = self.message_part.message_history.chat_message_history.collection
-        if(
-            _ := collection.find_one(
-                {
-                    'type': 'system', 
-                    'content': self.prompt_part.user_prompt, 
-                    'conversation_id': config['configurable']['session_id']})
-        ) is None:
-            await self.message_part.add_system_message(self.prompt_part.user_prompt)
+        
+        document = collection.find_one({
+            'type': 'system', 
+            'content': self.prompt_part.user_prompt, 
+            'conversation_id': config['configurable']['session_id']
+        })
+        
+        if document is None:
+            await self.message_part.aadd_system_message(self.prompt_part.user_prompt, additional_kwargs={'preprompt': True})
+        else:
+            history_data = json.loads(document['History'])
+            
+            additional_kwargs = history_data.get('data', {}).get('additional_kwargs', {})
+            if not additional_kwargs.get('preprompt', False):
+                await self.message_part.aadd_system_message(self.prompt_part.user_prompt, additional_kwargs={'preprompt': True})
 
     async def _aexit_chat_chain(self, run: Run, config: RunnableConfig) -> None:
         """On end runnable listener"""
@@ -173,15 +226,11 @@ class ChatBot(AbstractBot):
             on_end=self._aexit_chat_chain)
         config = self.message_part.runnable_config
         async def llm_astream():
-            stop_token = "<|eot_id|>"
             async for s in chain_with_history.astream(
                 {'input': message},
                 config=config):
                 if 'answer' in s:
                     s_content = s['answer']
-                    if stop_token in s_content:
-                        s_content = s_content.replace(stop_token, "")
-
                     yield s_content
         return llm_astream
 
@@ -196,13 +245,9 @@ class ChatBot(AbstractBot):
             on_end=self._aexit_chat_chain)
         config = self.message_part.runnable_config
         async def llm_astream():
-            stop_token = "<|eot_id|>"
             async for s in chain_with_history.astream(
                 {'input': message},
                 config=config):
-                    # Remove the stop token if it's present
-                    if stop_token in s.content:
-                        s.content = s.content.replace(stop_token, "")
                     yield s.content
         return llm_astream
 
@@ -277,24 +322,29 @@ class ChatBotBuilder:
                 'configurable': self.configurable
             }
 
-        async def add_system_message(self, message: str) -> SystemMessage:
+        def add_system_message(self, message: str, **kwargs: Any) -> SystemMessage:
             """Add system message to data store"""
-            system_message = await self.message_history.system(message)
+            system_message = self.message_history.system(message, **kwargs)
+            return system_message
+        
+        async def aadd_system_message(self, message: str, **kwargs: Any) -> SystemMessage:
+            """Add system message to data store"""
+            system_message = await self.message_history.asystem(message, **kwargs)
             return system_message
 
-        async def add_human_message(self, message: dict) -> HumanMessage:
+        async def aadd_human_message(self, message: dict) -> HumanMessage:
             """add human message to data store"""
-            human_message = await self.message_history.human(message)
+            human_message = await self.message_history.ahuman(message)
             return human_message
 
-        async def add_ai_message(self, message: str) -> AIMessage:
+        async def aadd_ai_message(self, message: str) -> AIMessage:
             """Add ai message to data store"""
-            ai_message = await self.message_history.ai(message)
+            ai_message = await self.message_history.aai(message)
             return ai_message
         
-        async def add_bulk_messages(self, messages: Sequence[BaseMessage]) -> True:
+        async def aadd_bulk_messages(self, messages: Sequence[BaseMessage]) -> True:
             """Store messages in bulk in data store"""
-            return await self.message_history.bulk_add(messages)
+            return await self.message_history.abulk_add(messages)
 
     def build_vector_part(
         self, 

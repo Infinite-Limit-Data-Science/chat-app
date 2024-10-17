@@ -1,3 +1,4 @@
+from typing import Optional
 from langchain_core.prompts import ChatPromptTemplate, HumanMessagePromptTemplate, MessagesPlaceholder
 
 registry = {}
@@ -40,34 +41,38 @@ def contextualized_template():
         ('human', "{input}"),
     ])
 
-QA_TEMPLATE = """
-    You are an assistant for question-answering tasks.
-    Use the following pieces of retrieved context to answer the question.
-    If you don't know the answer, just say that you don't know.
-    Use three sentences maximum and keep the answer concise.
-
-    {context}
+MY_CHAT_TEMPLATE = """
+You are an assistant for question-answering tasks.
 """
 @register('qa_template')
-def qa_template():
-    """Returns runnable"""
+def qa_template(preprompt: Optional[str] = None) -> ChatPromptTemplate:
+    """Returns runnable with a dynamic preprompt."""
+    preprompt_text = preprompt or MY_CHAT_TEMPLATE
+    
+    system_template = f"""
+        {preprompt_text}
+        Use the following pieces of retrieved context to answer the question.
+        If you don't know the answer, just say that you don't know.
+        Use three sentences maximum and keep the answer concise.
+
+        {{context}}
+    """
+    
     return ChatPromptTemplate.from_messages([
-        ('system', QA_TEMPLATE),
+        ('system', system_template),
         MessagesPlaceholder('chat_history'),
         ('human', "{input}"),
     ])
 
-CHAT_HISTORY_TEMPLATE = """
-    You are a helpful assistant. Answer all the questions to the best of your ability
-"""
-@register('chat_history_template')
-def chat_history_template():
-        """Returns runnable"""
-        return ChatPromptTemplate.from_messages([
-            ("system",CHAT_HISTORY_TEMPLATE),
-            MessagesPlaceholder('chat_history'),
-            ('human', "{input}"),
-        ])
+@register('chat_preprompt_template')
+def chat_preprompt_template(preprompt: Optional[str] = None) -> ChatPromptTemplate:
+    """Returns runnable"""
+    system_template = preprompt or MY_CHAT_TEMPLATE
+    return ChatPromptTemplate.from_messages([
+        ("system",system_template),
+        MessagesPlaceholder('chat_history'),
+        ('human', "{input}"),
+    ])
 
 SUMMARIZATION_TEMPLATE = """Provide a concise summary in a few words, and prefix the summary with an emoji that reflects the tone of the summary:
 

@@ -21,6 +21,8 @@ tabulate2 = "*"
 python-docx = "*"
 python-pptx = "*"
 openai = "*"
+protobuf = "*"
+sentencepiece = "*"
 
 [dev-packages]
 

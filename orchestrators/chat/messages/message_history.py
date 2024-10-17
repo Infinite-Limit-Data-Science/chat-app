@@ -1,5 +1,5 @@
 import logging
-from typing import Sequence
+from typing import Sequence, Any
 from dataclasses import dataclass, field, asdict
 from bson import ObjectId
 from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, AIMessage
@@ -38,31 +38,41 @@ class MongoMessageHistory:
     def has_no_messages(self) -> bool:
         return not self.messages
 
-    async def add_messages(self, messages: Sequence[BaseMessage]):
+    def add_messages(self, messages: Sequence[BaseMessage]):
+        """Add messages to store"""
+        self.chat_message_history.add_messages(messages)
+
+    def system(self, prompt: str, **kwargs: Any) -> SystemMessage:
+        """Add system message to store"""
+        system_message = SystemMessage(prompt, **kwargs)
+        self.add_messages([system_message])
+        return system_message
+
+    async def aadd_messages(self, messages: Sequence[BaseMessage]):
         """Add messages to store"""
         await self.chat_message_history.aadd_messages(messages)
 
-    async def system(self, prompt: str) -> SystemMessage:
+    async def asystem(self, prompt: str, **kwargs: Any) -> SystemMessage:
         """Add system message to store"""
-        system_message = SystemMessage(prompt)
-        await self.add_messages([system_message])
+        system_message = SystemMessage(prompt, **kwargs)
+        await self.aadd_messages([system_message])
         return system_message
 
-    async def human(self, message: dict) -> HumanMessage:
+    async def ahuman(self, message: dict) -> HumanMessage:
         """Add system message to store"""
         human_message = HumanMessage(**message)
-        await self.add_messages([human_message])
+        await self.aadd_messages([human_message])
         return human_message
     
-    async def ai(self, message_schema: dict) -> AIMessage:
+    async def aai(self, message_schema: dict) -> AIMessage:
         """Add ai message to store"""
         ai_message = AIMessage(message_schema)
-        await self.add_messages([ai_message])
+        await self.aadd_messages([ai_message])
         return ai_message
 
-    async def bulk_add(self, messages: Sequence[BaseMessage]) -> bool:
+    async def abulk_add(self, messages: Sequence[BaseMessage]) -> bool:
         """Bulk add operation to store"""
-        await self.add_messages(messages)
+        await self.aadd_messages(messages)
         return True
 
     def get_session_history(self):

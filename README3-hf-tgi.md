@@ -777,3 +777,14 @@ In summary, the --tokenizer-config-path flag is useful for specifying a tokenize
 
 
 Spot Instances don't failover to on-demand. In order to accomplish this, you need to use CloudWatch Alarms. First, you need to create AutoScaling Group. Add Creat Launch Template. The AMI is required. In Launch Template specify the AMI, Instance Type, Key Pair, Security Group, EBS ROOT AMI Volume including size of 2000. Purchasing Optin set to Spot Instances. Create Launch Template. Now select the Launch Template from AutoScaling Groups. Now select ALL Availability Zones so the instance can be launched in any of the AZs when the Instance Type is available. Desired Capacity is 1, min is 1 and max is 1. No need to add Scaling Policy. Instance Maintenance Policy set to "Launch before terminating". The underlying data will be preserved because all the instances will use the same EBS volume!!!!
+
+g5.12xlarge
+Deep Learning OSS Nvidia Driver AMI GPU PyTorch 2.3.1 (Ubuntu 20.04) 20240929
+
+
+
+
+model=mistralai/Mistral-7B-Instruct-v0.3
+token=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
+volume=$PWD/data
+docker container run --gpus all --shm-size 1g -e HUGGING_FACE_HUB_TOKEN=$token -p 8080:80 -v $volume:/data ghcr.io/huggingface/text-generation-inference:2.2.0 --model-id $model
