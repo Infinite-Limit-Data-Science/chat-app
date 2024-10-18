@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import logging
 from typing import Callable, AsyncGenerator, Optional, List, Any, Dict
+import re
+import string
+from nltk import word_tokenize, pos_tag, ngrams
+from collections import deque, defaultdict, Counter
 from pymongo import DESCENDING
 from langchain_core.runnables import Runnable, RunnablePassthrough, RunnableLambda, RunnableParallel, RunnableBranch
 from langchain_core.language_models import LanguageModelLike
@@ -211,6 +215,65 @@ class ChatBot(AbstractBot):
             summary = await chain.ainvoke({'input': ai_message['content']})
             self.message_part.message_history.chat_message_history.add_summary(summary.content)
 
+    @staticmethod
+    def pos_check(corpus: str, max_repeats: int = 5) -> bool:
+        """Validate corpus using pos tagging"""
+        tagged_words = pos_tag(word_tokenize(corpus))
+        consecutive_pofs_counts = defaultdict(int)
+        max_consecutive = defaultdict(lambda: max_repeats)
+        max_consecutive.update({
+            'IN': 2,
+            'CC': 2,
+            'UH': 1,
+            'PUNCT': 5,
+            'SYM': 3,
+        })
+
+        punctuation_chars = {'.', ',', ':', '!', '?', '-', '(', ')', '[', ']', '{', '}', '"', "'", '...'}
+        special_symbols = {'*', '&', '%', '$', '@', '#'}
+
+        last_tag = None
+        for word, tag in tagged_words:
+            if word in punctuation_chars:
+                tag_category = 'PUNCT'
+            elif word in special_symbols:
+                tag_category = 'SYM'
+            else:
+                tag_category = tag[:2] if tag[:2] in consecutive_pofs_counts else tag
+            
+            if tag_category == last_tag:
+                consecutive_pofs_counts[tag_category] += 1
+            else:
+                consecutive_pofs_counts[tag_category] = 1
+
+            if consecutive_pofs_counts[tag_category] > max_consecutive[tag_category]:
+                return False
+
+            last_tag = tag_category
+
+        return True
+    
+    @staticmethod
+    def seq_check(corpus: str, n: int = 3, max_repeats: int = 2) -> bool:
+        """Validate corpus by sequences of vocabulary"""
+        def clean_text(text: str) -> str:
+            text = text.translate(str.maketrans('', '', string.punctuation))
+            text = re.sub(r'[^a-zA-Z\s]', '', text)
+            
+            return text
+        
+        cleaned_corpus = clean_text(corpus)
+        words = word_tokenize(cleaned_corpus.lower())
+        n_grams = list(ngrams(words, n))
+        n_gram_counts = Counter(n_grams)
+        
+        for n_gram, count in n_gram_counts.items():
+            if count > max_repeats:
+                logging.warning(f"Repeated sequence detected: {' '.join(n_gram)} (repeated {count} times)")
+                return False
+        
+        return True
+
     async def rag_astream(
         self, 
         chat_llm: BaseChatModel, 
@@ -226,11 +289,26 @@ class ChatBot(AbstractBot):
             on_end=self._aexit_chat_chain)
         config = self.message_part.runnable_config
         async def llm_astream():
+            token_buff = deque(maxlen=5)
+            vocab_buff = deque(maxlen=30)
             async for s in chain_with_history.astream(
                 {'input': message},
                 config=config):
                 if 'answer' in s:
                     s_content = s['answer']
+                    token_buff.append(str(s_content))
+                    vocab_buff.append(str(s_content))
+                    if len(token_buff) == token_buff.maxlen:
+                        if not self.pos_check(''.join(token_buff)):
+                            logging.warning(f'Incoherent POS {''.join(token_buff)}')
+                            yield '<|model_error|>'
+                            break
+                    if len(vocab_buff) == vocab_buff.maxlen:
+                        if not self.seq_check(''.join(vocab_buff)):
+                            logging.warning(f'Incoherent Vocabulary {''.join(vocab_buff)}')
+                            yield '<|model_error|>'
+                            break
+
                     yield s_content
         return llm_astream
 
@@ -245,10 +323,26 @@ class ChatBot(AbstractBot):
             on_end=self._aexit_chat_chain)
         config = self.message_part.runnable_config
         async def llm_astream():
+            token_buff = deque(maxlen=5)
+            vocab_buff = deque(maxlen=30)
             async for s in chain_with_history.astream(
                 {'input': message},
                 config=config):
-                    yield s.content
+                    s_content = s.content
+                    token_buff.append(str(s_content))
+                    vocab_buff.append(str(s_content))
+                    if len(token_buff) == token_buff.maxlen:
+                        if not self.pos_check(''.join(token_buff)):
+                            logging.warning(f'Incoherent POS {''.join(token_buff)}')
+                            yield '<|model_error|>'
+                            break
+                    if len(vocab_buff) == vocab_buff.maxlen:
+                        if not self.seq_check(''.join(vocab_buff)):
+                            logging.warning(f'Incoherent Vocabulary {''.join(vocab_buff)}')
+                            yield '<|model_error|>'
+                            break
+
+                    yield s_content
         return llm_astream
 
     # TODO: add trimmer runnable  
