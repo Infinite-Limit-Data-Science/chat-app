@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Callable, AsyncGenerator, Optional, List, Any, Dict
 import re
 import string
+import nltk
 from nltk import word_tokenize, pos_tag, ngrams
 from collections import deque, defaultdict, Counter
 from pymongo import DESCENDING
@@ -42,6 +44,8 @@ from orchestrators.chat.messages.message_history import (
     BaseMessage,
     Sequence,
 )
+
+nltk.data.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)),'nltk_data'))
 
 class ChatBot(AbstractBot):
     def __init__(self):
