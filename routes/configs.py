@@ -107,6 +107,11 @@ async def get_current_embedding_models(request: Request) -> List[BaseEmbedding]:
             'task': active_model_config.task,
             'endpoint': endpoint,
             'dimensions': active_model_config.dimensions,
+            'max_batch_tokens': active_model_config.max_batch_tokens,
+            'max_client_batch_size': active_model_config.max_client_batch_size,
+            'max_batch_requests': active_model_config.max_batch_requests,
+            'num_workers': active_model_config.num_workers,
+            'auto_truncate': active_model_config.auto_truncate,
             'token': request.state.authorization,
         })
         for endpoint in active_model_config.endpoints

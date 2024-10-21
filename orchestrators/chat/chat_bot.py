@@ -22,11 +22,9 @@ from langchain_core.output_parsers.string import StrOutputParser
 from langchain_core.documents import Document
 from langchain.chains.combine_documents.base import DEFAULT_DOCUMENT_SEPARATOR, DEFAULT_DOCUMENT_PROMPT
 from langchain_core.prompts import format_document
-from orchestrators.doc.ingestors.ingest import ingest
 from orchestrators.doc.vector_stores.abstract_vector_store import (
     AbstractVectorStore,
     AbstractFlexiSchemaFields,
-    AbstractFlexiSchema,
 )
 from orchestrators.doc.vector_stores.factories import FACTORIES as V_FACTORIES
 from orchestrators.doc.embedding_models.embedding import BaseEmbedding

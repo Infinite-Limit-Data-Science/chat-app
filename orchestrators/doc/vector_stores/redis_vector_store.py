@@ -53,11 +53,34 @@ def chunked_iterable(it: Iterator[T], size: int) -> Iterator[list[T]]:
         yield chunk
 
 class RedisVectorStoreWithTTL(VectorStore):
+    # async def aadd_documents_with_ttl(
+    #     self, 
+    #     documents: list[Document], 
+    #     ttl_seconds: int,
+    #     batch_size: Literal[32, 64] = 64,
+    #     **kwargs: Any) -> List[str]:
+    #     """
+    #     Example:
+    #     > EXISTS user_conversations:a2c8a48073ee4a429b6910b1cfefb9f4
+    #     (integer) 1
+    #     > TTL user_conversations:a2c8a48073ee4a429b6910b1cfefb9f4
+    #     (integer) 2591813
+    #     """
+    #     redis_client = self.config.redis()
+    #     batches = chunked_piterable(documents, batch_size)
+    #     tasks = [
+    #         asyncio.create_task(self._process_batch(batch, ttl_seconds, redis_client, **kwargs))
+    #         for batch in batches
+    #     ]
+    #     results = await asyncio.gather(*tasks)
+    #     document_ids = [doc_id for batch_ids in results for doc_id in batch_ids]
+    #     return document_ids
+    
     async def aadd_documents_with_ttl(
         self, 
-        documents: list[Document], 
+        documents: Iterator[Document], 
         ttl_seconds: int,
-        batch_size: Literal[32, 64] = 64,
+        max_requests: int,
         **kwargs: Any) -> List[str]:
         """
         Example:
@@ -67,13 +90,18 @@ class RedisVectorStoreWithTTL(VectorStore):
         (integer) 2591813
         """
         redis_client = self.config.redis()
-        batches = chunked_iterable(documents, batch_size)
-        tasks = [
-            asyncio.create_task(self._process_batch(batch, ttl_seconds, redis_client, **kwargs))
-            for batch in batches
-        ]
+
+        semaphore = asyncio.Semaphore(8)
+
+        async def process_document(document: Document):
+            async with semaphore:
+                batch_ids = await self._process_batch([document], ttl_seconds, redis_client, **kwargs)
+                return batch_ids
+        
+        tasks = [asyncio.create_task(process_document(document)) for document in documents]
         results = await asyncio.gather(*tasks)
         document_ids = [doc_id for batch_ids in results for doc_id in batch_ids]
+
         return document_ids
     
     async def _process_batch(
@@ -171,9 +199,9 @@ class RedisVectorStore(AbstractVectorStore):
         """Embedding Dimension count"""
         return self.config.embedding_dimensions
 
-    async def aadd(self, documents: List[Document]) -> List[str]:
+    async def aadd(self, documents: Iterator[Document]) -> List[str]:
         """Add documents to the vector store asynchronously, expecting metadata per document"""
-        return await self._vector_store.aadd_documents_with_ttl(documents, _VECTOR_TTL_30_DAYS)
+        return await self._vector_store.aadd_documents_with_ttl(documents, _VECTOR_TTL_30_DAYS, self._embeddings.max_batch_requests)
     
     async def asimilarity_search(
         self, 

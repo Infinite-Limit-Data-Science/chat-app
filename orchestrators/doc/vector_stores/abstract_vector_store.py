@@ -1,4 +1,4 @@
-from typing import List, Any, Dict, TypedDict, Optional
+from typing import List, Any, Dict, TypedDict, Optional, Iterator
 from dataclasses import dataclass, field
 from abc import ABC, abstractmethod
 from functools import reduce
@@ -33,7 +33,7 @@ class AbstractVectorStore(ABC):
     flexi_schema: AbstractFlexiSchema
     
     @abstractmethod
-    async def aadd(self, documents: List[Document]) -> List[str]:
+    async def aadd(self, documents: Iterator[Document]) -> List[str]:
         pass
 
     @abstractmethod
