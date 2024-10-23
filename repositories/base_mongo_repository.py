@@ -19,12 +19,23 @@ def base_mongo_factory(model: AbstractModel):
             return instance.get_database().get_collection(model.get_model_name())
         
         @classmethod
-        async def all(cls, *, options: Optional[dict] = {}, offset: int = 0, limit: int = 20) -> List[Dict[str, Any]]:
+        async def all(
+            cls, 
+            *, 
+            options: Optional[dict] = {}, 
+            offset: int = 0, 
+            limit: int = 20
+        ) -> List[Dict[str, Any]]:
             """Fetch all documents in database filtered by user, limit, and offset"""
             return await cls.get_collection().find(options).skip(offset).limit(limit).to_list(limit)
 
         @classmethod
-        async def create(cls, *, schema: ChatSchema = BaseModel,  options: Optional[dict] = {}) -> Dict[str, Any]:
+        async def create(
+            cls, 
+            *, 
+            schema: ChatSchema = BaseModel, 
+            options: Optional[dict] = {}
+        ) -> Dict[str, Any]:
             """Create document"""
             insert_data = {**schema.model_dump(by_alias=True), **options}
             new_document = await cls.get_collection().insert_one(insert_data)
@@ -64,15 +75,29 @@ def base_mongo_factory(model: AbstractModel):
             return update_result
         
         @classmethod
-        async def update_one(cls, id: str, *, options: dict = {}, _set: Dict[str, Any] = {}, push: dict = {}) -> Coroutine[Any, Any, UpdateResult]:
+        async def update_one(
+            cls, 
+            id: str, 
+            *, 
+            options: Dict[str, Any] = {}, 
+            _set: Dict[str, Any] = {}, 
+            push: Dict[str, Any] = {}, 
+            array_filters: Optional[list] = None
+        ) -> Coroutine[Any, Any, UpdateResult]:
             """Update single document"""
             query = {"_id": ObjectId(id)} if id else {}
             operation = {}
+
             if _set:
                 operation['$set'] = _set
             if push:
                 operation['$push'] = push
-            return await cls.get_collection().update_one({ **query, **options }, operation)
+
+            update_options = {**options}
+            if array_filters:
+                update_options['array_filters'] = array_filters
+
+            return await cls.get_collection().update_one(query, operation, **update_options)
         
         @classmethod
         async def remove_from_field(cls, id: str = None, *, options: dict = {}) -> Dict[str, Any]:

@@ -52,9 +52,19 @@ class ChatBot(AbstractBot):
         """Composite parts"""
         self.vector_part: ChatBotBuilder.VectorPart = None
         self.llm_part: ChatBotBuilder.LLMPart = None
+        self.guardrails_part: ChatBotBuilder.GuardrailsPart = None
         self.prompt_part: ChatBotBuilder.PromptPart = None
         self.message_part: ChatBotBuilder.MessagePart = None
-    
+
+    def _trace_history_chain(self) -> None:
+        def _historic_messages_by(n: int) -> List[BaseMessage]:
+            messages = self.message_part.message_history.messages[-n:]
+            logging.warning(f'Message History {messages}')
+            return messages
+        runnable = RunnableLambda(
+            _historic_messages_by).with_config(run_name='trace_my_history')
+        runnable.invoke(20)
+
     @staticmethod
     def preprompt_filter() -> RunnableLambda:
         def create_preprompt_filter(input_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -172,15 +182,6 @@ class ChatBot(AbstractBot):
         ).with_config(run_name='multicontext_aware_chain')
 
         return multicontext_aware_chain
-    
-    def _trace_history_chain(self) -> None:
-        def _historic_messages_by(n: int) -> List[BaseMessage]:
-            messages = self.message_part.message_history.messages[-n:]
-            logging.warning(f'Message History {messages}')
-            return messages
-        runnable = RunnableLambda(
-            _historic_messages_by).with_config(run_name='trace_my_history')
-        runnable.invoke(20)
 
     async def _aenter_chat_chain(self, run: Run, config: RunnableConfig) -> Optional[SystemMessage]:
         """On start runnable listener"""
@@ -256,7 +257,7 @@ class ChatBot(AbstractBot):
         return True
     
     @staticmethod
-    def seq_check(corpus: str, n: int = 3, max_repeats: int = 2) -> bool:
+    def seq_check(corpus: str, n: int = 3, max_repeats: int = 3) -> bool:
         """Validate corpus by sequences of vocabulary"""
         def clean_text(text: str) -> str:
             text = text.translate(str.maketrans('', '', string.punctuation))
@@ -275,6 +276,28 @@ class ChatBot(AbstractBot):
                 return False
         
         return True
+    
+    def format_cancel_message(self):
+        pattern = r"<BEGIN UNSAFE CONTENT CATEGORIES>(.*?)<END UNSAFE CONTENT CATEGORIES>"
+        match = re.search(pattern, self.prompt_part.registry['guardrails_template']().template, re.DOTALL)
+        content = 'Some of the content in your prompt falls under standardized hazards taxonomy.\n'
+        content += 'Please review the following hazard categories:\n\n'
+        content += match.group(1).strip()
+        return content
+
+    async def cancel_astream(self) -> Callable[[], AsyncGenerator[str, None]]:
+        import asyncio
+
+        def stream_chunks(message: str, chunk_size: int = 10):
+            for i in range(0, len(message), chunk_size):
+                yield message[i:i + chunk_size]
+
+        async def llm_astream() -> AsyncGenerator[str, None]:
+            for chunk in stream_chunks(self.format_cancel_message()):
+                await asyncio.sleep(0.1)
+                yield chunk
+
+        return llm_astream
 
     async def rag_astream(
         self, 
@@ -351,6 +374,13 @@ class ChatBot(AbstractBot):
     async def astream(self, message: str) -> Callable[[], AsyncGenerator[str, None]]:
         # await self.vector_part.vector_store.inspect(message)
         self._trace_history_chain()
+
+        if self.guardrails_part.llm:
+            is_safe = await self.guardrails_part.content_safe(
+                message, 
+                self.prompt_part.registry['guardrails_template']())
+            if not is_safe:
+                return await self.cancel_astream()
         source_retrievers = self.vector_part.source_retrievers
         chat_llm = self.llm_part.llm.endpoint_object
         rag_chain = await self.vector_part.aavailable_vectors(message)
@@ -370,7 +400,8 @@ class ChatBotBuilder:
             store: str,
             source_retrievers: List[VectorStoreRetriever],
             embeddings: List[BaseEmbedding], 
-            metadata: List[AbstractFlexiSchemaFields]):
+            metadata: List[AbstractFlexiSchemaFields]
+        ):
             if store not in V_FACTORIES.keys():
                 raise ValueError(f'Vector Store {store} is not supported')
             self.embeddings = EmbeddingsProxy(embeddings).get()
@@ -388,15 +419,34 @@ class ChatBotBuilder:
         def __init__(
             self, 
             chat_bot: ChatBot, 
-            llm: List[LLM]):
+            llm: List[LLM]
+        ):
             self.llm = LLMProxy(llm).get()
             chat_bot.llm_part = self
+
+    class GuardrailsPart:
+        def __init__(
+            self, 
+            chat_bot: ChatBot, 
+            llm: List[LLM]
+        ):
+            self.llm = LLMProxy(llm).get()
+            chat_bot.guardrails_part = self
+
+        async def content_safe(self, message: str, prompt: BasePromptTemplate) -> bool:
+            endpoint_object: BaseChatModel = self.llm.endpoint_object
+            chain = prompt | endpoint_object
+
+            response = await chain.ainvoke({'input': message, 'agent_type': 'user'})
+            logging.warning(f'IS THE CONTENT SAFE {response.content}')
+            return response.content.strip() == 'safe'
 
     class PromptPart:
         def __init__(
             self, 
             chat_bot: ChatBot, 
-            user_prompt: str):
+            user_prompt: str
+        ):
             self.user_prompt = user_prompt
             self.registry = registry
             chat_bot.prompt_part = self
@@ -447,11 +497,15 @@ class ChatBotBuilder:
         store: str,
         source_retrievers: List[VectorStoreRetriever],
         embeddings: List[LLM], 
-        metadata: List[AbstractFlexiSchemaFields]):
+        metadata: List[AbstractFlexiSchemaFields]
+    ):
         return ChatBotBuilder.VectorPart(self.chat_bot, store, source_retrievers, embeddings, metadata)
     
     def build_llm_part(self, llm: List[LLM]):
         return ChatBotBuilder.LLMPart(self.chat_bot, llm)
+    
+    def build_guardrails_part(self, llm: List[LLM]):
+        return ChatBotBuilder.GuardrailsPart(self.chat_bot, llm)
     
     def build_prompt_part(self, user_prompt: str):
         return ChatBotBuilder.PromptPart(self.chat_bot, user_prompt)

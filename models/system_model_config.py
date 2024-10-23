@@ -22,9 +22,9 @@ class EndpointDict(TypedDict):
 class SystemModelConfigSchema(LLMBase):
     endpoints: Optional[List[EndpointDict]] = Field(description='Valid if using TGI', default=None)
     model: Optional[str] = Field(description='Valid if using pipeline', default=None)
+    stream: Optional[bool] = Field(description='Enable streaming', default=True)
 
     class Config:
-        populate_by_name = True
         arbitrary_types_allowed = True
 
 class SystemModelConfigIdSchema(ChatSchema):
@@ -35,7 +35,6 @@ class UpdateSystemModelConfigSchema(LLMBase):
     updatedAt: datetime = Field(default_factory=datetime.now)
     
     class Config:
-        populate_by_name = True
         arbitrary_types_allowed = True
 
 class SystemModelConfigCollectionSchema(ChatSchema):

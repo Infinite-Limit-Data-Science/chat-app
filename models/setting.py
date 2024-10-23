@@ -10,7 +10,7 @@ from models.mongo_schema import (
     PyObjectId
 )
 from models.prompt import PromptSchema
-from models.user_model_config import UserModelConfigSchema
+from models.user_model_config import UserModelConfigSchema, UpdateUserModelConfigSchema
 
 class Setting(AbstractModel):
     __modelname__ = 'settings'
@@ -42,7 +42,7 @@ class UpdateSettingSchema(ChatSchema):
     activeModel: Optional[str] = None
     hideEmojiOnSidebar: Optional[bool] = None
     prompts: Optional[List[PromptSchema]] = None
-    user_model_configs: Optional[List[UserModelConfigSchema]] = None
+    user_model_configs: Optional[List[UpdateUserModelConfigSchema]] = None
     updatedAt: datetime = Field(default_factory=datetime.now)
     
     class Config:

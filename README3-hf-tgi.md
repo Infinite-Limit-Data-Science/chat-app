@@ -18,6 +18,37 @@ Importantly, in the context of Text Generation Inference (TGI), the TGI supports
 
 The HuggingFace TGI has many other features, but the top ones are highlighted above.
 
+### NVidia GPUs
+
+TGI optimized models are supported on NVIDIA H100, A100, A10G and T4 GPUs with CUDA 12.2+. Note that you have to install NVIDIA Container Toolkit to use it. For other NVIDIA GPUs, continuous batching will still apply, but some operations like flash attention and paged attention will not be executed. TGI can be used on NVIDIA GPUs through its official docker image:
+
+```shell
+model=teknium/OpenHermes-2.5-Mistral-7B
+volume=$PWD/data
+
+docker run --gpus all --shm-size 64g -p 8080:80 -v $volume:/data \
+    ghcr.io/huggingface/text-generation-inference:2.3.1 \
+    --model-id $model
+```
+
+### Text Generation Inference Architecture
+
+These are the separate components:
+
+- Router: also named webserver, that receives the client requests, buffers them, creates some batches, and prepares gRPC calls to a model server.
+- Model Server: responsible of receiving the gRPC requests and to process the inference on the model. If the model is sharded across multiple accelerators (e.g.: multiple GPUs), the model server shards might be synchronized via NCCL or equivalent.
+- Launcher: helper that will be able to launch one or several model servers (if model is sharded), and it launches the router with the compatible arguments.
+
+The router and the model server can be two different machines, they do not need to be deployed together.
+
+### Text Generation Inference Architecture: The Router
+This component is a rust web server binary that accepts HTTP requests using the custom HTTP API, as well as OpenAI’s Messages API. The router receives the API calls and handles the “baches” logic. It uses different strategies to reduce latency between requests and responses, especially oriented to decoding latency. It will use queues, schedulers, and block allocators to achieve that and produce batched requests that it will then be sent to the model server.
+
+Options:
+
+START HERE
+
+
 ### Setup Infrastructure
 
 The easiest way of deploying the HuggingFace TGI is using the official Docker image. We will use the Deep Learning AMI GPU TensorFlow 2.12.0 (Ubuntu 20.04) 20230324 AMI as the base. This AMI supports the following EC2 instances: G3, P3, P3dn, P4d, G5, G4dn. Note the g4dn.2xlarge EC2 Instance is built on the NVIDIA Tesla T4 GPU, which was released in 2018 and build on the Turing architecture. Pricing for the g4dn.2xlarge Instance Type is available here: https://aws-pricing.com/g4dn.2xlarge.html. However, recent versions of the HuggingFace TGI will not run on this older GPI. You will be greeted with an error like this:
@@ -785,6 +816,13 @@ Deep Learning OSS Nvidia Driver AMI GPU PyTorch 2.3.1 (Ubuntu 20.04) 20240929
 
 
 model=mistralai/Mistral-7B-Instruct-v0.3
+token=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
+volume=$PWD/data
+docker container run --gpus all --shm-size 1g -e HUGGING_FACE_HUB_TOKEN=$token -p 8080:80 -v $volume:/data ghcr.io/huggingface/text-generation-inference:2.2.0 --model-id $model
+
+
+
+model=meta-llama/Llama-Guard-3-8B
 token=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
 volume=$PWD/data
 docker container run --gpus all --shm-size 1g -e HUGGING_FACE_HUB_TOKEN=$token -p 8080:80 -v $volume:/data ghcr.io/huggingface/text-generation-inference:2.2.0 --model-id $model

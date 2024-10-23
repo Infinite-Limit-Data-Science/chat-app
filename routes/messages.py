@@ -21,7 +21,8 @@ from routes.chats import chat
 from routes.configs import (
     get_current_models, 
     get_current_embedding_models, 
-    get_prompt_template,   
+    get_prompt_template,
+    get_current_guardrails,
 )
 from repositories.base_mongo_repository import base_mongo_factory as factory
 from routes.uploads import ingest_files
@@ -30,7 +31,6 @@ from models.message import (
     MessageSchema,
 )
 from repositories.conversation_mongo_repository import ConversationMongoRepository as ConversationRepo
-
 
 _DATABASE_STRATEGY = 'mongodb'
 
@@ -55,6 +55,7 @@ async def create_message(
     upload_files: Optional[List[UploadFile]] = File(None),
     models: List[LLM] = Depends(get_current_models),
     embedding_models: List[BaseEmbedding]  = Depends(get_current_embedding_models),
+    guardrails: List[LLM] = Depends(get_current_guardrails),
     prompt_template: str = Depends(get_prompt_template)):
     """Insert new message record in configured database, returning AI Response"""
     retrievers = []
@@ -64,7 +65,14 @@ async def create_message(
     if upload_files:
         retrievers = await ingest_files(request, upload_files, data)
     message_schema = MessageSchema(type='human', content=content, conversation_id=conversation_id)
-    llm_stream = await chat(prompt_template, models, embedding_models, data, retrievers, message_schema)
+    llm_stream = await chat(
+        prompt_template, 
+        models, 
+        guardrails, 
+        embedding_models, 
+        data, 
+        retrievers, 
+        message_schema)
     return StreamingResponse(llm_stream(), media_type="text/plain", headers={"X-Accel-Buffering": "no"})
 
 @router.get(

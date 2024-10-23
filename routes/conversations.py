@@ -19,7 +19,8 @@ from routes.chats import chat
 from routes.configs import (
     get_current_models, 
     get_current_embedding_models, 
-    get_prompt_template,   
+    get_prompt_template,
+    get_current_guardrails,
 )
 from routes.uploads import ingest_files
 from repositories.conversation_mongo_repository import ConversationMongoRepository as ConversationRepo
@@ -59,6 +60,7 @@ async def create_conversation(
     upload_files: Optional[List[UploadFile]] = File(None),
     models: List[LLM] = Depends(get_current_models),
     embedding_models: List[BaseEmbedding] = Depends(get_current_embedding_models),
+    guardrails: List[LLM] = Depends(get_current_guardrails), 
     prompt_template: str = Depends(get_prompt_template)):
     """Insert new conversation record and message record in configured database, returning AI Response"""
     conversation_schema = CreateConversationSchema(uuid=request.state.uuid)
@@ -70,7 +72,14 @@ async def create_conversation(
         if upload_files:
             retrievers = await ingest_files(request, upload_files, data)
         message_schema = MessageSchema(type='human', content=content, conversation_id=created_conversation_id)     
-        llm_stream = await chat(prompt_template, models, embedding_models, data, retrievers, message_schema)
+        llm_stream = await chat(
+            prompt_template, 
+            models, 
+            guardrails, 
+            embedding_models, 
+            data, 
+            retrievers, 
+            message_schema)
         return StreamingResponse(llm_stream(), media_type="text/plain", headers={"X-Accel-Buffering": "no"})
         
     return {'error': f'Conversation not created'}, 400

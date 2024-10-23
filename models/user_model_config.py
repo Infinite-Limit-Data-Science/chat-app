@@ -7,6 +7,7 @@ from models.mongo_schema import (
     PyObjectId
 )
 from models.llm_schema import (
+    LLMBase,
     LLMParamSchema,
     PrimaryKeyMixinSchema, 
     TimestampMixinSchema,
@@ -19,24 +20,19 @@ class UserModelConfig(AbstractModel):
     def get_model_name(cls):
         return cls.__modelname__
 
-class UserModelConfigSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):
-    name: str = Field(description='Name of model')
-    active: bool = Field(description='Specify if the model is active', default=False)
-    parameters: LLMParamSchema = Field(description='Parameters for the model')
-
+class UserModelConfigSchema(LLMBase, PrimaryKeyMixinSchema, TimestampMixinSchema):
     class Config:
-        populate_by_name = True
         arbitrary_types_allowed = True
 
 class UserModelConfigIdSchema(ChatSchema):
     id: PyObjectId = Field(alias="_id", description='bson object id')
 
-class UpdateUserModelConfigSchema:
-    parameters: LLMParamSchema = Field(description='Parameters for the model')
+class UpdateUserModelConfigSchema(LLMBase):
+    parameters: Optional[LLMParamSchema] = Field(description='Parameters for the model', default=None)
+    active: Optional[bool] = Field(description='Set model as active', default=None)
     updatedAt: datetime = Field(default_factory=datetime.now)
     
     class Config:
-        populate_by_name = True
         arbitrary_types_allowed = True
 
 class UserModelConfigCollectionSchema(ChatSchema):

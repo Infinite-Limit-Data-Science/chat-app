@@ -28,4 +28,5 @@ class LLMBase(PrimaryKeyMixinSchema, TimestampMixinSchema):
     description: str = Field(description='Description of the Model', default='Description of TGI Model')
     preprompt: str = Field(description='Default prompt (Note users can create custom ones)', default='')
     parameters: LLMParamSchema = Field(default_factory=LLMParamSchema)
+    classification: str = Field(description='Classifier for model type, such as text-generation, image-to-text, etc', default='text-generation')
     active: bool = Field(description='Specify if the model is active', default=False)

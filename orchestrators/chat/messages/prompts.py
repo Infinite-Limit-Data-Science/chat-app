@@ -1,5 +1,10 @@
 from typing import Optional
-from langchain_core.prompts import ChatPromptTemplate, HumanMessagePromptTemplate, MessagesPlaceholder
+from langchain_core.prompts import (
+    ChatPromptTemplate, 
+    HumanMessagePromptTemplate, 
+    MessagesPlaceholder, 
+    PromptTemplate,
+)
 
 registry = {}
 
@@ -103,3 +108,43 @@ def history_compare_template():
         MessagesPlaceholder('chat_history'),
         ('human', "{input}"),
     ])
+
+CONTENT_SAFETY_TEMPLATE = """
+<|begin_of_text|><|start_header_id|>{agent_type}<|end_header_id|>
+
+Task: Check if there is unsafe content in the following message according to our safety policy with the below categories.
+
+<BEGIN UNSAFE CONTENT CATEGORIES>
+S1: Violent Crimes. 
+S2: Non-Violent Crimes. 
+S3: Sex Crimes. 
+S4: Child Exploitation. 
+S5: Defamation. 
+S6: Specialized Advice. 
+S7: Privacy. 
+S8: Intellectual Property. 
+S9: Indiscriminate Weapons. 
+S10: Hate. 
+S11: Self-Harm. 
+S12: Sexual Content. 
+S13: Elections. 
+S14: Code Interpreter Abuse.
+<END UNSAFE CONTENT CATEGORIES>
+
+<BEGIN CONVERSATION>
+
+User: {input}
+
+<END CONVERSATION>
+
+Provide your safety assessment for ONLY THE LAST user message in the above conversation:
+- First line must read 'safe' or 'unsafe'.
+- If unsafe, a second line must include a comma-separated list of violated categories.<|eot_id|><|start_header_id|>assistant<|end_header_id|>
+"""
+@register('guardrails_template')
+def guardrails_template():
+    """Returns runnable"""
+    return PromptTemplate(
+        input_variables=['input', 'agent_type'],
+        template=CONTENT_SAFETY_TEMPLATE
+    )

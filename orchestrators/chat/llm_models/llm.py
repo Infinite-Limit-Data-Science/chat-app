@@ -2,8 +2,7 @@ import logging
 from typing import TypedDict, List
 from dataclasses import dataclass, field
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_huggingface import ChatHuggingFace
-from orchestrators.chat.llm_models.my_chat_huggingface import MyChatHuggingFace
+from langchain_core.language_models.llms import LLM
 
 class PromptDict(TypedDict):
     title: str
@@ -35,9 +34,10 @@ class LLM:
     name: str
     description: str
     preprompt: str
+    classification: str
+    stream: bool
     parameters: ParameterDict
     server_kwargs: ServerKwargDict
     endpoint: EndpointDict = field(default=None)
-    # endpoint_object must implement BaseChatModel (integrated with Runnable and SequenceRunnable)
-    endpoint_object: MyChatHuggingFace | ChatHuggingFace = field(init=False, repr=False)
-    summary_object: MyChatHuggingFace | ChatHuggingFace = field(init=False, repr=False)
+    endpoint_object: BaseChatModel | LLM = field(init=False, repr=False)
+    summary_object: BaseChatModel = field(init=False, repr=False)

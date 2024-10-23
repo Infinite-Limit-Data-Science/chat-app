@@ -13,6 +13,7 @@ _DEFAULT_VECTOR_STORE='redis'
 async def chat(
     user_prompt_template: str,
     models: List[LLM],
+    guardrails: List[LLM],
     embedding_models: List[BaseEmbedding],
     data: dict,
     retrievers: Optional[List[VectorStoreRetriever]],
@@ -41,6 +42,7 @@ async def chat(
             },
     ])
     builder.build_llm_part(models)
+    builder.build_guardrails_part(guardrails)
     builder.build_prompt_part(user_prompt_template)
     builder.build_message_part({
         'connection_string': database_instance.connection_string,
