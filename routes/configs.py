@@ -39,7 +39,7 @@ async def get_active_model_config(
 ) -> SystemModelConfigSchema:
     """Get active model config or default to the first model config if none active"""
     if active_model_name:
-        model_config = next(iter(configs.values()))
+        model_config = configs[active_model_name]
         active_model = active_model_name
     else:
         model_config = next(iter(configs.values()))

@@ -438,7 +438,6 @@ class ChatBotBuilder:
             chain = prompt | endpoint_object
 
             response = await chain.ainvoke({'input': message, 'agent_type': 'user'})
-            logging.warning(f'IS THE CONTENT SAFE {response.content}')
             return response.content.strip() == 'safe'
 
     class PromptPart:

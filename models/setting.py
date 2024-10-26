@@ -21,7 +21,7 @@ class Setting(AbstractModel):
 
     @classmethod
     def chat_ui_compatible(cls) -> List[str]:
-        return ['prompts', 'user_model_configs', 'createdAt', 'updatedAt']
+        return ['custom_prompt','model_name','prompts', 'user_model_configs', 'createdAt', 'updatedAt']
 
 class SettingSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):
     uuid: str = Field(alias="sessionId", description='downcased alphanumeric session id')
