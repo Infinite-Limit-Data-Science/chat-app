@@ -1,4 +1,4 @@
-### Backend for use with Text Generation Inference
+### Comptia A+ Terms
 
 In Generative AI, the GPUs, the physical chip on a Graphic Card's PCB, steal the spotlight. While the CPU's diverse range of instructions on its Infrastructure Set Architecture can handle the tasks associated with the Operating System and many applications, it has other limitations not suitable for Generative AI. Transformer-based Neural Networks require high parallelism and abundancy, which, unlike CPUs, the Graphic Card's GPU can provide. Unlike CPUs, which are optimized for serial processing, GPUs are designed to handle the massive parallel computations required for training large neural networks. Since Generative AI relies on concurrency, like graphics cards rendering pixels on screen, the processing where one task is executed one after another, in a sequential manner, is not practical. Further, a modern CPU has 8 cores at least. A modern graphics card has between 1000 and 4000 cores. While one GPU Core cannot compare with one CPU Core, the thousands of GPU cores can accelerate matrix multiplication and other linear algebra operations, the staple of the Transformer architecture.
 
@@ -14,7 +14,7 @@ In fact, the GPU's clock speed is often the bottleneck in AI applications, as it
 
 New graphics architectures are created by AMD and NVida every 1 to 2 years. They often shrink the components of the physical GPU processor, which allows the companies to fit in more features and transistors onto the GPU Die (Die meaning the actual silicone in the chip). Architecture changes can also reduce the amount of power to run the Graphics Card. So it becomes difficult to compare different generations of graphics cards based on specs alone. Video RAM (V-RAM) serves the same function as System RAM. It holds whatever data is currently being accessed by the GPU.
 
-### NVida A100 and H100
+### NVida Architectures: A100
 
 Parallel computing involves distributing a large task across multiple processing units, allowing each unit to execute a subtask of the task simultaneously and reducing overall processing time. The key component of NVidia's GPU architecture that enables parallel computing is CUDA cores. These small but powerful processors work together to perform calculations in parallel, greatly enhancing the overall performance of the GPU.
 
@@ -45,7 +45,11 @@ Tensor Performance	312 TFLOPS          624 TFLOPS (FP16)
 PCIe Interface	    PCIe 4.0 x16	    PCIe 5.0 x16
 NVLink	            2 x NVLink 2.0	    2 x NVLink 4.0
 
-### Nvidia GeForce RTX 4090
+### NVida Architectures: H100
+
+### NVida Architectures: A10G
+
+### ### NVida Architectures: RTX 4090
 
 The Nvidia A100 and H100 are designed for data centers. The GeForce RTX 4090 falls under NVIDIA's consumer-focused GeForce line. While primarily designed for consumer gaming, the RTX 4090 also has some capacity to run LLMs. The RTX 4090 uses the newer NVIDIA Ada Lovelace Architecture. The RTX 4090 boasts 16384 CUDA cores, 576 Tensor Cores, 24GB of V-RAM (GDDR6X), 144 Ray Tracing Cores, 14 TPS speed topped with a bus width of 384-bit along with a chip with 76.3 billion transistors. Yes, you'll be able to run Meta Llama 3 13B Instruct with this consumer Graphics Card! In comparison, the RTX 4090 is priced at $1500-$2000 compared to $10,000 – $15,000 for the NVidia A100 and $30,000+ for the NVidia H100.
 
