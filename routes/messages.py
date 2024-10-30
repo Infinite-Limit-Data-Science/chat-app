@@ -63,8 +63,9 @@ async def create_message(
         conversation_id = ObjectId(conversation_id)
     data = { 'uuid': request.state.uuid, 'conversation_id': conversation_id }
     if upload_files:
-        retrievers = await ingest_files(request, upload_files, data)
+        retrievers, _ = await ingest_files(request, upload_files, data)
     message_schema = MessageSchema(type='human', content=content, conversation_id=conversation_id)
+
     llm_stream = await chat(
         prompt_template, 
         models, 
@@ -73,6 +74,7 @@ async def create_message(
         data, 
         retrievers, 
         message_schema)
+    
     return StreamingResponse(llm_stream(), media_type="text/plain", headers={"X-Accel-Buffering": "no"})
 
 @router.get(

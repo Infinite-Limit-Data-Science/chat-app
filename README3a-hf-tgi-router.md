@@ -3,7 +3,7 @@
 These are the separate components:
 
 - Router: also named webserver, that receives the client requests, buffers them, creates some batches, and prepares gRPC calls to a model server. In this context, gRPC (gRPC Remote Procedure Call) is a protocol used to enable efficient, high-performance communication between different components of a system, especially useful for distributed architectures. 
-- Model Server: responsible of receiving the gRPC requests and to process the inference on the model. If the model is sharded across multiple accelerators (e.g.: multiple GPUs), the model server shards might be synchronized via NCCL or equivalent.
+- Model Server: responsible of receiving the gRPC requests and to process the inference on the model. If the model is sharded across multiple accelerators (e.g.: multiple GPUs), the model server shards might be synchronized via NCCL or equivalent. NVIDIA Collective Communications Library (NCCL) is a library developed by NVIDIA to provide high-performance communication primitives optimized for multi-GPU and multi-node environments. It is commonly used to synchronize data across multiple GPUs, enabling efficient distributed training and inference of large models.
 - Launcher: helper that will be able to launch one or several model servers (if model is sharded), and it launches the router with the compatible arguments.
 
 The router and the model server can be two different machines, they do not need to be deployed together.

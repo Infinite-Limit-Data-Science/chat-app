@@ -159,6 +159,8 @@ async def get_current_guardrails(
         
         if system_model_config.active:
             return await get_current_models(request, system_model_config)
+    
+    return []
 
 async def get_current_embedding_models(request: Request) -> List[BaseEmbedding]:
     model_dict = json.loads(os.environ['EMBEDDING_MODELS'])

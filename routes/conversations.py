@@ -12,6 +12,8 @@ from fastapi import (
     UploadFile, 
     logger
 )
+from fastapi.exceptions import HTTPException
+from huggingface_hub.errors import HfHubHTTPError
 from orchestrators.chat.llm_models.llm import LLM
 from orchestrators.doc.embedding_models.embedding import BaseEmbedding
 from auth.bearer_authentication import get_current_user
@@ -44,9 +46,30 @@ router = APIRouter(
     response_model=ConversationCollectionSchema,
     response_model_by_alias=False,
 )
-async def conversations(request: Request, record_offset: int = Query(0, description='record offset', alias='offset'), record_limit: int = Query(20, description="record limit", alias='limit')):
+async def conversations(
+        request: Request, 
+        record_offset: int = Query(0, description='record offset', alias='offset'), 
+        record_limit: int = Query(20, description="record limit", alias='limit'),
+        sort: str = Query(None, description='sort field and direction as sort=field[asc|desc]', alias='sort')
+    ):
     """List conversations by an offset and limit"""
-    conversations = await ConversationRepo.all(options={request.state.uuid_name: request.state.uuid}, offset=record_offset, limit=record_limit)
+    sort_field, sort_direction = 'updatedAt', 'desc'
+    if sort:
+        parts = sort.split('[')
+        if len(parts) == 2:
+            sort_field = parts[0]
+            sort_direction = parts[1].strip(']')
+            if sort_direction not in ['asc', 'desc']:
+                sort_direction = 'desc'
+
+    conversations = await ConversationRepo.all(
+        options={
+            request.state.uuid_name: request.state.uuid
+        }, 
+        offset=record_offset, 
+        limit=record_limit,
+        sort_field=sort_field,
+        sort_direction=sort_direction)
     return ConversationCollectionSchema(conversations=conversations)
 
 @router.post(
@@ -60,27 +83,49 @@ async def create_conversation(
     upload_files: Optional[List[UploadFile]] = File(None),
     models: List[LLM] = Depends(get_current_models),
     embedding_models: List[BaseEmbedding] = Depends(get_current_embedding_models),
-    guardrails: List[LLM] = Depends(get_current_guardrails), 
-    prompt_template: str = Depends(get_prompt_template)):
+    guardrails: Optional[List[LLM]] = Depends(get_current_guardrails),
+    prompt_template: str = Depends(get_prompt_template),
+):
     """Insert new conversation record and message record in configured database, returning AI Response"""
-    conversation_schema = CreateConversationSchema(uuid=request.state.uuid)
+    conversation_schema = CreateConversationSchema(
+        uuid=request.state.uuid, 
+        model_name=models[0].name, 
+        prompt_used=prompt_template)
     retrievers = []
+    
     if (
         created_conversation_id := await ConversationRepo.create(conversation_schema=conversation_schema)
     ) is not None:
         data = { 'uuid': conversation_schema.uuid, 'conversation_id': created_conversation_id }
         if upload_files:
-            retrievers = await ingest_files(request, upload_files, data)
-        message_schema = MessageSchema(type='human', content=content, conversation_id=created_conversation_id)     
-        llm_stream = await chat(
-            prompt_template, 
-            models, 
-            guardrails, 
-            embedding_models, 
-            data, 
-            retrievers, 
-            message_schema)
-        return StreamingResponse(llm_stream(), media_type="text/plain", headers={"X-Accel-Buffering": "no"})
+            retrievers, filenames = await ingest_files(request, upload_files, data)
+            await ConversationRepo.update_one(created_conversation_id, _set={ 'filenames': filenames })
+
+        message_schema = MessageSchema(
+            type='human', 
+            content=content, 
+            conversation_id=created_conversation_id) 
+
+        try:    
+            llm_stream = await chat(
+                prompt_template, 
+                models, 
+                guardrails, 
+                embedding_models, 
+                data, 
+                retrievers, 
+                message_schema) 
+            return StreamingResponse(llm_stream(), media_type='text/event-stream')
+        except HfHubHTTPError as e:
+            error_info = {
+                'url': e.response.url,
+                'status_code': e.response.status_code,
+                'error_message': e.response.text,
+                'error_type': type(e).__name__,
+            }
+            logging.warning(f'Request failed error_info {error_info}')
+            await ConversationRepo.delete(created_conversation_id, options={ request.status.uuid_name: request.status.uuid})
+            raise HTTPException(status_code=e.response.status_code, detail=error_info)
         
     return {'error': f'Conversation not created'}, 400
 

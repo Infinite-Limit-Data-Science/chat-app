@@ -22,11 +22,16 @@ class Conversation(AbstractModel):
 
 class ConversationSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):
     title: Optional[str] = Field(description='title of conversation', default='')
+    prompt_used: Optional[str] = Field(description='Prompt used for the given conversation', default='')
+    model_name: Optional[str] = Field(description='Name of model used in conversation', default='')
     messages: List[MessageSchema] = Field(description='List of messages associated with conversation')
+    filenames: Optional[List[str]] = Field(description='List of filenames used in conversation', default_factory=list)
 
 class CreateConversationSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):
     uuid: Optional[str] = Field(alias="sessionId", description='downcased alphanumeric session id', default=None)
     title: Optional[str] = Field(description='title of conversation', default=None)
+    prompt_used: Optional[str] = Field(description='chat-ui legacy field', default='')
+    model_name: Optional[str] = Field(description='Name of model used in conversation', default='')    
     message_ids: Optional[List[PyObjectId]] = Field(description='Messages associated with Conversation', default_factory=list)
 
     class Config:

@@ -784,6 +784,26 @@ token=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
 volume=$PWD/data
 docker container run --gpus all --shm-size 1g -e HUGGING_FACE_HUB_TOKEN=$token -p 8080:80 -v $volume:/data ghcr.io/huggingface/text-generation-inference:2.3.1 --model-id $model --max-batch-prefill-tokens 4800 --max-input-length 4768 --max-total-tokens 10960 --num-shard 4
 
+--max-input-tokens
+--max-total-tokens
+
+
+For a single request:
+--max-input-tokens : 35,453
+--max-total-tokens : 43641
+--max-batch-prefill-tokens: 43,690
+--max-concurrent-requests
+
+--max-concurrent-requests 128
+--max-batch-prefill-tokens: 50k default
+
+--max-batch-total-tokens (not set)
+
+4 GPU: 80GiB : 320GiB
+
+context length 120k (context length)
+43k 
+
 
 sudo vi /etc/systemd/system/llama3-1-70b-instruct
 [Unit]

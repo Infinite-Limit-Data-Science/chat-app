@@ -26,6 +26,9 @@ _PROJECT = {
                     'createdAt': 1,
                     'updatedAt': 1,
                     'title': 1,
+                    'prompt_used': 1,
+                    'model_name': 1,
+                    'filenames': 1,
                     'messages': {
                         '$map': {
                             'input': '$messages',
@@ -45,12 +48,21 @@ _PROJECT = {
 
 class ConversationMongoRepository(factory(Conversation)):
     @classmethod
-    async def all(cls, *, options: Optional[dict] = {}, offset: int = 0, limit: int = 20) -> List[Dict[str, Any]]:
+    async def all(
+        cls, 
+        *, 
+        options: Optional[dict] = {}, 
+        offset: int = 0, 
+        limit: int = 20, 
+        sort_field: str = 'updatedAt',
+        sort_direction: str = 'desc'
+    ) -> List[Dict[str, Any]]:
         """Fetch all documents in database filtered by user, limit, and offset"""
         stages = []
         stages.append({ '$match': options })
         stages.append(_JOIN)
         stages.append(_PROJECT)
+        stages.append({ '$sort': { sort_field: 1 if sort_direction == 'asc' else -1 }})
         stages.append({ '$skip': offset })
         stages.append({ '$limit': limit })
         return await cls.get_collection().aggregate(stages).to_list(length=None)

@@ -1,7 +1,7 @@
 import os
 import asyncio
 import shutil
-from typing import List, Dict
+from typing import List, Dict, Tuple
 from fastapi import UploadFile, logger, Request
 from langchain_core.vectorstores import VectorStoreRetriever
 from orchestrators.doc.embedding_models.embedding import BaseEmbedding
@@ -47,8 +47,13 @@ async def ingest_file(embedding_models: List[BaseEmbedding], upload_file: Upload
 
     return retriever
 
-async def ingest_files(request: Request, upload_files: List[UploadFile], data: dict) -> List[VectorStoreRetriever]:
+async def ingest_files(
+        request: Request, 
+        upload_files: List[UploadFile], 
+        data: dict
+    ) -> Tuple[List[VectorStoreRetriever], List[str]]:
     embedding_models = await get_current_embedding_models(request)
+    filenames = [upload_file.filename for upload_file in upload_files]
     tasks = [
         asyncio.create_task(
             ingest_file(embedding_models, upload_file, data)
@@ -56,4 +61,4 @@ async def ingest_files(request: Request, upload_files: List[UploadFile], data: d
         for upload_file in upload_files
     ]
     retrievers = await asyncio.gather(*tasks)
-    return retrievers
+    return retrievers, filenames

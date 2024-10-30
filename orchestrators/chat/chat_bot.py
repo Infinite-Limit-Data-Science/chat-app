@@ -86,13 +86,16 @@ class ChatBot(AbstractBot):
         preprompt_filter: Optional[Runnable] = None,
     ) -> Runnable:
         """Custom implementation to handle preprompt messages"""
-        retrieve_documents: RetrieverOutputLike = RunnableBranch(
+        def validate_history(input_data: Dict[str, Any]) -> bool:
+            logging.warning(f"Value of input_data in predicate: {input_data}")
+            return not input_data.get('chat_history')
+        
+        retrieve_documents = (preprompt_filter or RunnablePassthrough()) | RunnableBranch(
             (
-                lambda input_data: not input_data.get("chat_history", False),
+                validate_history,
                 (lambda input_data: input_data['input']) | retriever,
             ),
-            (preprompt_filter or RunnablePassthrough())
-            | prompt
+            prompt
             | llm
             | StrOutputParser()
             | retriever,
@@ -108,6 +111,7 @@ class ChatBot(AbstractBot):
     ) -> Runnable[Dict[str, Any], Any]:
         """Custom implementation to handle preprompt messages"""        
         def format_docs(inputs: dict) -> str:
+            logging.warning(f'TELL ME THE INPUTS {inputs}')
             return DEFAULT_DOCUMENT_SEPARATOR.join(
                 format_document(doc, DEFAULT_DOCUMENT_PROMPT)
                 for doc in inputs['context']
@@ -140,7 +144,7 @@ class ChatBot(AbstractBot):
 
     def create_multi_retriever_chain(self, llm: BaseChatModel, retrievers: List[VectorStoreRetriever]) -> Runnable:
         context_prompt = self.prompt_part.registry['contextualized_template']()
-        retriever_map = {f'retriever_{i}': retriever for i, retriever in enumerate(retrievers)}
+        retriever_map = {f'Source {i}': retriever for i, retriever in enumerate(retrievers, start=1)}
         parallel_retrieval = RunnableParallel(retriever_map)
 
         def combine_contexts(retrieved_results: dict, separator=DEFAULT_DOCUMENT_SEPARATOR) -> list:
@@ -284,6 +288,29 @@ class ChatBot(AbstractBot):
         content += 'Please review the following hazard categories:\n\n'
         content += match.group(1).strip()
         return content
+    
+    async def calculate_vecs(self, message: str) -> bool:
+        if self.vector_part.source_retrievers:
+            from langchain_core.callbacks.base import AsyncCallbackHandler
+            class ProcessDocumentsCallback(AsyncCallbackHandler):
+                async def on_retriever_end(self, documents: List[Document], **kwargs: Any) -> None:
+                    n = 2
+                    num_steps = 4
+                    indices = [n**i for i in range(1, num_steps + 1) if n**i < len(documents)]
+                    retrieved_docs = [documents[i] for i in indices]
+                    logging.info(f'retrieved docs subset {retrieved_docs}')
+
+            import random
+            retriever = random.choice(self.vector_part.source_retrievers)
+            docs = await retriever.ainvoke(
+                message,
+                config={
+                    'callbacks': [ProcessDocumentsCallback()]
+                }
+            )
+            return len(docs) > 0
+
+        return await self.vector_part.aavailable_vectors(message)
 
     async def cancel_astream(self) -> Callable[[], AsyncGenerator[str, None]]:
         import asyncio
@@ -372,7 +399,7 @@ class ChatBot(AbstractBot):
 
     # TODO: add trimmer runnable  
     async def astream(self, message: str) -> Callable[[], AsyncGenerator[str, None]]:
-        # await self.vector_part.vector_store.inspect(message)
+        await self.vector_part.vector_store.inspect(message)
         self._trace_history_chain()
 
         if self.guardrails_part.llm:
@@ -381,10 +408,11 @@ class ChatBot(AbstractBot):
                 self.prompt_part.registry['guardrails_template']())
             if not is_safe:
                 return await self.cancel_astream()
-        source_retrievers = self.vector_part.source_retrievers
         chat_llm = self.llm_part.llm.endpoint_object
-        rag_chain = await self.vector_part.aavailable_vectors(message)
-        
+
+        rag_chain = await self.calculate_vecs(message)
+        source_retrievers = self.vector_part.source_retrievers
+
         return await self.rag_astream(chat_llm, message, source_retrievers) if rag_chain else await self.chat_astream(chat_llm, message)
 
     chat = astream
@@ -430,7 +458,7 @@ class ChatBotBuilder:
             chat_bot: ChatBot, 
             llm: List[LLM]
         ):
-            self.llm = LLMProxy(llm).get()
+            self.llm = LLMProxy(llm).get() if llm else []
             chat_bot.guardrails_part = self
 
         async def content_safe(self, message: str, prompt: BasePromptTemplate) -> bool:

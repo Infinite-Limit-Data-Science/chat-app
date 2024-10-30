@@ -38,16 +38,14 @@ class ActiveStrategy(ABC):
     
     def generate_classification_methods(self) -> None:
         """Metaprogram classification methods based on the MODELS environment variable."""
-        classifications = self.load_classifications_from_env()
-
-        for classification in classifications:
-            method_name = f'is_{classification.replace("-", "_")}'
+        for generation in Generations:
+            method_name = f'is_{generation.value.replace("-", "_")}'
 
             if not hasattr(self, method_name):
                 setattr(
                     self, 
                     method_name, 
-                    types.MethodType(self.classify(classification), self))
+                    types.MethodType(self.classify(generation.value), self))
 
 class TextGenerationActiveStrategy(ActiveStrategy):
     def set_active(self, model_configs: dict, active_model_name: str) -> None:

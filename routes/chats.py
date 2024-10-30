@@ -17,7 +17,8 @@ async def chat(
     embedding_models: List[BaseEmbedding],
     data: dict,
     retrievers: Optional[List[VectorStoreRetriever]],
-    message_schema: MessageSchema) -> Callable[[], AsyncGenerator[str, None]]:
+    message_schema: MessageSchema
+) -> Callable[[], AsyncGenerator[str, None]]:
     """Invoke chat bot"""
     chat_bot = ChatBot()
     builder = ChatBotBuilder(chat_bot)
