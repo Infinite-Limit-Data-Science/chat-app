@@ -87,7 +87,6 @@ class ChatBot(AbstractBot):
     ) -> Runnable:
         """Custom implementation to handle preprompt messages"""
         def validate_history(input_data: Dict[str, Any]) -> bool:
-            logging.warning(f"Value of input_data in predicate: {input_data}")
             return not input_data.get('chat_history')
         
         retrieve_documents = (preprompt_filter or RunnablePassthrough()) | RunnableBranch(
@@ -111,7 +110,6 @@ class ChatBot(AbstractBot):
     ) -> Runnable[Dict[str, Any], Any]:
         """Custom implementation to handle preprompt messages"""        
         def format_docs(inputs: dict) -> str:
-            logging.warning(f'TELL ME THE INPUTS {inputs}')
             return DEFAULT_DOCUMENT_SEPARATOR.join(
                 format_document(doc, DEFAULT_DOCUMENT_PROMPT)
                 for doc in inputs['context']

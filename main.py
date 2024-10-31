@@ -2,7 +2,7 @@ import os
 import logging
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -12,6 +12,7 @@ from routes.conversations import router as conversations_router
 from routes.messages import router as messages_router
 from routes.settings import router as settings_router
 from routes.default import router as default_router
+from starlette.middleware.base import BaseHTTPMiddleware
 
 load_dotenv()
 
@@ -39,6 +40,30 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"]
 )
+
+class MultiAuthorizationMiddleware(BaseHTTPMiddleware):
+    """Middleware to capture only the first valid Bearer token Authorization header, removing 'undefined' headers."""
+    async def dispatch(self, request: Request, call_next):
+        import re
+        bearer_pattern = re.compile(r"^Bearer\s+.+")
+        headers = dict(request.scope['headers'])
+        valid_auth_header = next(
+            (auth for auth in [val.decode('utf-8') for key, val in headers.items() if key == b'authorization']
+            if bearer_pattern.match(auth) and auth.lower() != "undefined"),
+            None,
+        )
+
+        if valid_auth_header:
+            headers[b'authorization'] = valid_auth_header.encode()
+            request.scope['headers'] = [(k, v) for k, v in headers.items()]
+            logging.warning(f'Using Authorization header: {valid_auth_header}')
+        else:
+            request.scope['headers'] = [(k, v) for k, v in headers.items() if v != b'undefined']
+
+        response = await call_next(request)
+        return response
+
+app.add_middleware(MultiAuthorizationMiddleware)
 
 app.mount('/ui/assets', StaticFiles(directory='ui/dist/assets'), name='assets')
 
