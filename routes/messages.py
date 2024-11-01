@@ -23,6 +23,7 @@ from routes.configs import (
     get_current_embedding_models, 
     get_prompt_template,
     get_current_guardrails,
+    DEFAULT_PREPROMPT,
 )
 from repositories.base_mongo_repository import base_mongo_factory as factory
 from routes.uploads import ingest_files
@@ -65,9 +66,10 @@ async def create_message(
     if upload_files:
         retrievers, _ = await ingest_files(request, upload_files, data)
     message_schema = MessageSchema(type='human', content=content, conversation_id=conversation_id)
+    prompt = prompt_template or DEFAULT_PREPROMPT
 
     llm_stream = await chat(
-        prompt_template, 
+        prompt, 
         models, 
         guardrails, 
         embedding_models, 

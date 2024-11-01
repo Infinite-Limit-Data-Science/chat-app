@@ -56,7 +56,6 @@ class MultiAuthorizationMiddleware(BaseHTTPMiddleware):
         if valid_auth_header:
             headers[b'authorization'] = valid_auth_header.encode()
             request.scope['headers'] = [(k, v) for k, v in headers.items()]
-            logging.warning(f'Using Authorization header: {valid_auth_header}')
         else:
             request.scope['headers'] = [(k, v) for k, v in headers.items() if v != b'undefined']
 

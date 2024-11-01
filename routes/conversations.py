@@ -23,6 +23,7 @@ from routes.configs import (
     get_current_embedding_models, 
     get_prompt_template,
     get_current_guardrails,
+    DEFAULT_PREPROMPT,
 )
 from routes.uploads import ingest_files
 from repositories.conversation_mongo_repository import ConversationMongoRepository as ConversationRepo
@@ -105,10 +106,11 @@ async def create_conversation(
             type='human', 
             content=content, 
             conversation_id=created_conversation_id) 
+        prompt = prompt_template or DEFAULT_PREPROMPT
 
         try:    
             llm_stream = await chat(
-                prompt_template, 
+                prompt,
                 models, 
                 guardrails, 
                 embedding_models, 

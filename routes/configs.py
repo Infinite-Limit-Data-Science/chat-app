@@ -16,7 +16,7 @@ from models.system_embedding_config import SystemEmbeddingConfigSchema
 from models.model_observer import ModelSubject, ModelObserver
 from models.classification import get_strategy_for_classification
 
-_DEFAULT_PREPROMPT='You are an assistant for question-answering tasks. Answer the questions to the best of your ability.'
+DEFAULT_PREPROMPT='You are an assistant for question-answering tasks. Answer the questions to the best of your ability.'
 
 SettingRepo = factory(Setting)
 
@@ -56,12 +56,21 @@ async def refresh_model_configs(
     user_model_configs = {model_config.name: model_config for model_config in setting_schema.user_model_configs}
     active_model_name = None
 
+    removed_models = [name for name in user_model_configs if name not in system_model_configs]
+
+    if removed_models:
+        await SettingRepo.remove_from_field(
+            setting_schema.id,
+            options={'user_model_configs': {'name': {'$in': removed_models}}}
+        )
+        for name in removed_models:
+            del user_model_configs[name]
+
     for system_model_name, system_config in system_model_configs.items():
         classification = system_config.classification
-        
         strategy = get_strategy_for_classification(classification)
         
-        if not strategy.is_text_generation():
+        if not strategy.is_text_generation(): # and not strategy.is_image_to_text()
             continue
         
         if classification not in classification_subjects:
@@ -95,10 +104,9 @@ async def refresh_model_configs(
     for classification, subject in classification_subjects.items():
         strategy = get_strategy_for_classification(classification)
         
-        if not strategy.is_text_generation(): # and not strategy.is_image_to_text()
+        if not strategy.is_text_generation():
             continue
         
-        # TODO: update existing user_model_configs in db with classification attribute
         for user_model_name, user_model_config in user_model_configs.items():
             if user_model_config.classification == classification:
                 if user_model_config.active:
@@ -190,7 +198,7 @@ async def get_prompt_template(
     setting_schema: SettingSchema = Depends(get_user_settings),
     system_config_schema: SystemModelConfigSchema = Depends(refresh_model_configs)
 ) -> str:
-    """Derive system prompt from either custom prompts or default system prompt"""
+    """Derive prompt from either custom user prompts or system prompts if any"""
     if(
         active_user_config_id := next((config.id for config in setting_schema.user_model_configs if config.active), None)
     ) is not None:
@@ -199,4 +207,4 @@ async def get_prompt_template(
         ) is not None:
             return prompt.content
     
-    return system_config_schema.preprompt or _DEFAULT_PREPROMPT
+    return system_config_schema.preprompt
