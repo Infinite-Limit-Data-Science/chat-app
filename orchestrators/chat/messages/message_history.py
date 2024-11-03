@@ -15,7 +15,7 @@ class BaseMessageHistorySchema:
     """Base Schema for a data store like Redis, MongoDB, PostgreSQL, ChromaDB, etc"""
     connection_string: str
     database_name: str
-    history_size: int = 100 # restrict message history to 100 messages
+    history_size: int = 1000
     session_id_key: str
 
 @dataclass(kw_only=True, slots=True)

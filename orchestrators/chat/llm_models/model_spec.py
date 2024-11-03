@@ -2,7 +2,7 @@ from enum import Enum
 from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-SUPPORTED_ARCHITECTURES = [('A10G', 'Ampere'), ('H100', 'Hopper'), ('A100', 'Ampere')]
+SUPPORTED_ARCHITECTURES = [('A10G', 'Ampere'), ('A100', 'Ampere'), ('H100', 'Hopper')]
 
 class BytePrecision(Enum):
     BYTES_2 = 2

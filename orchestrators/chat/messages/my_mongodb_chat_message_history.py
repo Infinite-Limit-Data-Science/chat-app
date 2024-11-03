@@ -1,16 +1,36 @@
 import logging
 import json
 import datetime as dt
+from typing import List
 from pymongo import errors
 from langchain_mongodb import MongoDBChatMessageHistory
 from orchestrators.chat.messages.message_history import BaseMessage
-from langchain_core.messages import BaseMessage, message_to_dict
-
+from langchain_core.messages import BaseMessage, messages_from_dict, message_to_dict
 logger = logging.getLogger(__name__)
 
 _ROOT_COLLECTION='conversations'
 
 class MyMongoDBChatMessageHistory(MongoDBChatMessageHistory):
+    @property
+    def messages(self) -> List[BaseMessage]:
+        """Retrieve the messages from MongoDB"""
+        try:
+            if self.history_size is None:
+                cursor = self.collection.find({self.session_id_key: self.session_id})
+            else:
+                total_docs_for_session = self.collection.count_documents({self.session_id_key: self.session_id})
+                skip_count = max(0, total_docs_for_session - self.history_size)
+                cursor = self.collection.find(
+                    {self.session_id_key: self.session_id}
+                ).skip(skip_count)
+        except errors.OperationFailure as error:
+            logger.error(error)
+            return []
+
+        items = [json.loads(document[self.history_key]) for document in cursor] if cursor else []
+        messages = messages_from_dict(items)
+        return messages
+
     def add_message(self, message: BaseMessage) -> None:
         """Append the message to the record in MongoDB"""
         try:

@@ -59,7 +59,7 @@ class ChatBot(AbstractBot):
     def _trace_history_chain(self) -> None:
         def _historic_messages_by(n: int) -> List[BaseMessage]:
             messages = self.message_part.message_history.messages[-n:]
-            logging.warning(f'Message History {messages}')
+            logging.info(f'Message History {messages}')
             return messages
         runnable = RunnableLambda(
             _historic_messages_by).with_config(run_name='trace_my_history')
@@ -328,7 +328,8 @@ class ChatBot(AbstractBot):
         self, 
         chat_llm: BaseChatModel, 
         message: str,
-        source_retrievers: List[VectorStoreRetriever]) -> Callable[[], AsyncGenerator[str, None]]:
+        source_retrievers: List[VectorStoreRetriever]
+    ) -> Callable[[], AsyncGenerator[str, None]]:
         if len(source_retrievers) > 1:
             chain = self.create_multicontext_aware_chain(chat_llm, source_retrievers)
         else:
@@ -365,7 +366,8 @@ class ChatBot(AbstractBot):
     async def chat_astream(
         self, 
         chat_llm: BaseChatModel, 
-        message: str) -> Callable[[], AsyncGenerator[str, None]]:
+        message: str
+    ) -> Callable[[], AsyncGenerator[str, None]]:
         chain = self.create_chain(chat_llm)
         chain_with_history = self.message_part.message_history.get(chain, False)
         chain_with_history = chain_with_history.with_alisteners(

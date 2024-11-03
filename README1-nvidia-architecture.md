@@ -47,7 +47,25 @@ NVLink	            2 x NVLink 2.0	    2 x NVLink 4.0
 
 ### NVida Architectures: H100
 
+The H100 is more advanced than the A100:
+
+- The H100 is part of NVIDIA's Hopper architecture, which is the successor to the Ampere architecture that the A100 belongs to. The H100 offers significant improvements in performance, efficiency, and capabilities over the A100.
+- The H100 features newer technology such as Transformer Engine for optimized deep learning training and inference, more CUDA cores, and NVLink 4.0 for higher bandwidth connectivity.
+- The A100, part of the Ampere architecture, is indeed powerful and widely used, but it represents the previous generation compared to the H100.
+
 ### NVida Architectures: A10G
+
+The A10G has notably more CUDA cores than the A100:
+
+- NVIDIA A10G: The A10G GPU has 9,216 CUDA cores.
+- NVIDIA H100: The H100 GPU comes in different configurations, but the full version of the H100 SXM5 model has 14,592 CUDA cores.
+- NVIDIA A100: The A100 GPU has 6,912 CUDA cores.
+
+CUDA cores are just one factor in determining the performance of a GPU. While the A10G has more CUDA cores (9,216 compared to the A100's 6,912), the A100 is still superior due to several other architectural advancements and features.
+
+- The A100 supports up to 80 GB of HBM2e (High Bandwidth Memory) and provides significantly higher memory bandwidth (over 2 TB/s) than the A10G, which uses GDDR6 memory. This leads to much faster data access, which is critical for AI and HPC tasks.
+- The CUDA cores in the A100 are more efficient than those in the A10G, meaning they can do more work per clock cycle. The A100 is optimized for complex matrix operations and AI workloads that benefit from these enhancements.
+- The A100's Tensor Cores give it a significant edge in matrix-heavy operations like deep learning. These cores enable FP16, BF16, INT8, and other mixed-precision computing, leading to exponential performance gains over traditional FP32 operations. Note the A10G does have Tensor Cores. The A10G is based on NVIDIA's Ampere architecture, similar to the A100, so it does include 3rd generation Tensor Cores. These Tensor Cores support mixed-precision operations and can accelerate AI training and inference workloads, but they are not as optimized or as numerous as those in the A100.
 
 ### ### NVida Architectures: RTX 4090
 

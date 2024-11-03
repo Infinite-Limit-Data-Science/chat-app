@@ -117,7 +117,7 @@ Suppose we want to set up TGI to:
 - **If the batch’s total input tokens exceed 4096 (e.g., if there are 10 requests with 512 tokens each), TGI will either split the batch or queue some requests to stay within the 4096 token limit.** TODO: look into hf tgi source code to see exactly what it does.
 - This prevents memory and compute overload by capping the prefill operation’s token load, optimizing batching efficiency without risking resource saturation.
 
-4) MAX_BATCH_TOTAL_TOKENS
+5) MAX_BATCH_TOTAL_TOKENS
 
 ```shell
 --max-batch-total-tokens <MAX_BATCH_TOTAL_TOKENS>
@@ -134,7 +134,7 @@ If --max-batch-total-tokens=1000, then:
 - Alternatively, a single request with 1000 tokens could also fit within this limit.
 - However, 20 requests with 100 tokens each (20 * 100 = 2000) would exceed this limit, so the batch would either be split or some requests would be queued.
 
-5) MAX_BATCH_TOTAL_TOKENS and FLASH ATTENTION
+6) MAX_BATCH_TOTAL_TOKENS and FLASH ATTENTION
 
 **Flash Attention allows TGI to avoid padding by only calculating attention on actual tokens (instead of adding "padding tokens" to match batch sizes)**. This leads to more efficient memory use. For instance, without Flash Attention, all requests in a batch would need to be padded to the same length, meaning unused tokens might consume memory. With Flash Attention, max_batch_total_tokens can be allocated more flexibly, allowing for a finer distribution of tokens across requests.
 
@@ -151,7 +151,7 @@ Traditional Attention vs. Flash Attention
 In a typical transformer model:
 
 - The attention mechanism computes the relationship between tokens using query (Q), key (K), and value (V) matrices.
-- **When processing batches of sequences with different lengths, models typically pad shorter sequences with padding tokens ([PAD]) to make all sequences the same length. This padding helps align dimensions for matrix operations, but it also wastes memory and computation on these irrelevant tokens.** When we talk about sequences of different lengths in the context of transformer models and attention mechanisms, we're referring to text sequences (like sentences, paragraphs, or any input text) that have varying numbers of tokens. In natural language processing (NLP) and text generation tasks, the input to the model is a sequence of tokens (words, subwords, or characters). These tokens are derived from splitting and encoding the text using a tokenizer. Different sequences (e.g., sentences or paragraphs) naturally vary in length because they contain different numbers of words and characters. For example:
+- **When processing batches of sequences (sequences referring to the tokenized text sent as input tokens to the model's layers) with different lengths, models typically pad shorter sequences with padding tokens ([PAD]) to make all sequences the same length. This padding helps align dimensions for matrix operations, but it also wastes memory and computation on these irrelevant tokens.** When we talk about sequences of different lengths in the context of transformer models and attention mechanisms, we're referring to text sequences (like sentences, paragraphs, or any input text) that have varying numbers of tokens. In natural language processing (NLP) and text generation tasks, the input to the model is a sequence of tokens (words, subwords, or characters). These tokens are derived from splitting and encoding the text using a tokenizer. Different sequences (e.g., sentences or paragraphs) naturally vary in length because they contain different numbers of words and characters. For example:
 
 Sequence 1: "Hello, how are you?" might have 5 tokens.
 Sequence 2: "This is an example of a longer input sequence, and it has more tokens." might have 15 tokens.
@@ -168,7 +168,7 @@ So what is the secret of Flash Attention? Flash Attention eliminates the need fo
 
 In the context of TGI, when multiple requests are batched together, Flash Attention efficiently processes each request’s tokens individually, without padding them to match the longest sequence in the batch. This allows TGI to fit more sequences into a batch (up to the limit set by --max-batch-total-tokens) without wasting memory on padding. As a result, TGI achieves higher throughput and better memory utilization.
 
-6) MAX_WAITING_TOKENS
+7) MAX_WAITING_TOKENS
 
 ```shell
 --max-waiting-tokens <MAX_WAITING_TOKENS>
@@ -206,44 +206,36 @@ Examples of How MAX_WAITING_TOKENS Impacts Performance:
 - Large Value (e.g., 50 tokens): New queries might wait too long before they are processed and added to the batch. This increases the latency for users submitting new requests because their queries sit idle until the server processes enough tokens to meet the threshold.
 - Default Value (20 tokens): **The default value is a balanced setting that ensures new queries are not delayed excessively while avoiding frequent interruptions to ongoing token generation. However, this can be fine-tuned based on the server’s load and the desired latency**. By increasing this slightly, you can ensure existing prompts complete before a specified threshold (e.g. 40 seconds)!
 
-7) MAX_BATCH_SIZE
+8) MAX_BATCH_SIZE
 
 ```shell
 --max-batch-size <MAX_BATCH_SIZE>
+    Enforce a maximum number of requests per batch Specific flag for hardware targets that do not support unpadded inference
+    
     [env: MAX_BATCH_SIZE=]
 ```
 
-**MAX_BATCH_SIZE in Hugging Face Text Generation Inference (TGI) specifies the maximum number of requests that can be processed together in a single batch**. This setting helps manage how the server groups incoming requests for efficient processing, especially when the hardware does not support unpadded inference (i.e., when all sequences in a batch must have the same length).
+**MAX_BATCH_SIZE is not used for NVidia targets!!!!!!!!** Visit this ticket where the repo's owner says it: https://github.com/huggingface/text-generation-inference/issues/2615. What does this mean? When the repo owner, Narsil, refers to "Nvidia targets," he means deployments that run on Nvidia GPUs, as opposed to non-GPU (e.g., CPU) or other types of hardware accelerators. Also note in the argument reference: "Specific flag for hardware targets that do not support unpadded inference". Of course, NVidia CUDA GPUs support unpadded inference. That is the power of them. Narsil also notes that the MAX_BATCH_SIZE parameter is not used or considered when running on Nvidia targets, because TGI prioritizes the number of tokens in a batch rather than the number of users/requests. The server will automatically adjust VRAM usage based on available memory and the number of tokens.
 
-Purpose of MAX_BATCH_SIZE:
+In TGI, memory usage is primarily driven by the number of tokens being processed in a batch. This includes both the input tokens (the text provided by users) and the output tokens (the text generated by the model). For example, if multiple requests are grouped into a batch and the combined number of tokens in that batch increases, the VRAM usage will also increase accordingly. The server allocates memory to handle these tokens effectively. **TGI automatically adjusts how it uses VRAM based on the available GPU memory and the total number of tokens in a batch. This means that the server will maximize the number of tokens it can handle while staying within the constraints of the GPU's VRAM capacity.**
 
-- It defines the upper limit on the number of individual requests (queries) that can be grouped together into a batch when processing text generation tasks.
-- This parameter is important for optimizing resource usage, ensuring that batches do not grow too large for the available hardware or memory constraints.
+On Nvidia GPUs, TGI takes full advantage of VRAM to optimize the performance and handle as many tokens as possible within the memory limit. Unlike MAX_BATCH_SIZE, which focuses on the number of user requests, the token-based approach allows TGI to manage VRAM more flexibly by focusing on how many tokens are being processed at once, which directly impacts memory usage.
 
-Why It Matters for Certain Hardware:
+When Narsil says, "TGI will always use all the allowed memory for KV-cache, to allow MANY users on the same machine," he is referring to how Hugging Face's Text Generation Inference (TGI) server manages GPU memory to support high concurrency and efficient processing.
 
-- Some hardware (e.g., certain types of GPUs) require padded inference, which means that all the sequences in a batch must be padded to match the length of the longest sequence in that batch. This is necessary to align the dimensions for efficient matrix operations on the hardware.
-- By limiting the batch size, you control how many requests can be grouped together. This helps prevent excessive padding that would waste memory or exceed hardware limits.
+KV-cache stands for "Key-Value cache." In transformer models, during the generation process (e.g., for autoregressive tasks), intermediate representations of the input sequence (keys and values) are cached. This allows the model to efficiently generate new tokens without recalculating previous tokens' representations from scratch. What do you mean by generation process, are yuo talking about prefill operation or the decoding phase (where new tokens generated)? When discussing the KV-cache in the context of transformer models, the term generation process refers primarily to the decoding phase, where new tokens are generated.
 
-How MAX_BATCH_SIZE Works
+Prefill Operation: This is the initial phase where the model processes the input sequence (e.g., a prompt). During this stage, the model reads and processes the input tokens to establish the context for generation. The KV-cache is not actively used during the prefill operation, as this stage involves creating the initial context by processing the input tokens through all layers of the model. **The outcome of this phase is the establishment of the key-value pairs (context) that will be used for subsequent generation.** 
 
-- Batching: TGI groups incoming requests into batches to process them together, maximizing efficiency and throughput. However, larger batches may require more memory and may include a lot of padding if the input sequences are of varying lengths. "TGI groups incoming requests into batches to process them together, maximizing efficiency and throughput." How does grouping incoming requests into batches maximize efficiency and throughput? **Grouping incoming requests into batches maximizes efficiency and throughput in Hugging Face Text Generation Inference (TGI) (and in general deep learning systems) by taking advantage of parallel processing, optimized memory usage, and hardware acceleration**.
-- By setting MAX_BATCH_SIZE, you enforce a limit on the number of requests per batch, ensuring that the batch size remains manageable given the hardware constraints.
-- This setting is particularly important when padding is required since the larger the batch size, the more likely sequences of significantly different lengths are grouped together, resulting in wasted memory due to padding.
+The decoding phase is where the model generates new tokens based on the processed input and previously generated tokens. KV-cache plays a critical role here. The model stores the intermediate representations of the input and previously generated tokens in the KV-cache. This allows the model to reference these cached values when computing attention for new tokens, enabling efficient incremental generation without reprocessing the entire input sequence. During each step of the decoding phase, the model only processes the new token while reusing the stored key-value pairs from prior steps, which significantly speeds up generation.
 
-Suppose MAX_BATCH_SIZE is set to 8:
+**TGI is designed to maximize the utilization of GPU memory to handle as many concurrent generation requests as possible. By using all the allowed memory (as specified or available) for the KV-cache, TGI can store more key-value pairs, enabling the model to serve more users simultaneously.**
 
-- This means that at most 8 requests can be processed together in a single batch.
-- **If 10 requests arrive at the same time, the server will split them into 2 batches: one with 8 requests and another with 2**.
+If you want to control how much VRAM you use, you need to set --cuda-memory-fraction 0.3 for instance to use 30% of available VRAM.
 
-**If you have hardware that supports unpadded inference (e.g., using Flash Attention), you might set a higher MAX_BATCH_SIZE because padding isn't required, and larger batch sizes can be handled efficiently**.
+For GPUs that only support padded inference, MAX_BATCH_SIZE in Hugging Face Text Generation Inference (TGI) specifies the maximum number of requests that can be processed together in a single batch. Again, this setting is specific to unpadded inference (i.e., when all sequences in a batch must have the same length).
 
-Trade-offs of Setting MAX_BATCH_SIZE:
-
-- Smaller Values: Pros: Reduces the risk of memory overload and minimizes padding overhead, making it suitable for hardware with strict memory constraints. Cons: May not fully utilize hardware resources if the batch size is too small, leading to lower throughput.
-- Larger Values: Pros: Increases throughput by processing more requests simultaneously, maximizing hardware utilization. Cons: If padding is required, it can lead to memory inefficiency if sequences within the batch have significantly different lengths.
-
-8) TOKENIZER_NAME
+9) TOKENIZER_NAME
 
 ```shell
 --tokenizer-name <TOKENIZER_NAME>
@@ -291,7 +283,7 @@ If you use the original tokenizer.json format (the one before it is re-serialize
 
 The original format is usually tailored to the tokenizer's original training environment and may not be optimized for modern use cases that involve fast tokenization (e.g., batch processing, GPU acceleration).
 
-9) TOKENIZER_CONFIG_PATH
+10) TOKENIZER_CONFIG_PATH
 
 ```shell
 --tokenizer-config-path <TOKENIZER_CONFIG_PATH>
@@ -312,7 +304,7 @@ What Is tokenizer_config.json? The tokenizer_config.json file contains informati
 - Type of Tokenizer: The specific tokenizer class (e.g., ByteLevelBPETokenizer, SentencePieceTokenizer) and any relevant configurations associated with it.
 - Special Tokens: Definitions for special tokens like [CLS], [SEP], [PAD], [MASK], and any other tokens used by the model during inference or training.   
 
-10) VALIDATION_WORKERS
+11) VALIDATION_WORKERS
 
 ```shell
 --validation-workers <VALIDATION_WORKERS>
@@ -321,7 +313,7 @@ What Is tokenizer_config.json? The tokenizer_config.json file contains informati
 
 The --validation-workers argument in Hugging Face Text Generation Inference (TGI) specifies the number of worker processes used for validating and preprocessing model inputs (like the tokenizer and model configurations) when TGI is initializing or loading the model. These workers help in parallelizing and speeding up the validation tasks to ensure that the model and its associated components (e.g., tokenizer) are correctly configured before serving inference requests.
 
-11) JSON_OUTPUT
+12) JSON_OUTPUT
 
 ```shell
 --json-output
@@ -362,7 +354,7 @@ In this example, the TGI server is instructed to return all inference results in
 }
 ```
 
-11) MAX_CLIENT_BATCH_SIZE
+13) MAX_CLIENT_BATCH_SIZE
 
 ```shell
 --max-client-batch-size <MAX_CLIENT_BATCH_SIZE>
@@ -458,4 +450,99 @@ The streaming data typically comes in a structured format like JSON, where each 
     "token": "El",
     "position": 0
 }
+```
+
+14) MODEL_ID
+
+```shell
+--model-id <MODEL_ID>  
+
+    [env: MODEL_ID=]
+    [default: bigscience/bloom-560m]
+```
+
+The name of the model to load. Can be a MODEL_ID as listed on <https://hf.co/models> like `gpt2` or `OpenAssistant/oasst-sft-1-pythia-12b`. Or it can be a local directory containing the necessary files as saved by `save_pretrained(...)` methods of transformers
+
+15) REVISION
+
+```shell
+      --revision <REVISION>
+          The actual revision of the model if you're referring to a model on the hub. You can use a specific commit id or a branch like `refs/pr/2`
+          
+          [env: REVISION=]
+```
+
+**This parameter can actually be important. For example, in meta-llama/Llama-3.2-90B-Vision-Instruct, on commit 13: https://huggingface.co/meta-llama/Llama-3.2-90B-Vision-Instruct/commit/cd1f492d2960d1f4172b589e11a0d212d04c02c5, the author updated the tokenizer_config.json file. Imagine deploying an older version and not having that update. It could impact the quality of results when performing conversational AI**.
+
+15) SHARDED
+
+```shell
+      --sharded <SHARDED>
+          Whether to shard the model across multiple GPUs By default text-generation-inference will use all available GPUs to run the model. Setting it to `false` deactivates `num_shard`
+          
+          [env: SHARDED=]
+          [possible values: true, false]
+```
+
+16) NUM_SHARD
+
+```shell
+      --num-shard <NUM_SHARD>
+          The number of shards to use if you don't want to use all GPUs on a given machine. You can use `CUDA_VISIBLE_DEVICES=0,1 text-generation-launcher... --num_shard 2` and `CUDA_VISIBLE_DEVICES=2,3 text-generation-launcher... --num_shard 2` to launch 2 copies with 2 shard each on a given machine with 4 GPUs for instance
+          
+          [env: NUM_SHARD=]
+```
+
+The --sharded parameter specifies whether to shard the model across multiple GPUs. By default text-generation-inference will use all available GPUs to run the model.  Setting it to `false` deactivates `num_shard`. So you should keep this to true, which is the default. 
+
+The --num-shard parameter allows you to specify the number of shards to use if you don't want to use all GPUs on a given machine. You can use `CUDA_VISIBLE_DEVICES=0,1 text-generation-launcher... --num_shard 2` and `CUDA_VISIBLE_DEVICES=2,3 text-generation-launcher... --num_shard 2` to launch 2 copies with 2 shard each on a given machine with 4 GPUs for instance.
+
+17) QUANTIZE
+
+This option specifies the quantization method to use for the model. It is not necessary to specify this option for pre-quantized models, since the quantization method is read from the model configuration. Marlin kernels will be used automatically for GPTQ/AWQ models. Possible values:
+
+- awq:  4 bit quantization. Requires a specific AWQ quantized model: <https://hf.co/models?search=awq>. In here, you will find the popular hugging-quants/Meta-Llama-3.1-70B-Instruct-AWQ-INT4 !
+- eetq: 8 bit quantization, doesn't require specific model. Should be a drop-in replacement to bitsandbytes with much better performance. Kernels are from <https://github.com/NetEase-FuXi/EETQ.git>
+- gptq: 4 bit quantization. Requires a specific GTPQ quantized model: <https://hf.co/models?search=gptq>. text-generation-inference will use exllama (faster) kernels wherever possible, and use triton kernel (wider support) when it's not. AWQ has faster kernels
+- marlin: 4 bit quantization. Requires a specific Marlin quantized model: <https://hf.co/models?search=marlin>
+- bitsandbytes: Bitsandbytes 8bit. Can be applied on any model, will cut the memory requirement in half, but it is known that the model will be much slower to run than the native f16
+- bitsandbytes-nf4: Bitsandbytes 4bit. Can be applied on any model, will cut the memory requirement by 4x, but it is known that the model will be much slower to run than the native f16
+
+Given that you're running Meta Llama 3.1 70B Instruct on a system with 4 A10G GPUs, each with 24 GiB of memory, and need to optimize memory usage while maintaining performance, here’s how the available quantization options fit into your scenario:
+
+- Total GPU memory: 96 GiB when sharding across 4 GPUs.
+- Model size: 70 billion parameters, which is very large and requires significant memory.
+- Performance: You want good inference speed but also need to manage memory efficiently.
+
+GPTQ (4-bit):
+
+- Advantages: 4-bit quantization that significantly reduces memory usage, but only works with models already quantized for GPTQ.
+- Why it fits: GPTQ is known for its balance between memory savings and performance. It uses exllama kernels for faster inference wherever possible. For a large model like Llama 3.1 70B, GPTQ’s 4-bit quantization can help fit the model within your 96 GiB memory limit, while maintaining relatively fast performance.
+- Drawback: Requires a GPTQ-quantized model. You need to ensure the model is available in GPTQ format from Hugging Face.
+
+AWQ (4-bit):
+
+- Advantages: AWQ also offers 4-bit quantization but tends to have faster kernels compared to GPTQ. It provides good memory savings and can be a strong choice for multi-GPU setups like yours.
+- Why it fits: AWQ quantization is an excellent choice if you're looking for a balance between memory efficiency and speed, especially with the faster kernels. With 4 GPUs and a 4-bit model, you should be able to load the 70B model comfortably.
+- Drawback: Like GPTQ, AWQ requires a specific AWQ-quantized model.
+
+Bitsandbytes (8-bit or 4-bit):
+
+- Advantages: Can be applied to any model, offering memory reduction by half (8-bit) or four times (4-bit).
+- Why it fits: While Bitsandbytes is more flexible and can be applied to any model, it is slower than native FP16. If memory is a critical concern, but speed is less important, you could use the 8-bit or 4-bit options.
+- Drawback: Significantly slower than AWQ or GPTQ. It might not be ideal if you're looking for optimal inference speed.
+
+Best Option: AWQ (4-bit) if the model is available in AWQ format. It offers faster kernels and the memory reduction you need to fit the model across your GPUs.
+
+Alternative: GPTQ (4-bit) if you prefer faster inference but still want to reduce memory.
+
+Fallback: Bitsandbytes (8-bit or 4-bit) if you're unable to find pre-quantized models, though it will be slower.
+
+Using a prebuilt quantized model:
+
+```shell
+model=hugging-quants/Meta-Llama-3.1-70B-Instruct-AWQ-INT4
+token=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
+volume=$PWD/data
+docker container run --gpus all --shm-size 1g -e HUGGING_FACE_HUB_TOKEN=$token -p 8080:80 -v $volume:/data ghcr.io/huggingface/text-generation-inference:2.3.1 --model-id $model --max-batch-prefill-tokens 4800 --max-input-length 4768 --max-total-tokens 10960 --num-shard 4
 ```
