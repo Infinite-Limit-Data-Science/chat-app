@@ -23,7 +23,7 @@ The easiest way to get started with TEI is to use one of the official Docker con
 ```shell
 token=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
 model=BAAI/bge-large-en-v1.5
-volume=$PWD/teidata
+volume=$PWD/data
 
 docker run --gpus all -e HUGGING_FACE_HUB_TOKEN=$token -p 8070:80 -v $volume:/data --pull always ghcr.io/huggingface/text-embeddings-inference:1.5 --model-id $model --max-client-batch-size 65 --auto-truncate
 ```
@@ -219,9 +219,7 @@ token=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
 model=BAAI/bge-large-en-v1.5
 volume=$PWD/teidata
 
-docker run --gpus all -e HUGGING_FACE_HUB_TOKEN=$token -p 8070:80 -v $volume:/data --pull always ghcr.io/huggingface/text-embeddings-inference:1.5 --model-id $model --max-client-batch-size 128 --auto-truncate
-8 workers (4096 )
-max batch tokens 4096
+docker run --gpus all -e HUGGING_FACE_HUB_TOKEN=$token -p 8070:80 -v $volume:/data --pull always ghcr.io/huggingface/text-embeddings-inference:1.5 --model-id $model --max-batch-tokens 32768 --max-client-batch-size 128 --max-batch-requests 64 --auto-truncate
 
 ```
 

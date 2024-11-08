@@ -1,14 +1,11 @@
 from __future__ import annotations
 
 import logging
-import os
 from typing import Callable, AsyncGenerator, Optional, List, Any, Dict
 import re
-import string
-import nltk
-from nltk import word_tokenize, pos_tag, ngrams
-from collections import deque, defaultdict, Counter
+from collections import deque
 from pymongo import DESCENDING
+
 from langchain_core.runnables import Runnable, RunnablePassthrough, RunnableLambda, RunnableParallel, RunnableBranch
 from langchain_core.language_models import LanguageModelLike
 from langchain_core.output_parsers import StrOutputParser
@@ -24,6 +21,7 @@ from langchain_core.output_parsers.string import StrOutputParser
 from langchain_core.documents import Document
 from langchain.chains.combine_documents.base import DEFAULT_DOCUMENT_SEPARATOR, DEFAULT_DOCUMENT_PROMPT
 from langchain_core.prompts import format_document
+
 from orchestrators.doc.vector_stores.abstract_vector_store import (
     AbstractVectorStore,
     AbstractFlexiSchemaFields,
@@ -31,6 +29,7 @@ from orchestrators.doc.vector_stores.abstract_vector_store import (
 from orchestrators.doc.vector_stores.factories import FACTORIES as V_FACTORIES
 from orchestrators.doc.embedding_models.embedding import BaseEmbedding
 from orchestrators.doc.embedding_models.model_proxy import ModelProxy as EmbeddingsProxy
+
 from orchestrators.chat.messages.prompts import registry
 from orchestrators.chat.abstract_bot import AbstractBot
 from orchestrators.chat.llm_models.llm import LLM
@@ -45,7 +44,7 @@ from orchestrators.chat.messages.message_history import (
     Sequence,
 )
 
-nltk.data.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)),'nltk_data'))
+from orchestrators.nlplang.lexical_lang import LexicalLang
 
 class ChatBot(AbstractBot):
     def __init__(self):
@@ -219,65 +218,6 @@ class ChatBot(AbstractBot):
             chain = self.prompt_part.registry['summarization_template']() | self.llm_part.llm.summary_object
             summary = await chain.ainvoke({'input': ai_message['content']})
             self.message_part.message_history.chat_message_history.add_summary(summary.content)
-
-    @staticmethod
-    def pos_check(corpus: str, max_repeats: int = 5) -> bool:
-        """Validate corpus using pos tagging"""
-        tagged_words = pos_tag(word_tokenize(corpus))
-        consecutive_pofs_counts = defaultdict(int)
-        max_consecutive = defaultdict(lambda: max_repeats)
-        max_consecutive.update({
-            'IN': 2,
-            'CC': 2,
-            'UH': 1,
-            'PUNCT': 5,
-            'SYM': 3,
-        })
-
-        punctuation_chars = {'.', ',', ':', '!', '?', '-', '(', ')', '[', ']', '{', '}', '"', "'", '...'}
-        special_symbols = {'*', '&', '%', '$', '@', '#'}
-
-        last_tag = None
-        for word, tag in tagged_words:
-            if word in punctuation_chars:
-                tag_category = 'PUNCT'
-            elif word in special_symbols:
-                tag_category = 'SYM'
-            else:
-                tag_category = tag[:2] if tag[:2] in consecutive_pofs_counts else tag
-            
-            if tag_category == last_tag:
-                consecutive_pofs_counts[tag_category] += 1
-            else:
-                consecutive_pofs_counts[tag_category] = 1
-
-            if consecutive_pofs_counts[tag_category] > max_consecutive[tag_category]:
-                return False
-
-            last_tag = tag_category
-
-        return True
-    
-    @staticmethod
-    def seq_check(corpus: str, n: int = 3, max_repeats: int = 3) -> bool:
-        """Validate corpus by sequences of vocabulary"""
-        def clean_text(text: str) -> str:
-            text = text.translate(str.maketrans('', '', string.punctuation))
-            text = re.sub(r'[^a-zA-Z\s]', '', text)
-            
-            return text
-        
-        cleaned_corpus = clean_text(corpus)
-        words = word_tokenize(cleaned_corpus.lower())
-        n_grams = list(ngrams(words, n))
-        n_gram_counts = Counter(n_grams)
-        
-        for n_gram, count in n_gram_counts.items():
-            if count > max_repeats:
-                logging.warning(f"Repeated sequence detected: {' '.join(n_gram)} (repeated {count} times)")
-                return False
-        
-        return True
     
     def format_cancel_message(self):
         pattern = r"<BEGIN UNSAFE CONTENT CATEGORIES>(.*?)<END UNSAFE CONTENT CATEGORIES>"
@@ -340,27 +280,22 @@ class ChatBot(AbstractBot):
             on_end=self._aexit_chat_chain)
         config = self.message_part.runnable_config
         async def llm_astream():
-            token_buff = deque(maxlen=5)
-            vocab_buff = deque(maxlen=30)
+            token_buff = deque(maxlen=100)
             async for s in chain_with_history.astream(
                 {'input': message},
                 config=config):
                 if 'answer' in s:
                     s_content = s['answer']
                     token_buff.append(str(s_content))
-                    vocab_buff.append(str(s_content))
                     if len(token_buff) == token_buff.maxlen:
-                        if not self.pos_check(''.join(token_buff)):
-                            logging.warning(f'Incoherent POS {''.join(token_buff)}')
+                        corpus = ''.join(token_buff)
+                        ll = LexicalLang(corpus=corpus, temperature=0.3)
+                        if ll.is_natural and ll.is_high_frequency:
+                            logging.warning(f'Low P(A) natural language score, got {''.join(token_buff)}')
                             yield '<|model_error|>'
                             break
-                    if len(vocab_buff) == vocab_buff.maxlen:
-                        if not self.seq_check(''.join(vocab_buff)):
-                            logging.warning(f'Incoherent Vocabulary {''.join(vocab_buff)}')
-                            yield '<|model_error|>'
-                            break
-
                     yield s_content
+
         return llm_astream
 
     async def chat_astream(
@@ -375,26 +310,21 @@ class ChatBot(AbstractBot):
             on_end=self._aexit_chat_chain)
         config = self.message_part.runnable_config
         async def llm_astream():
-            token_buff = deque(maxlen=5)
-            vocab_buff = deque(maxlen=30)
+            token_buff = deque(maxlen=100)
             async for s in chain_with_history.astream(
                 {'input': message},
                 config=config):
                     s_content = s.content
                     token_buff.append(str(s_content))
-                    vocab_buff.append(str(s_content))
                     if len(token_buff) == token_buff.maxlen:
-                        if not self.pos_check(''.join(token_buff)):
-                            logging.warning(f'Incoherent POS {''.join(token_buff)}')
+                        corpus = ''.join(token_buff)
+                        ll = LexicalLang(corpus=corpus, temperature=0.3)
+                        if ll.is_natural and ll.is_high_frequency:
+                            logging.warning(f'Low P(A) natural language score, got {''.join(token_buff)}')
                             yield '<|model_error|>'
                             break
-                    if len(vocab_buff) == vocab_buff.maxlen:
-                        if not self.seq_check(''.join(vocab_buff)):
-                            logging.warning(f'Incoherent Vocabulary {''.join(vocab_buff)}')
-                            yield '<|model_error|>'
-                            break
-
                     yield s_content
+
         return llm_astream
 
     # TODO: add trimmer runnable  

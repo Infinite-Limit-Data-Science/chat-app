@@ -54,63 +54,121 @@ An Elastic IP (EIP) is a static, public IPv4 address that you can allocate to yo
 
 We will want to use an ELP because when using Spot Instances, the instance will stop when it no longer meets the Spot max price. It will relaunch again as part of the Auto Scaling Group, but with a different public IP address.
 
-### Run Container in EC2
+### Run Container in EC2 with SystemD
+
+```shell
+# before servicing with SystemD, verify the container runs with the specified model on the system:
 model=meta-llama/Llama-3.2-90B-Vision-Instruct
 token=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
 volume=$PWD/data
-docker container run --gpus all --shm-size 1g -e HUGGING_FACE_HUB_TOKEN=$token -p 8080:80 -v $volume:/data ghcr.io/huggingface/text-generation-inference:2.4.0 --model-id $model --max-batch-prefill-tokens 12582 --max-batch-total-tokens 16777 --max-input-tokens 12582 --max-total-tokens 16777 --max-concurrent-requests 1 --num-shard 8 --quantize bitsandbytes-nf4
 
+docker container run --gpus all --shm-size 1g -e HUGGING_FACE_HUB_TOKEN=$token -p 8080:80 -v $volume:/data ghcr.io/huggingface/text-generation-inference:2.4.0 --model-id $model --max-batch-prefill-tokens 12582 --max-input-tokens 12582 --max-total-tokens 16777 --num-shard 8 --quantize bitsandbytes-nf4
 
+docker container exec 06b214cb37af printenv
+    PATH=/opt/conda/bin:/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    HOSTNAME=06b214cb37af
+    HUGGING_FACE_HUB_TOKEN=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
+    NVARCH=x86_64
+    NVIDIA_REQUIRE_CUDA=cuda>=12.1 brand=tesla,driver>=470,driver<471 brand=unknown,driver>=470,driver<471 brand=nvidia,driver>=470,driver<471 brand=nvidiartx,driver>=470,driver<471 brand=geforce,driver>=470,driver<471 brand=geforcertx,driver>=470,driver<471 brand=quadro,driver>=470,driver<471 brand=quadrortx,driver>=470,driver<471 brand=titan,driver>=470,driver<471 brand=titanrtx,driver>=470,driver<471 brand=tesla,driver>=525,driver<526 brand=unknown,driver>=525,driver<526 brand=nvidia,driver>=525,driver<526 brand=nvidiartx,driver>=525,driver<526 brand=geforce,driver>=525,driver<526 brand=geforcertx,driver>=525,driver<526 brand=quadro,driver>=525,driver<526 brand=quadrortx,driver>=525,driver<526 brand=titan,driver>=525,driver<526 brand=titanrtx,driver>=525,driver<526
+    NV_CUDA_CUDART_VERSION=12.1.55-1
+    NV_CUDA_COMPAT_PACKAGE=cuda-compat-12-1
+    CUDA_VERSION=12.1.0
+    LD_LIBRARY_PATH=/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/opt/conda/lib/
+    NVIDIA_VISIBLE_DEVICES=all
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    CONDA_PREFIX=/opt/conda
+    HF_HOME=/data
+    HF_HUB_ENABLE_HF_TRANSFER=1
+    PORT=80
+    LD_PRELOAD=/opt/conda/lib/python3.11/site-packages/nvidia/nccl/lib/libnccl.so.2
+    EXLLAMA_NO_FLASH_ATTN=1
+    HOME=/root
 
+docker container exec -it 06b214cb37af sh
+cd /data/hub
+ls -lt
 
+systemctl list-units --type=service
 
-sudo vi /etc/systemd/system/llama3-1-70b-instruct
-[Unit]
-Description=meta-llama/Llama-3.1-70B-Instruct on HuggingFace TGI
-After=docker.service
-Requires=docker.service
-BindsTo=docker.service
-ConditionPathExists=/home/ubuntu/data/models--hugging-quants--Meta-Llama-3.1-70B-Instruct-AWQ-INT4
+systemctl list-units --type=service --state=active
 
-[Service]
-ExecStart=/usr/bin/docker run --gpus all --shm-size 1g \
-  -e HUGGING_FACE_HUB_TOKEN=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 \
-  -p 8080:80 \
-  -v /home/ubuntu/data:/data \
-  ghcr.io/huggingface/text-generation-inference:2.3.1 \
-  --model-id hugging-quants/Meta-Llama-3.1-70B-Instruct-AWQ-INT4 \
-  --max-input-length 4768 \
-  --max-total-tokens 10960 \
-  --num-shard 4
-ExecStop=/usr/bin/docker stop %n
-ExecReload=/usr/bin/docker restart %n
-Restart=always
-RestartSec=10
-TimeoutStopSec=30
+systemctl list-units --type=service --state=running
 
-[Install]
-WantedBy=multi-user.target
+sudo vi /etc/systemd/system/Llama-3.2-90B-Vision-Instruct.service
+    [Unit]
+    Description=meta-llama/Llama-3.2-90B-Vision-Instruct on HuggingFace TGI
+    After=docker.service
+    Requires=docker.service
+    BindsTo=docker.service
+    ConditionPathExists=/home/ubuntu/data/hub/models--meta-llama--Llama-3.2-90B-Vision-Instruct
+
+    [Service]
+    ExecStart=/usr/bin/docker run --gpus all --shm-size 1g \
+    -e HUGGING_FACE_HUB_TOKEN=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 \
+    -p 8080:80 \
+    -v /home/ubuntu/data:/data \
+    ghcr.io/huggingface/text-generation-inference:2.4.0 \
+    --model-id meta-llama/Llama-3.2-90B-Vision-Instruct \
+    --max-batch-prefill-tokens 12582 \
+    --max-input-length 12582 \
+    --max-total-tokens 16777 \
+    --num-shard 8 \
+    --quantize bitsandbytes-nf4
+    ExecStop=/usr/bin/docker stop %n
+    ExecReload=/usr/bin/docker restart %n
+    Restart=always
+    RestartSec=10
+    TimeoutStopSec=30
+
+    [Install]
+    WantedBy=multi-user.target
 
 sudo systemctl daemon-reload
 
-systemctl status llama3-1-70b-instruct.service
-● llama3-1-70b-instruct.service - meta-llama/Llama-3.1-70B-Instruct on HuggingFace TGI
-     Loaded: loaded (/etc/systemd/system/llama3-1-70b-instruct.service; disabled; vendor preset: enabled)
-     Active: inactive (dead)
+systemctl status Llama-3.2-90B-Vision-Instruct.service
+    ● llama3-1-70b-instruct.service - meta-llama/Llama-3.1-70B-Instruct on HuggingFace TGI
+        Loaded: loaded (/etc/systemd/system/llama3-1-70b-instruct.service; disabled; vendor preset: enabled)
+        Active: inactive (dead)
 
-sudo systemctl start llama3-1-70b-instruct.service
+sudo systemctl start Llama-3.2-90B-Vision-Instruct.service
 
-sudo systemctl status llama3-1-70b-instruct.service
+systemctl status Llama-3.2-90B-Vision-Instruct.service
 
-sudo systemctl enable llama3-1-70b-instruct.service
- Created symlink /etc/systemd/system/multi-user.target.wants/llama3-1-70b-instruct.service → /etc/systemd/system/llama3-1-70b-instruct.service.
+docker container ls
 
+docker container logs 50413617f937
+
+watch -n 2 nvidia-smi
+
+watch -n 2 df -h
+
+docker container logs 50413617f937
+    2024-11-03T22:19:10.143853Z  INFO text_generation_router::server: router/src/server.rs:2392: Serving revision 0a6d69b1d745b4035898094f5d873978f88b235c of model meta-llama/Llama-3.2-90B-Vision-Instruct
+    2024-11-03T22:19:14.243780Z  INFO text_generation_router::server: router/src/server.rs:1824: Using config Some(Mllama)
+    2024-11-03T22:19:14.844294Z  WARN text_generation_router::server: router/src/server.rs:1968: Invalid hostname, defaulting to 0.0.0.0
+    2024-11-03T22:19:14.922964Z  INFO text_generation_router::server: router/src/server.rs:2354: Connected
+
+sudo systemctl enable Llama-3.2-90B-Vision-Instruct.service
+    Created symlink /etc/systemd/system/multi-user.target.wants/Llama-3.2-90B-Vision-Instruct.service → /etc/systemd/system/Llama-3.2-90B-Vision-Instruct.service.
 
 # enabled must it will automatically start at boot
-systemctl list-unit-files --type=service | grep llama3-1-70b-instruct.service
-  llama3-1-70b-instruct.service                  enabled         enabled
+systemctl list-unit-files --type=service | grep Llama-3.2-90B-Vision-Instruct.service
+    Llama-3.2-90B-Vision-Instruct.service                enabled         enabled
+```
+
+### Creating AMI
+
+The AMI process includes: 1) start an EC2 Instance and customize it, 2) Stop the Instance, 3) Build the AMI (this will also create EBS snapshots), 4) Launch instances from the AMI.
+
+A common practice is to use a **Golden AMI** to install your applications, OS dependencies, etc beforehand and launch EC2 instances from the Golden AMI. For dynamic configuration, use User Data scripts to bootstrap instances.
+
+
+
+### CloudWatch Alarms and Metrics
 
 
 ### AWS SageMaker
+
+### AWS Bedrock
 
 To be added soon

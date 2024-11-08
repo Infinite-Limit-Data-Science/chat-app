@@ -1,8 +1,8 @@
 import os
 import asyncio
 import shutil
-from typing import List, Dict, Tuple
-from fastapi import UploadFile, logger, Request
+from typing import List, Tuple
+from fastapi import UploadFile, Request
 from langchain_core.vectorstores import VectorStoreRetriever
 from orchestrators.doc.embedding_models.embedding import BaseEmbedding
 from orchestrators.doc.ingestors.ingest import ingest
@@ -44,6 +44,11 @@ async def ingest_file(embedding_models: List[BaseEmbedding], upload_file: Upload
             },
         ]
     )
+
+    try:
+        os.remove(path)
+    except OSError as e:
+        print(f'Error deleting file {path}: {e}')
 
     return retriever
 

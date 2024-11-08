@@ -91,7 +91,7 @@ class RedisVectorStoreWithTTL(VectorStore):
         """
         redis_client = self.config.redis()
 
-        semaphore = asyncio.Semaphore(8)
+        semaphore = asyncio.Semaphore(max_requests)
 
         async def process_document(document: Document):
             async with semaphore:
