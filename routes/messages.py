@@ -64,7 +64,7 @@ async def create_message(
         conversation_id = ObjectId(conversation_id)
     data = { 'uuid': request.state.uuid, 'conversation_id': conversation_id }
     if upload_files:
-        retrievers, _ = await ingest_files(request, upload_files, data)
+        retrievers, _ = await ingest_files(embedding_models, upload_files, data)
     message_schema = MessageSchema(type='human', content=content, conversation_id=conversation_id)
     prompt = prompt_template or DEFAULT_PREPROMPT
 

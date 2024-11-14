@@ -91,4 +91,4 @@ class MongoMessageHistory:
             chain,
             self.get_session_history,
             **keys
-        )
+        ).with_config(run_name='mongo_message_history')

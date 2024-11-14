@@ -4,25 +4,19 @@ from abc import ABC, abstractmethod
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from orchestrators.doc.vector_stores.abstract_vector_store import AbstractVectorStore
-from orchestrators.doc.vector_stores.abstract_vector_store import AbstractFlexiSchemaFields
 from orchestrators.chunkinator2.chunkinator import Chunkinator2
-
-def meta_format(metadata: List[AbstractFlexiSchemaFields]) -> dict:
-    return {
-        data['name']: data['value']
-        for data in metadata
-    }
 
 class DocumentIngestor(ABC):
     def __init__(
         self, 
         file: str, 
         vector_store: AbstractVectorStore, 
-        metadata: List[AbstractFlexiSchemaFields]):
+        metadata: dict
+    ):
         """Abstract Ingestor takes file, metadata, and abstract VectorStore Bridge"""
         self._file = file
-        self._metadata = meta_format(metadata)
         self._vector_store_bridge = vector_store
+        self._metadata = metadata
         self.smart_chunking = True
     
     @abstractmethod
@@ -35,7 +29,7 @@ class DocumentIngestor(ABC):
         chunk_size: int = 1000, 
         chunk_overlap: int = 150) -> Iterator[Document]:
         if self.smart_chunking:
-            chunkinator = Chunkinator2.Base(docs, self._vector_store_bridge._embeddings)
+            chunkinator = Chunkinator2.Base(docs, self._vector_store_bridge.embeddings)
             chunks = chunkinator.chunk()                
         else:
             text_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)

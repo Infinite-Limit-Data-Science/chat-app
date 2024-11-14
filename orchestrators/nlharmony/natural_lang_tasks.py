@@ -5,8 +5,8 @@ from enum import Enum
 from nltk.corpus import words
 from nltk.tokenize import word_tokenize
 from nltk import Tree
-from orchestrators.nlplang.task import BaseTask
-from orchestrators.nlplang.nlp_functools import ngram_freqs
+from orchestrators.nlharmony.task import BaseTask
+from orchestrators.nlharmony.nlp_functools import ngram_freqs
 
 _task_type = 'naturallang'
 

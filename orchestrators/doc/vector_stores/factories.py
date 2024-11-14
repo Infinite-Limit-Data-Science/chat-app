@@ -1,7 +1,12 @@
-from orchestrators.doc.vector_stores.redis_vector_store import RedisVectorStore
+from orchestrators.doc.vector_stores.redis_vector_proxy import create_redis_vector_proxy
+from orchestrators.doc.vector_stores.redis_vector_retriever import RedisVectorRetriever
 
-FACTORIES = {
-    'redis': RedisVectorStore,
+STORE_FACTORIES = {
+    'redis': create_redis_vector_proxy,
 }
 
-__all__ = ['RedisVectorStore', 'FACTORIES']
+RETRIEVER_FACTORIES = {
+    'redis': RedisVectorRetriever,
+}
+
+__all__ = ['FACTORIES']

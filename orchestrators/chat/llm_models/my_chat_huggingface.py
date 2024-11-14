@@ -1,4 +1,5 @@
 import logging
+import time
 from typing import List, Optional, Any, Iterator, AsyncIterator
 from langchain_huggingface.chat_models.huggingface import ChatHuggingFace
 from langchain_core.messages import BaseMessage
@@ -95,5 +96,5 @@ class MyChatHuggingFace(ChatHuggingFace):
 
                 yield chunk
 
-    def __str__(self):
-        return str(self.tokenizer.build_inputs_with_special_tokens([self.tokenizer.encode(self.__class__.__name__)]))
+    # def __str__(self):
+    #     return str(self.tokenizer.build_inputs_with_special_tokens([self.tokenizer.encode(self.__class__.__name__)]))

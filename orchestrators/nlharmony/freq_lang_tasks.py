@@ -1,12 +1,13 @@
+import logging
 import string
 from typing import Literal
 from collections import defaultdict
 from enum import Enum
 from nltk.tokenize import word_tokenize
 from nltk import pos_tag, ngrams
-from nltk.corpus import words
-from orchestrators.nlplang.task import BaseTask
-from orchestrators.nlplang.nlp_functools import (
+from nltk.corpus import words, stopwords
+from orchestrators.nlharmony.task import BaseTask
+from orchestrators.nlharmony.nlp_functools import (
     rm_stopwords,
 )
 
@@ -62,18 +63,23 @@ class FreqNLPTask(BaseTask):
     def perform(self, corpus: str) -> Literal['low, high']:
         n = 3
         max_repeats = 30
-        en_words = set(words.words())
+        en_words = set(words.words('en'))
+        es_stopwords = set(stopwords.words('spanish'))
         
         tokens = rm_stopwords(word_tokenize(corpus))
-        tokens = [token for token in tokens if token.lower() not in en_words]
+
+        if any(token.lower() in es_stopwords for token in tokens):
+            return FrequencyType.LOW
         
-        trigrams = list(ngrams(tokens, 3))
+        non_en_words = [token.lower() for token in tokens if token.isalpha() and token.lower() not in en_words]
+        trigrams = list(ngrams(non_en_words, n))
 
         consecutive_count = 1
         for i in range(len(trigrams) - n):
             if trigrams[i:i + n] == trigrams[i + n:i + 2 * n]:
                 consecutive_count += 1
                 if consecutive_count >= max_repeats:
+                    logging.warning(f'Frequency {FrequencyType.HIGH.value} for {corpus}')
                     return FrequencyType.HIGH.value
         
         return FrequencyType.LOW.value

@@ -99,7 +99,7 @@ async def create_conversation(
     ) is not None:
         data = { 'uuid': conversation_schema.uuid, 'conversation_id': created_conversation_id }
         if upload_files:
-            retrievers, filenames = await ingest_files(request, upload_files, data)
+            retrievers, filenames = await ingest_files(embedding_models, upload_files, data)
             await ConversationRepo.update_one(created_conversation_id, _set={ 'filenames': filenames })
 
         message_schema = MessageSchema(

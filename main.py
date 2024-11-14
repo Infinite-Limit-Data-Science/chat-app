@@ -6,13 +6,13 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 from clients.mongo_strategy import mongo_instance as database_instance
 from routes.home import router as home_router
 from routes.conversations import router as conversations_router
 from routes.messages import router as messages_router
 from routes.settings import router as settings_router
 from routes.default import router as default_router
-from starlette.middleware.base import BaseHTTPMiddleware
 
 load_dotenv()
 
@@ -21,7 +21,28 @@ logging.basicConfig(level=logging.WARNING)
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     try:
+        from pymongo import ASCENDING, DESCENDING
         await database_instance.connect()
+        db = database_instance.get_database()
+ 
+        await db.collection.create_index(
+            [
+                ('type', ASCENDING),
+                ('content', ASCENDING),
+                ('conversation_id', ASCENDING),
+            ],
+            name='type_content_conversation_id_index'
+        )
+
+        await db.collection.create_index(
+            [
+                ('type', ASCENDING),
+                ('conversation_id', ASCENDING),
+                ('createdAt', DESCENDING),
+            ],
+            name='type_conversation_id_createdAt_index'
+        )
+        
     except Exception as e:
         msg = 'Database connection error'
         logging.critical(f'{msg} {e}')

@@ -1,14 +1,12 @@
 import logging
+import os
 from typing import List, Optional, Callable, AsyncGenerator
-from langchain_core.vectorstores import VectorStoreRetriever
 from orchestrators.chat.chat_bot import ChatBot, ChatBotBuilder
 from orchestrators.chat.llm_models.llm import LLM
+from orchestrators.doc.vector_stores.abstract_vector_retriever import AbstractVectorRetriever
 from orchestrators.doc.embedding_models.embedding import BaseEmbedding
-from orchestrators.doc.ingestors.document_ingestor import DocumentIngestor
 from clients.mongo_strategy import mongo_instance as database_instance
 from models.message import MessageSchema
-
-_DEFAULT_VECTOR_STORE='redis'
 
 async def chat(
     user_prompt_template: str,
@@ -16,32 +14,24 @@ async def chat(
     guardrails: List[LLM],
     embedding_models: List[BaseEmbedding],
     data: dict,
-    retrievers: Optional[List[VectorStoreRetriever]],
+    retrievers: Optional[List[AbstractVectorRetriever]],
     message_schema: MessageSchema
 ) -> Callable[[], AsyncGenerator[str, None]]:
     """Invoke chat bot"""
+    if not (vector_store := os.getenv('VECTOR_STORE')):
+        raise ValueError('Expected `VECTOR_STORE` to be defined')
+
     chat_bot = ChatBot()
     builder = ChatBotBuilder(chat_bot)
     builder.build_vector_part(
-        _DEFAULT_VECTOR_STORE,
+        vector_store,
         retrievers, 
-        embedding_models, 
-        [
-            {
-                'name': 'uuid',
-                'type': 'tag',
-                'value': data['uuid'],
-            },
-            {
-                'name': 'conversation_id', 
-                'type': 'tag',
-                'value': str(data['conversation_id']),
-            },
-            {
-                'name': 'source',
-                'type': 'tag'
-            },
-    ])
+        embedding_models,
+        {
+            **data,
+            'conversation_id': str(data['conversation_id'])
+        },
+    )
     builder.build_llm_part(models)
     builder.build_guardrails_part(guardrails)
     builder.build_prompt_part(user_prompt_template)

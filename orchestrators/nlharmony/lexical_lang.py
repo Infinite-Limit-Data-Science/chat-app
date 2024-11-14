@@ -1,13 +1,13 @@
 import os
 import string
 import types
-from typing import Callable, List, Dict, Tuple, Any, Optional, Union
+from typing import Callable, List, Dict, Tuple, Any, Optional, Self, Union
 from pydantic import BaseModel, Field, field_validator, model_validator
 import nltk
 from nltk import sent_tokenize, word_tokenize, pos_tag
-from orchestrators.nlplang.task import BaseTask
-from orchestrators.nlplang.freq_lang_tasks import FrequencyType
-from orchestrators.nlplang.natural_lang_tasks import LanguageType
+from orchestrators.nlharmony.task import BaseTask
+from orchestrators.nlharmony.freq_lang_tasks import FrequencyType
+from orchestrators.nlharmony.natural_lang_tasks import LanguageType
 
 nltk.data.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'nltk_data'))
     
@@ -44,13 +44,13 @@ class LexicalLang(BaseModel):
             raise TypeError('`corpus` must be a str, list of str, or dict of str to str.')
         
     @model_validator(mode='after')
-    def tokenize_corpus(cls, lexi: 'LexicalLang') -> 'LexicalLang':
-        lexi.process_language()
-        lexi.process_weight()
-        lexi.tagged_sents = sent_tokenize(lexi.corpus)
-        lexi.tagged_words = [pos_tag(word_tokenize(sentence)) for sentence in lexi.tagged_sents]
+    def tokenize_corpus(self) -> Self:
+        self.process_language()
+        self.process_weight()
+        self.tagged_sents = sent_tokenize(self.corpus)
+        self.tagged_words = [pos_tag(word_tokenize(sentence)) for sentence in self.tagged_sents]
         
-        return lexi
+        return self
 
     def process_language(self) -> str:
         task = BaseTask.fetch(temperature=self.temperature, task_type='naturallang')

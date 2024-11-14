@@ -1,37 +1,29 @@
-from typing import List, Any, Dict, TypedDict, Optional, Iterator
-from dataclasses import dataclass, field
-from abc import ABC, abstractmethod
+from typing import List, TypedDict, Iterator
 from functools import reduce
-from operator import and_
-from langchain_core.vectorstores import VectorStoreRetriever
+import operator
+from abc import ABC, abstractmethod
 from langchain_core.documents import Document
 from redisvl.query.filter import Tag, FilterExpression
 
-class AbstractFlexiSchemaFields(TypedDict):
+class SchemaField(TypedDict):
     name: str
     type: str
-    value: str
 
-class AbstractFlexiSchema(ABC):
-    def __init__(self, schema: List[Dict[str, Any]]):
-        self.schema = schema
-
-    @abstractmethod
-    def get_default_filter(self):
-        pass
-
-    @abstractmethod
-    def get_all_filters(self):
-        pass
-
-@dataclass
-class VectorStoreRetrieval:
-    k: int = field(default=4)
-    score_threshold: float = field(default=0.9)
-
-class AbstractVectorStore(ABC):
-    flexi_schema: AbstractFlexiSchema
+def create_filter_expression(
+    vector_store_schema: List[SchemaField], 
+    input_data: dict,
+) -> FilterExpression:
+    """Generate Filter Expression where values forced to str to potentially handle BSON object ids"""
+    tag_expressions = [
+        Tag(field['name']) == str(input_data[field['name']])
+        for field in vector_store_schema
+        if field['name'] in input_data and field['type'] == 'tag'
+    ]
     
+    filter_expression = reduce(operator.and_, tag_expressions)
+    return filter_expression
+
+class AbstractVectorStore(ABC):    
     @abstractmethod
     async def aadd(self, documents: Iterator[Document]) -> List[str]:
         pass
@@ -40,17 +32,16 @@ class AbstractVectorStore(ABC):
     async def asimilarity_search(
         self, 
         query: str, 
-        *, 
-        filter_expression: Optional[FilterExpression] = None) -> List[Document]:
+        filter: FilterExpression = None
+    ) -> List[Document]:
         pass
 
     @abstractmethod
-    def retriever(
+    async def adelete(
         self, 
-        options: VectorStoreRetrieval = VectorStoreRetrieval(),
-        *,
-        filter_expression: FilterExpression = None) -> VectorStoreRetriever:
-        """Return a retriever Runnable to query vectorstore"""
+        query: str = '', 
+        filter: FilterExpression = None
+    ) -> bool:
         pass
 
     @abstractmethod
@@ -58,7 +49,7 @@ class AbstractVectorStore(ABC):
         self, 
         query: str,
         k: int = 4,
-        *,
-        filter_expression: Optional[FilterExpression] = None) -> str:
+        filter: FilterExpression = None
+    ) -> str:
         """Inspect a query"""
         pass

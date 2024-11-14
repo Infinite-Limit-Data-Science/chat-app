@@ -1,34 +1,45 @@
 from __future__ import annotations
 
 import logging
+import os
+import json
 from typing import Callable, AsyncGenerator, Optional, List, Any, Dict
 import re
 from collections import deque
 from pymongo import DESCENDING
 
-from langchain_core.runnables import Runnable, RunnablePassthrough, RunnableLambda, RunnableParallel, RunnableBranch
+from langchain_core.runnables import (
+    Runnable, 
+    RunnablePassthrough,
+    RunnableLambda, 
+    RunnableParallel, 
+    RunnableBranch,
+)
 from langchain_core.language_models import LanguageModelLike
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import BasePromptTemplate
 from langchain_core.retrievers import RetrieverLike, RetrieverOutputLike
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.vectorstores import VectorStoreRetriever
 from langchain.chains.retrieval import create_retrieval_chain
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.runnables.config import RunnableConfig
 from langchain_core.tracers.schemas import Run
 from langchain_core.output_parsers.string import StrOutputParser
 from langchain_core.documents import Document
-from langchain.chains.combine_documents.base import DEFAULT_DOCUMENT_SEPARATOR, DEFAULT_DOCUMENT_PROMPT
+from langchain.chains.combine_documents.base import (
+    DEFAULT_DOCUMENT_SEPARATOR, 
+    DEFAULT_DOCUMENT_PROMPT,
+)
 from langchain_core.prompts import format_document
 
 from orchestrators.doc.vector_stores.abstract_vector_store import (
-    AbstractVectorStore,
-    AbstractFlexiSchemaFields,
+    AbstractVectorStore, 
+    create_filter_expression,
 )
-from orchestrators.doc.vector_stores.factories import FACTORIES as V_FACTORIES
+from orchestrators.doc.vector_stores.factories import STORE_FACTORIES, RETRIEVER_FACTORIES
 from orchestrators.doc.embedding_models.embedding import BaseEmbedding
 from orchestrators.doc.embedding_models.model_proxy import ModelProxy as EmbeddingsProxy
+from orchestrators.doc.vector_stores.abstract_vector_retriever import AbstractVectorRetriever
 
 from orchestrators.chat.messages.prompts import registry
 from orchestrators.chat.abstract_bot import AbstractBot
@@ -44,7 +55,7 @@ from orchestrators.chat.messages.message_history import (
     Sequence,
 )
 
-from orchestrators.nlplang.lexical_lang import LexicalLang
+from orchestrators.nlharmony.lexical_lang import LexicalLang
 
 class ChatBot(AbstractBot):
     def __init__(self):
@@ -86,7 +97,9 @@ class ChatBot(AbstractBot):
     ) -> Runnable:
         """Custom implementation to handle preprompt messages"""
         def validate_history(input_data: Dict[str, Any]) -> bool:
-            return not input_data.get('chat_history')
+            # TGI is really slow to respond to streaming; temporarily disabling this
+            # return not input_data.get('chat_history')
+            return True
         
         retrieve_documents = (preprompt_filter or RunnablePassthrough()) | RunnableBranch(
             (
@@ -124,13 +137,13 @@ class ChatBot(AbstractBot):
 
     def create_chain(self, llm: BaseChatModel) -> Runnable:
         chain = self.prompt_part.registry['chat_preprompt_template'](self.prompt_part.user_prompt) | llm
-        return chain
+        return chain.with_config(run_name='prompt_llm_chain')
 
-    def create_context_aware_chain(self, llm: BaseChatModel) -> Runnable:
+    def create_context_aware_chain(self, llm: BaseChatModel, source_retriever: AbstractVectorRetriever) -> Runnable:
         """ """
         history_aware_retriever = self.create_history_aware_retriever(
             llm,
-            self.vector_part.vector_store.retriever(),
+            source_retriever.retriever,
             self.prompt_part.registry['contextualized_template'](),
             preprompt_filter=self.preprompt_filter())
         question_answer_chain = self.create_stuff_documents_chain(
@@ -139,9 +152,9 @@ class ChatBot(AbstractBot):
             preprompt_filter=self.preprompt_filter())
         return create_retrieval_chain(history_aware_retriever, question_answer_chain)
 
-    def create_multi_retriever_chain(self, llm: BaseChatModel, retrievers: List[VectorStoreRetriever]) -> Runnable:
+    def create_multi_retriever_chain(self, llm: BaseChatModel, source_retrievers: List[AbstractVectorRetriever]) -> Runnable:
         context_prompt = self.prompt_part.registry['contextualized_template']()
-        retriever_map = {f'Source {i}': retriever for i, retriever in enumerate(retrievers, start=1)}
+        retriever_map = {f'Source {source_retriever.source}': source_retriever.retriever for source_retriever in source_retrievers}
         parallel_retrieval = RunnableParallel(retriever_map)
 
         def combine_contexts(retrieved_results: dict, separator=DEFAULT_DOCUMENT_SEPARATOR) -> list:
@@ -154,7 +167,8 @@ class ChatBot(AbstractBot):
 
             return combined_results
         
-        combine_contexts_runnable = RunnableLambda(combine_contexts)
+        combine_contexts_runnable = RunnableLambda(combine_contexts) \
+            .with_config(run_name='combine_context_chain')
 
         retrieve_documents = self.create_history_aware_retriever(
             llm,
@@ -162,8 +176,8 @@ class ChatBot(AbstractBot):
             context_prompt,
             preprompt_filter=self.preprompt_filter())
 
-        return retrieve_documents | combine_contexts_runnable.with_config(run_name='combine_context_chain')
-
+        return retrieve_documents | combine_contexts_runnable
+    
     def create_multi_stuff_chain(self, llm: BaseChatModel) -> Runnable:
         qa_template = self.prompt_part.registry['qa_template'](self.prompt_part.user_prompt)
 
@@ -172,7 +186,7 @@ class ChatBot(AbstractBot):
             qa_template,
             preprompt_filter=self.preprompt_filter())      
 
-    def create_multicontext_aware_chain(self, llm: BaseChatModel, source_retrievers: List[VectorStoreRetriever]):
+    def create_multicontext_aware_chain(self, llm: BaseChatModel, source_retrievers: List[AbstractVectorRetriever]):
         multi_retriever_chain = self.create_multi_retriever_chain(llm, source_retrievers)
         stuffing_chain = self.create_multi_stuff_chain(llm)
         
@@ -186,13 +200,12 @@ class ChatBot(AbstractBot):
 
     async def _aenter_chat_chain(self, run: Run, config: RunnableConfig) -> Optional[SystemMessage]:
         """On start runnable listener"""
-        import json
         collection = self.message_part.message_history.chat_message_history.collection
         
         document = collection.find_one({
             'type': 'system', 
             'content': self.prompt_part.user_prompt, 
-            'conversation_id': config['configurable']['session_id']
+            self.message_part.message_schema.session_id_key: config['configurable']['session_id'],
         })
         
         if document is None:
@@ -211,7 +224,7 @@ class ChatBot(AbstractBot):
             ai_message := collection.find_one(
                 {
                     'type': { '$in': ['ai', 'AIMessageChunk'] }, 
-                    'conversation_id': config['configurable']['session_id']
+                    self.message_part.message_schema.session_id_key: config['configurable']['session_id'],
                 }, 
                 sort=[("createdAt", DESCENDING)])
         ) is not None:
@@ -239,8 +252,8 @@ class ChatBot(AbstractBot):
                     logging.info(f'retrieved docs subset {retrieved_docs}')
 
             import random
-            retriever = random.choice(self.vector_part.source_retrievers)
-            docs = await retriever.ainvoke(
+            source_retriever = random.choice(self.vector_part.source_retrievers)
+            docs = await source_retriever.retriever.ainvoke(
                 message,
                 config={
                     'callbacks': [ProcessDocumentsCallback()]
@@ -249,6 +262,10 @@ class ChatBot(AbstractBot):
             return len(docs) > 0
 
         return await self.vector_part.aavailable_vectors(message)
+    
+    def fetch_retrievers(self) -> List[AbstractVectorRetriever]:
+        source_retrievers = self.vector_part.source_retrievers or [self.vector_part.no_doc_retriever]
+        return source_retrievers
 
     async def cancel_astream(self) -> Callable[[], AsyncGenerator[str, None]]:
         import asyncio
@@ -268,12 +285,13 @@ class ChatBot(AbstractBot):
         self, 
         chat_llm: BaseChatModel, 
         message: str,
-        source_retrievers: List[VectorStoreRetriever]
+        source_retrievers: List[AbstractVectorRetriever]
     ) -> Callable[[], AsyncGenerator[str, None]]:
         if len(source_retrievers) > 1:
             chain = self.create_multicontext_aware_chain(chat_llm, source_retrievers)
         else:
-            chain = self.create_context_aware_chain(chat_llm)
+            chain = self.create_context_aware_chain(chat_llm, source_retrievers[0])
+
         chain_with_history = self.message_part.message_history.get(chain, True)
         chain_with_history = chain_with_history.with_alisteners(
             on_start=self._aenter_chat_chain,
@@ -329,7 +347,7 @@ class ChatBot(AbstractBot):
 
     # TODO: add trimmer runnable  
     async def astream(self, message: str) -> Callable[[], AsyncGenerator[str, None]]:
-        await self.vector_part.vector_store.inspect(message)
+        # await self.vector_part.inspect(message)
         self._trace_history_chain()
 
         if self.guardrails_part.llm:
@@ -338,12 +356,11 @@ class ChatBot(AbstractBot):
                 self.prompt_part.registry['guardrails_template']())
             if not is_safe:
                 return await self.cancel_astream()
+            
         chat_llm = self.llm_part.llm.endpoint_object
-
         rag_chain = await self.calculate_vecs(message)
-        source_retrievers = self.vector_part.source_retrievers
 
-        return await self.rag_astream(chat_llm, message, source_retrievers) if rag_chain else await self.chat_astream(chat_llm, message)
+        return await self.rag_astream(chat_llm, message, self.fetch_retrievers()) if rag_chain else await self.chat_astream(chat_llm, message)
 
     chat = astream
 
@@ -356,22 +373,39 @@ class ChatBotBuilder:
             self, 
             chat_bot: ChatBot, 
             store: str,
-            source_retrievers: List[VectorStoreRetriever],
-            embeddings: List[BaseEmbedding], 
-            metadata: List[AbstractFlexiSchemaFields]
+            source_retrievers: List[AbstractVectorRetriever],
+            embeddings: List[BaseEmbedding],
+            metadata: dict,
         ):
-            if store not in V_FACTORIES.keys():
+            if store not in STORE_FACTORIES.keys():
                 raise ValueError(f'Vector Store {store} is not supported')
+            
+            self.store = store
+            self.metadata = metadata
+            vector_store_schema = json.loads(os.environ['VECTOR_STORE_SCHEMA'])
+            self.filter = create_filter_expression(vector_store_schema, self.metadata)
             self.embeddings = EmbeddingsProxy(embeddings).get()
-            self.vector_store: AbstractVectorStore = V_FACTORIES[store](self.embeddings, metadata)
+            self.vector_store: AbstractVectorStore = STORE_FACTORIES[store](
+                vector_store_schema, self.embeddings)
             self.source_retrievers = source_retrievers
             chat_bot.vector_part = self
     
-        async def aavailable_vectors(self, context):
+        async def aavailable_vectors(self, context) -> bool:
             """Async Available Vector Search"""
-            vectors = await self.vector_store.asimilarity_search(context)
+            vectors = await self.vector_store.asimilarity_search(context, filter=self.filter)
             count = len(vectors)
             return count > 0
+        
+        @property
+        def no_doc_retriever(self) -> AbstractVectorRetriever:
+            return RETRIEVER_FACTORIES[self.store](
+                filter=self.filter,
+                vector_store_proxy=self.vector_store,
+                metadata=self.metadata,
+            )
+
+        async def inspect(self, context) -> str:
+            return await self.vector_store.inspect(context, filter=self.filter)
 
     class LLMPart:
         def __init__(
@@ -416,7 +450,8 @@ class ChatBotBuilder:
             message_schema = MongoMessageHistorySchema(
                 session_id=self.configurable['session_id'], 
                 **history_config)
-            self.message_history = MongoMessageHistory(message_schema)
+            self.message_schema = message_schema
+            self.message_history = MongoMessageHistory(self.message_schema)
             chat_bot.message_part = self
 
         @property
@@ -452,9 +487,9 @@ class ChatBotBuilder:
     def build_vector_part(
         self, 
         store: str,
-        source_retrievers: List[VectorStoreRetriever],
+        source_retrievers: List[AbstractVectorRetriever],
         embeddings: List[LLM], 
-        metadata: List[AbstractFlexiSchemaFields]
+        metadata: dict
     ):
         return ChatBotBuilder.VectorPart(self.chat_bot, store, source_retrievers, embeddings, metadata)
     
