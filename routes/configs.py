@@ -6,10 +6,8 @@ from fastapi import Request, Depends, HTTPException
 from models.system_model_config import SystemModelConfigSchema
 from models.setting import Setting, SettingSchema
 from repositories.base_mongo_repository import base_mongo_factory as factory
-from orchestrators.chat.llm_models.llm import LLM
-from orchestrators.chat.llm_models.factories import FACTORIES as LLM_FACTORIES
-from orchestrators.doc.embedding_models.factories import FACTORIES as EMBEDDING_FACTORIES
-from orchestrators.doc.embedding_models.embedding import BaseEmbedding
+from langchain_chat import LLM, FACTORIES as LLM_FACTORIES
+from langchain_doc import FACTORIES as EMBEDDING_FACTORIES, BaseEmbedding
 from models.system_model_config import SystemModelConfigSchema
 from models.user_model_config import UserModelConfigSchema
 from models.system_embedding_config import SystemEmbeddingConfigSchema

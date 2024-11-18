@@ -14,8 +14,8 @@ from fastapi import (
 )
 from fastapi.exceptions import HTTPException
 from huggingface_hub.errors import HfHubHTTPError
-from orchestrators.chat.llm_models.llm import LLM
-from orchestrators.doc.embedding_models.embedding import BaseEmbedding
+from langchain_chat import LLM
+from langchain_doc import BaseEmbedding
 from auth.bearer_authentication import get_current_user
 from routes.chats import chat
 from routes.configs import (

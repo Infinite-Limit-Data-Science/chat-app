@@ -1,10 +1,8 @@
 import logging
 import os
 from typing import List, Optional, Callable, AsyncGenerator
-from orchestrators.chat.chat_bot import ChatBot, ChatBotBuilder
-from orchestrators.chat.llm_models.llm import LLM
-from orchestrators.doc.vector_stores.abstract_vector_retriever import AbstractVectorRetriever
-from orchestrators.doc.embedding_models.embedding import BaseEmbedding
+from langchain_chat import ChatBot, ChatBotBuilder, LLM
+from langchain_doc import AbstractVectorRetriever, BaseEmbedding
 from clients.mongo_strategy import mongo_instance as database_instance
 from models.message import MessageSchema
 

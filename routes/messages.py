@@ -13,8 +13,8 @@ from fastapi import (
     logger,
 )
 from fastapi.responses import StreamingResponse
-from orchestrators.chat.llm_models.llm import LLM
-from orchestrators.doc.embedding_models.embedding import BaseEmbedding
+from langchain_chat import LLM
+from langchain_doc import BaseEmbedding
 from models.mongo_schema import ObjectId
 from auth.bearer_authentication import get_current_user
 from routes.chats import chat
@@ -64,7 +64,8 @@ async def create_message(
         conversation_id = ObjectId(conversation_id)
     data = { 'uuid': request.state.uuid, 'conversation_id': conversation_id }
     if upload_files:
-        retrievers, _ = await ingest_files(embedding_models, upload_files, data)
+        retrievers, filenames = await ingest_files(embedding_models, upload_files, data)
+        await ConversationRepo.update_one(conversation_id, _set={ 'filenames': filenames })
     message_schema = MessageSchema(type='human', content=content, conversation_id=conversation_id)
     prompt = prompt_template or DEFAULT_PREPROMPT
 

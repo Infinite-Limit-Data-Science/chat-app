@@ -4,8 +4,7 @@ import time
 from typing import List, Tuple
 from fastapi import UploadFile
 from langchain_core.vectorstores import VectorStoreRetriever
-from orchestrators.doc.embedding_models.embedding import BaseEmbedding
-from orchestrators.doc.ingestors.ingest import ingest
+from langchain_doc import ingest, BaseEmbedding
 
 async def ingest_files(
     embedding_models: List[BaseEmbedding], 
