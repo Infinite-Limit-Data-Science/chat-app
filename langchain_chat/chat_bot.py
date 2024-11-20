@@ -3,44 +3,26 @@ from __future__ import annotations
 import logging
 import os
 import json
-from typing import Callable, AsyncGenerator, Optional, List, Any, Dict
 import re
 from collections import deque
-from pymongo import DESCENDING
+from typing import Callable, AsyncGenerator, Optional, List, Any, Dict
 
+from pymongo import DESCENDING
 from langchain_core.runnables import (
-    Runnable, 
-    RunnablePassthrough,
-    RunnableLambda, 
-    RunnableParallel, 
-    RunnableBranch,
-)
+    Runnable, RunnablePassthrough, RunnableLambda, RunnableParallel, RunnableBranch)
 from langchain_core.language_models import LanguageModelLike
-from langchain_core.output_parsers import StrOutputParser
+from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.output_parsers.string import StrOutputParser
 from langchain_core.prompts import BasePromptTemplate
 from langchain_core.retrievers import RetrieverLike, RetrieverOutputLike
-from langchain_core.output_parsers import StrOutputParser
 from langchain.chains.retrieval import create_retrieval_chain
-from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.runnables.config import RunnableConfig
+from langchain_core.runnables.history import RunnableWithMessageHistory 
 from langchain_core.tracers.schemas import Run
-from langchain_core.output_parsers.string import StrOutputParser
 from langchain_core.documents import Document
 from langchain.chains.combine_documents.base import (
-    DEFAULT_DOCUMENT_SEPARATOR, 
-    DEFAULT_DOCUMENT_PROMPT,
-)
+    DEFAULT_DOCUMENT_SEPARATOR, DEFAULT_DOCUMENT_PROMPT)
 from langchain_core.prompts import format_document
-from langchain_doc import (
-    BaseEmbedding,
-    ModelProxy as EmbeddingsProxy,
-    create_filter_expression,
-    AbstractVectorStore,
-    AbstractVectorRetriever,
-    STORE_FACTORIES, 
-    RETRIEVER_FACTORIES,
-)
-from langchain_harmony import LexicalSoup
 
 from .abstract_bot import AbstractBot
 from .llm_models import LLM, ModelProxy as LLMProxy
@@ -54,6 +36,28 @@ from .messages import (
     BaseMessage,
     Sequence,
 )
+
+try:
+    from langchain_doc import (
+        BaseEmbedding,
+        ModelProxy as EmbeddingsProxy,
+        create_filter_expression,
+        AbstractVectorStore,
+        AbstractVectorRetriever,
+        STORE_FACTORIES, 
+        RETRIEVER_FACTORIES,
+    )
+except ImportError:
+    raise ImportError('package `langchain_doc` is a prerequisite of package `langchain_chat`')
+
+NLP_HARMONY = os.getenv('NLP_HARMONY', 'false').lower() == 'true'
+if NLP_HARMONY:
+    try:
+        from langchain_harmony import LexicalSoup
+    except ImportError:
+        raise ImportError(
+            '`NLP_HARMONY` is set to true, but the `langchain_harmony` package is not installed'
+        )
 
 class ChatBot(AbstractBot):
     def __init__(self):
@@ -95,10 +99,10 @@ class ChatBot(AbstractBot):
     ) -> Runnable:
         """Custom implementation to handle preprompt messages"""
         def validate_history(input_data: Dict[str, Any]) -> bool:
-            # TGI is really slow to respond to streaming; temporarily disabling this
-            # return not input_data.get('chat_history')
-            return True
-        
+            # TGI is really slow to respond to streaming; temporarily disabling this with explicit True
+            # return True
+            return not input_data.get('chat_history')
+            
         retrieve_documents = (preprompt_filter or RunnablePassthrough()) | RunnableBranch(
             (
                 validate_history,
@@ -279,6 +283,43 @@ class ChatBot(AbstractBot):
 
         return llm_astream
 
+    async def generate_llm_astream(
+        self,
+        chain_with_history: RunnableWithMessageHistory,
+        message: str,
+        config: dict,
+    ) -> AsyncGenerator[str, None]:
+        maxlen = 50
+        token_buff = deque(maxlen=maxlen)
+        tokens_checked = False
+
+        async for s in chain_with_history.astream({'input': message}, config=config):
+            if isinstance(s, dict) and ('input' in s or 'context' in s):
+                continue
+    
+            if 'answer' in s:
+                s_content = s['answer']
+            elif hasattr(s, 'content'):
+                s_content = s.content
+            else:
+                logging.warning(f'Intermediate run async generated: {s}')
+                continue
+
+            token_buff.append(s_content)
+
+            if NLP_HARMONY and not tokens_checked:
+                if len(token_buff) == maxlen:
+                    corpus = ''.join(token_buff)
+                    soup = LexicalSoup(corpus=corpus, temperature=0.3)
+                    if soup.is_natural and soup.is_high_frequency:
+                        logging.warning(f'Low P(A) natural language score, got {corpus}')
+                        yield '<|model_error|>'
+                        return
+                    
+                tokens_checked = len(token_buff) >= maxlen
+
+            yield s_content
+
     async def rag_astream(
         self, 
         chat_llm: BaseChatModel, 
@@ -295,22 +336,10 @@ class ChatBot(AbstractBot):
             on_start=self._aenter_chat_chain,
             on_end=self._aexit_chat_chain)
         config = self.message_part.runnable_config
+
         async def llm_astream():
-            token_buff = deque(maxlen=100)
-            async for s in chain_with_history.astream(
-                {'input': message},
-                config=config):
-                if 'answer' in s:
-                    s_content = s['answer']
-                    token_buff.append(str(s_content))
-                    if len(token_buff) == token_buff.maxlen:
-                        corpus = ''.join(token_buff)
-                        ll = LexicalSoup(corpus=corpus, temperature=0.3)
-                        if ll.is_natural and ll.is_high_frequency:
-                            logging.warning(f'Low P(A) natural language score, got {''.join(token_buff)}')
-                            yield '<|model_error|>'
-                            break
-                    yield s_content
+            async for token in self.generate_llm_astream(chain_with_history, message, config):
+                yield token
 
         return llm_astream
 
@@ -325,24 +354,13 @@ class ChatBot(AbstractBot):
             on_start=self._aenter_chat_chain,
             on_end=self._aexit_chat_chain)
         config = self.message_part.runnable_config
+
         async def llm_astream():
-            token_buff = deque(maxlen=100)
-            async for s in chain_with_history.astream(
-                {'input': message},
-                config=config):
-                    s_content = s.content
-                    token_buff.append(str(s_content))
-                    if len(token_buff) == token_buff.maxlen:
-                        corpus = ''.join(token_buff)
-                        ll = LexicalSoup(corpus=corpus, temperature=0.3)
-                        if ll.is_natural and ll.is_high_frequency:
-                            logging.warning(f'Low P(A) natural language score, got {''.join(token_buff)}')
-                            yield '<|model_error|>'
-                            break
-                    yield s_content
+            async for token in self.generate_llm_astream(chain_with_history, message, config):
+                yield token
 
         return llm_astream
-
+    
     # TODO: add trimmer runnable  
     async def astream(self, message: str) -> Callable[[], AsyncGenerator[str, None]]:
         # await self.vector_part.inspect(message)

@@ -24,3 +24,7 @@ class BaseEmbedding:
     auto_truncate: bool
     token: str
     endpoint_object: AbstractEmbedding = field(init=False, repr=False)
+
+    def update_token(self, new_token: str) -> None:
+        self.token = new_token
+        self._initialize_endpoint_object()

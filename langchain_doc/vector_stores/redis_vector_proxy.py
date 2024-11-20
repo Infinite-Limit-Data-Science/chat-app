@@ -117,6 +117,11 @@ class RedisVectorProxy(AbstractVectorStore):
         """Embedding Dimension count"""
         return self.config.embedding_dimensions
 
+    def update_embedding_token(self, new_token: str) -> None:
+        self.embeddings.update_token(new_token)
+        self.vector_store = RedisVectorProxy.MyRedisVectorStore(
+                self.embeddings.endpoint_object, config=self.config)
+
     async def aadd(self, documents: Iterator[Document]) -> List[str]:
         """Add documents to the vector store asynchronously, expecting metadata per document"""
         return await self.vector_store.aadd_documents_with_ttl(documents, _VECTOR_TTL_30_DAYS, self.embeddings.max_batch_requests)
@@ -212,9 +217,8 @@ _redis_vector_instance: Optional[RedisVectorProxy] = None
 
 def create_redis_vector_proxy(
     vector_store_schema: List[Dict[str, Any]],
-    embeddings: BaseEmbedding
+    embeddings: BaseEmbedding,
 ) -> RedisVectorProxy:
-    """Initialize and retrieve a single instance of RedisVectorProxy."""
     global _redis_vector_instance
 
     if _redis_vector_instance is None:
@@ -223,4 +227,7 @@ def create_redis_vector_proxy(
             embeddings=embeddings,
             schema=vector_store_schema,
         )
+    else:
+        _redis_vector_instance.update_embedding_token(embeddings.token)
+    
     return _redis_vector_instance

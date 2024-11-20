@@ -23,8 +23,8 @@ class LexicalSoup(BaseModel):
     punct: set = set(string.punctuation) | {'...'}
     weight: Optional[str] = Field(None, description='The weighted truth of the result')
     temperature: float = Field(description='The temperature to apply to the corpus', ge=0, le=1.0, default=0.01)
-    tagged_sents: Optional[List[str]] = Field(None, description='Sentence tokenizers')
-    tagged_words: Optional[List[Tuple[str, str]]] = Field(None, description='Word tokenizers')
+    # tagged_sents: Optional[List[str]] = Field(None, description='Sentence tokenizers')
+    # tagged_words: Optional[List[Tuple[str, str]]] = Field(None, description='Word tokenizers')
 
     @field_validator('corpus', mode='before')
     def normalize_corpus(cls, v: str | List[str] | Dict[str, str]) -> str:
@@ -47,8 +47,8 @@ class LexicalSoup(BaseModel):
     def tokenize_corpus(self) -> Self:
         self.process_language()
         self.process_weight()
-        self.tagged_sents = sent_tokenize(self.corpus)
-        self.tagged_words = [pos_tag(word_tokenize(sentence)) for sentence in self.tagged_sents]
+        # self.tagged_sents = sent_tokenize(self.corpus)
+        # self.tagged_words = [pos_tag(word_tokenize(sentence)) for sentence in self.tagged_sents]
         
         return self
 
