@@ -1,13 +1,12 @@
-import logging
 from typing import Dict, Any, Optional, List
 from pydantic import BaseModel
-from models.mongo_schema import ObjectId
-from models.conversation import (
+from ..models.mongo_schema import ObjectId
+from ..models.conversation import (
     Conversation, 
     ConversationSchema, 
 )
-from models.message import Message
-from repositories.base_mongo_repository import base_mongo_factory as factory
+from ..models.message import Message
+from ..repositories.base_mongo_repository import base_mongo_factory as factory
 
 MessageRepo = factory(Message)
 

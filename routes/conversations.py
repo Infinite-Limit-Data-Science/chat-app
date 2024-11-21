@@ -1,40 +1,29 @@
-import logging
-from typing import Annotated, List, Optional, Union
+from typing import List, Optional, Union
 from fastapi import ( 
-    APIRouter, 
-    status, 
-    Request, 
-    Query, 
-    Body, 
-    Form, 
-    Depends, 
-    File, 
-    UploadFile, 
-    logger
-)
+    APIRouter, status, Request, Query, Body, Form, 
+    Depends, File, UploadFile)
 from fastapi.exceptions import HTTPException
+from fastapi.responses import StreamingResponse
 from huggingface_hub.errors import HfHubHTTPError
-from langchain_chat import LLM
-from langchain_doc import BaseEmbedding
-from auth.bearer_authentication import get_current_user
-from routes.chats import chat
-from routes.configs import (
-    get_current_models, 
-    get_current_embedding_models, 
-    get_prompt_template,
-    get_current_guardrails,
-    DEFAULT_PREPROMPT,
-)
-from routes.uploads import ingest_files
-from repositories.conversation_mongo_repository import ConversationMongoRepository as ConversationRepo
-from models.conversation import (
+from ..langchain_chat import LLM
+from ..langchain_doc import BaseEmbedding
+from ..logger import logger
+from ..auth.bearer_authentication import get_current_user
+from .chats import chat
+from .configs import (
+    get_current_models, get_current_embedding_models, 
+    get_prompt_template, get_current_guardrails,
+    DEFAULT_PREPROMPT)
+from .uploads import ingest_files
+from ..repositories.conversation_mongo_repository import ( 
+    ConversationMongoRepository as ConversationRepo)
+from ..models.conversation import (
     ConversationSchema,
     CreateConversationSchema,
     ConversationCollectionSchema, 
     UpdateConversationSchema,
 )
-from models.message import MessageSchema
-from fastapi.responses import StreamingResponse
+from ..models.message import MessageSchema
 
 router = APIRouter(
     prefix='/conversations', 
@@ -54,6 +43,8 @@ async def conversations(
         sort: str = Query(None, description='sort field and direction as sort=field[asc|desc]', alias='sort')
     ):
     """List conversations by an offset and limit"""
+    logger.info('loading conversations')
+
     sort_field, sort_direction = 'updatedAt', 'desc'
     if sort:
         parts = sort.split('[')
@@ -88,6 +79,8 @@ async def create_conversation(
     prompt_template: str = Depends(get_prompt_template),
 ):
     """Insert new conversation record and message record in configured database, returning AI Response"""
+    logger.info(f'invoking conversation endpoint with content `{content}`')
+
     conversation_schema = CreateConversationSchema(
         uuid=request.state.uuid, 
         model_name=models[0].name, 
@@ -125,7 +118,7 @@ async def create_conversation(
                 'error_message': e.response.text,
                 'error_type': type(e).__name__,
             }
-            logging.warning(f'Request failed error_info {error_info}')
+            logger.warning(f'Request failed error_info {error_info}')
             await ConversationRepo.delete(created_conversation_id, options={ request.status.uuid_name: request.status.uuid})
             raise HTTPException(status_code=e.response.status_code, detail=error_info)
         

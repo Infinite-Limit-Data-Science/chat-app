@@ -1,4 +1,3 @@
-import logging
 from typing import Iterator
 from langchain_core.documents import Document
 from .document_ingestor import DocumentIngestor

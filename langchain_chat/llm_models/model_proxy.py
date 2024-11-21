@@ -1,8 +1,7 @@
-import logging
 import socket
 from urllib.parse import urlparse
 from typing import List
-
+from ..logger import logger
 from .llm import LLM
 
 class ModelProxy:
@@ -16,11 +15,12 @@ class ModelProxy:
                 socket.create_connection((url.hostname, url.port), timeout=3)
                 return model
             except (ConnectionRefusedError, TimeoutError) as e:
-                logging.warning(f'Failed to reach endpoint {e} with {model.endpoint['url']}')
+                logger.warning(f'Failed to reach endpoint {e} with {model.endpoint['url']}')
                 continue        
-        raise Exception('No models responded within 3 seconds')
+        
+        raise TimeoutError('No models responded within 3 seconds')
     
     def get(self) -> LLM:
         """Return a runnable"""
-        model = self.reachable()
-        return model
+        # model = self.reachable()
+        return self.models[0]

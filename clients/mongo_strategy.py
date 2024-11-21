@@ -1,8 +1,8 @@
-import logging
 import os
+import logging
 from motor import motor_asyncio
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
-from clients.database_strategy import DatabaseStrategy
+from .database_strategy import DatabaseStrategy
 
 logging.getLogger('pymongo').setLevel(logging.WARNING)
 
@@ -46,6 +46,9 @@ class MongoStrategy(DatabaseStrategy):
     def connection_string(self):
         return self._url
 
-if not os.environ['DATABASE_NAME']:
-    raise Exception('Missing `DATABASE_NAME` in environment, therefore, not trying to connect')
+if not os.getenv('DATABASE_NAME'):
+    raise RuntimeError('Missing `DATABASE_NAME` in environment, therefore, not trying to connect')
+
+if not os.getenv('MONGODB_URL'):
+    raise RuntimeError('Missing `MONGODB_URL` in environment, therefore, not trying to connect')
 mongo_instance = MongoStrategy(os.environ['MONGODB_URL'])

@@ -1,12 +1,12 @@
 from datetime import datetime
 from typing import List, TypedDict, Optional
-from models.abstract_model import AbstractModel
-from models.mongo_schema import (
+from .abstract_model import AbstractModel
+from .mongo_schema import (
     ChatSchema,
     Field,
     PyObjectId
 )
-from models.llm_schema import LLMBase
+from .llm_schema import LLMBase
 
 class SystemModelConfig(AbstractModel):
     __modelname__ = 'system_model_configs'

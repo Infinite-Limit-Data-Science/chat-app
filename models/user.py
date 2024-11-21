@@ -1,6 +1,6 @@
 from typing import List, Optional
-from models.abstract_model import AbstractModel
-from models.mongo_schema import (
+from .abstract_model import AbstractModel
+from .mongo_schema import (
     PrimaryKeyMixinSchema,
     TimestampMixinSchema,
     Field,
@@ -16,9 +16,6 @@ class User(AbstractModel):
     @classmethod
     def chat_ui_compatible(cls) -> List[str]:
         return ['roles', 'createdAt', 'updatedAt']
-
-class ChatUIUser(AbstractModel):
-    pass
 
 class UserSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):
     uuid: str = Field(alias="sessionId", description='Unique identifer working across LDAP, ForgeRock, Microsoft Azure Entra ID, and AWS IAM Identity Center', frozen=True)

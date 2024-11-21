@@ -1,13 +1,10 @@
-import logging
 import json
 import datetime as dt
 from typing import List
 from pymongo import errors
-
 from langchain_mongodb import MongoDBChatMessageHistory
 from langchain_core.messages import BaseMessage, messages_from_dict, message_to_dict
-
-logger = logging.getLogger(__name__)
+from ..logger import logger
 
 _ROOT_COLLECTION='conversations'
 
@@ -46,7 +43,7 @@ class MyMongoDBChatMessageHistory(MongoDBChatMessageHistory):
                     'content': message.content,
                 }
             )) is not None:
-                logging.warning(f'session id type({type(self.session_id)})')
+                logger.warning(f'session id type({type(self.session_id)})')
                 self.db[_ROOT_COLLECTION].update_one(
                     { '_id': self.session_id },
                     { '$push': { 'message_ids': new_document.inserted_id } }

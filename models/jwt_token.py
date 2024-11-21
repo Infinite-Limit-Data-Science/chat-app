@@ -1,9 +1,9 @@
-import logging
 import re
 from datetime import datetime
-from typing import List, Any, Optional
-from pydantic import field_validator, model_validator
-from models.mongo_schema import ChatSchema, Field
+from typing import List
+from pydantic import field_validator
+from ..logger import logger
+from .mongo_schema import ChatSchema, Field
 
 class JWTToken(ChatSchema):
     app: str = Field(description='JWT app attribute')
@@ -14,7 +14,7 @@ class JWTToken(ChatSchema):
     iat: datetime = Field(description='JWT token iat time')
 
     class Config:
-        allow_mutation = False
+        frozen = True
 
     @field_validator('sub', mode='before')
     @classmethod
@@ -23,12 +23,17 @@ class JWTToken(ChatSchema):
     
     @field_validator('roles', mode='before')
     @classmethod
-    def validate_roles(cls, value: List[str]) -> List[str]:
+    def validate_roles(cls, value: List[str] | str) -> List[str]:
+        if isinstance(value, str):
+            logger.warning(f'No roles specified')
+            return []
+        
         pattern = r"^CN=Data\s+Services?\s+Entitlements.*$"
-        valid_roles =[role for role in value if re.match(pattern, role)]
+        valid_roles = [role for role in value if re.match(pattern, role)]
         if len(valid_roles) < 1:
              # raise ValueError('Received Invalid Group Entries, expecting at least one valid LDAP Group Entry')
-             logging.warning(f'No data entitlements for sub')
+             logger.warning(f'No data entitlements for sub')
+             
         return value
     
     @field_validator('exp', mode='before')

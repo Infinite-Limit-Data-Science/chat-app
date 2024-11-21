@@ -1,10 +1,10 @@
-import logging
 import os
 import time
 from typing import List, Tuple
 from fastapi import UploadFile
 from langchain_core.vectorstores import VectorStoreRetriever
-from langchain_doc import ingest, BaseEmbedding
+from ..langchain_doc import ingest, BaseEmbedding
+from ..logger import logger
 
 async def ingest_files(
     embedding_models: List[BaseEmbedding], 
@@ -21,6 +21,6 @@ async def ingest_files(
     start_time = time.time()
     retrievers, filenames = await ingest(vector_store, upload_files, embedding_models, data)
     duration = time.time() - start_time
-    logging.warning(f'Ingestion time for {filenames}: {duration:.2f} seconds')
+    logger.info(f'Ingestion time for {filenames}: {duration:.2f} seconds')
 
     return retrievers, filenames

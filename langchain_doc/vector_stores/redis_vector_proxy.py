@@ -1,4 +1,4 @@
-import logging
+
 import os
 import asyncio
 from typing import List, Any, Iterator, Dict, Optional
@@ -15,6 +15,7 @@ from .abstract_vector_store import (
     AbstractVectorStore, 
     FilterExpression,
 )
+from ..logger import logger
 
 _MAX_CONNECTIONS = 50
 
@@ -144,7 +145,6 @@ class RedisVectorProxy(AbstractVectorStore):
         if document_ids:
             result = self.vector_store.adelete(ids=document_ids)
             if result:
-                logging.warning(f'Deleted documents on index {_INDEX_NAME}')
                 return True
         return False
     
@@ -152,7 +152,7 @@ class RedisVectorProxy(AbstractVectorStore):
         self, 
         query: str, 
         k: int = 4,
-        filter: FilterExpression = None
+        filter: FilterExpression = None,
     ) -> str:
         from tabulate2 import tabulate
         query_vector = await self.embeddings.endpoint_object.aembed_query(query)
@@ -175,7 +175,7 @@ class RedisVectorProxy(AbstractVectorStore):
             {self}
         """
 
-        logging.info(output)
+        logger.info(output)
         return output
 
     def __str__(self):

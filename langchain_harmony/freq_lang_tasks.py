@@ -1,4 +1,3 @@
-import logging
 import string
 from typing import Literal
 from collections import defaultdict
@@ -79,7 +78,6 @@ class FreqNLPTask(BaseTask):
             if trigrams[i:i + n] == trigrams[i + n:i + 2 * n]:
                 consecutive_count += 1
                 if consecutive_count >= max_repeats:
-                    logging.warning(f'Frequency {FrequencyType.HIGH.value} for {corpus}')
                     return FrequencyType.HIGH.value
         
         return FrequencyType.LOW.value
@@ -89,6 +87,5 @@ class FreqMLTask(BaseTask):
     task_type = _task_type
 
     def perform(self, corpus: str) -> Literal['low, high']:
-        import logging
-        logging.warning('Implementation coming soon')
+        """Implementation coming soon"""
         pass

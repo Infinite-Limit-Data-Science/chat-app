@@ -3,7 +3,6 @@ from collections import Counter
 import math
 from nltk import ngrams
 from nltk.corpus import stopwords
-from nltk.tokenize import word_tokenize
 
 def rm_stopwords(tokens: List[str]) -> List[str]:
     stop_words = set(stopwords.words('english'))

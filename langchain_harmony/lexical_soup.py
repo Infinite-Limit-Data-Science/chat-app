@@ -1,7 +1,6 @@
 import os
 import string
-import types
-from typing import Callable, List, Dict, Tuple, Any, Optional, Self, Union
+from typing import List, Dict, Tuple, Optional, Self
 from pydantic import BaseModel, Field, field_validator, model_validator
 import nltk
 from nltk import sent_tokenize, word_tokenize, pos_tag

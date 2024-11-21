@@ -1,18 +1,18 @@
-import logging
 import os
 import json
 from typing import List, Dict, Optional
 from fastapi import Request, Depends, HTTPException
-from models.system_model_config import SystemModelConfigSchema
-from models.setting import Setting, SettingSchema
-from repositories.base_mongo_repository import base_mongo_factory as factory
-from langchain_chat import LLM, FACTORIES as LLM_FACTORIES
-from langchain_doc import FACTORIES as EMBEDDING_FACTORIES, BaseEmbedding
-from models.system_model_config import SystemModelConfigSchema
-from models.user_model_config import UserModelConfigSchema
-from models.system_embedding_config import SystemEmbeddingConfigSchema
-from models.model_observer import ModelSubject, ModelObserver
-from models.classification import get_strategy_for_classification
+from ..langchain_chat import LLM, FACTORIES as LLM_FACTORIES
+from ..langchain_doc import FACTORIES as EMBEDDING_FACTORIES, BaseEmbedding
+from ..logger import logger
+from ..models.system_model_config import SystemModelConfigSchema
+from ..models.setting import Setting, SettingSchema
+from ..models.system_model_config import SystemModelConfigSchema
+from ..models.user_model_config import UserModelConfigSchema
+from ..models.system_embedding_config import SystemEmbeddingConfigSchema
+from ..models.model_observer import ModelSubject, ModelObserver
+from ..models.classification import get_strategy_for_classification
+from ..repositories.base_mongo_repository import base_mongo_factory as factory
 
 DEFAULT_PREPROMPT='You are an assistant for question-answering tasks. Answer the questions to the best of your ability.'
 
@@ -43,6 +43,7 @@ async def get_active_model_config(
         model_config = next(iter(configs.values()))
         active_model = model_config.name
     await SettingRepo.update_one(setting_id, _set={'activeModel': active_model})
+    logger.info(f'Active model config {active_model}')
     return model_config
 
 async def refresh_model_configs(
@@ -136,6 +137,10 @@ async def get_current_models(
     system_model_config: SystemModelConfigSchema = Depends(refresh_model_configs)
 ) -> List[LLM]:
     """Return the active model(s) of settings for current user"""
+    logger.info(
+        f'using Bearer {request.state.authorization} for '
+        f'model config {system_model_config.name}'
+    )
     models = [
         LLM_FACTORIES[endpoint['type']](**{
             'name': system_model_config.name,
@@ -144,7 +149,9 @@ async def get_current_models(
             'classification': system_model_config.classification,
             'stream': system_model_config.stream,
             'parameters': dict(system_model_config.parameters),
-            'server_kwargs': { 'headers': {'Authorization': f'Bearer {request.state.authorization}' }},
+            'server_kwargs': { 
+                'headers': {'Authorization': f'Bearer {request.state.authorization}' }
+            },
             'endpoint': endpoint,
         })
         for endpoint in system_model_config.endpoints
@@ -172,6 +179,10 @@ async def get_current_embedding_models(request: Request) -> List[BaseEmbedding]:
     model_dict = json.loads(os.environ['EMBEDDING_MODELS'])
     model_configs = [SystemEmbeddingConfigSchema(**config) for config in model_dict]
     active_model_config = next((config for config in model_configs if config.active), None)
+    logger.info(
+        f'using `Bearer {request.state.authorization}` for '
+        f'embedding model config {active_model_config.name}'
+    )
     if not active_model_config:
         HTTPException(status_code=404, detail='Expected Embedding Model, got None')
     models = [
@@ -190,7 +201,7 @@ async def get_current_embedding_models(request: Request) -> List[BaseEmbedding]:
         })
         for endpoint in active_model_config.endpoints
     ]
-    return models    
+    return models
 
 async def get_prompt_template(
     setting_schema: SettingSchema = Depends(get_user_settings),
@@ -203,6 +214,8 @@ async def get_prompt_template(
         if(
             prompt := next((prompt for prompt in setting_schema.prompts for id in prompt.user_model_configs if id == active_user_config_id), None)
         ) is not None:
+            logger.info(f'using prompt template {prompt.content}')
             return prompt.content
     
+    logger.info(f'using prompt template {system_config_schema.preprompt or 'None'}')
     return system_config_schema.preprompt

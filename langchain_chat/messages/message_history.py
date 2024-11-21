@@ -1,4 +1,3 @@
-import logging
 from typing import Sequence, Any
 from dataclasses import dataclass, field, asdict
 from bson import ObjectId

@@ -1,10 +1,11 @@
 import base64
 from typing import Tuple
-from fastapi import Request, Depends, HTTPException, logger
+from fastapi import Request, Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jwt import decode, DecodeError
-from models.jwt_token import JWTToken as Token
-from auth.users import (
+from ..logger import logger
+from ..models.jwt_token import JWTToken as Token
+from .users import (
     CURRENT_UUID_NAME,
     fetch_user,
     load_user_settings,
@@ -47,6 +48,7 @@ async def get_current_user(
     ) is None:
         user_attributes = await UserRepo.create(schema=UserSchema(uuid=token.sub, roles=token.roles))
     user = await fetch_user(user_attributes)
+    logger.info(f'User found {user_attributes}')
     request.state.session_id = get_session_id(session)
     request.state.uuid = user.uuid
     request.state.uuid_name = CURRENT_UUID_NAME

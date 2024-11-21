@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import os
 import json
 import re
@@ -28,17 +27,14 @@ from .abstract_bot import AbstractBot
 from .llm_models import LLM, ModelProxy as LLMProxy
 from .messages.prompts import registry
 from .messages import (
-    MongoMessageHistorySchema,
-    MongoMessageHistory,
-    SystemMessage,
-    HumanMessage,
-    AIMessage,
-    BaseMessage,
-    Sequence,
-)
+    MongoMessageHistorySchema, MongoMessageHistory, SystemMessage, 
+    HumanMessage, AIMessage, BaseMessage, Sequence)
+
+from .task_execution_context import session_id_var
+from .logger import logger
 
 try:
-    from langchain_doc import (
+    from ..langchain_doc import (
         BaseEmbedding,
         ModelProxy as EmbeddingsProxy,
         create_filter_expression,
@@ -53,7 +49,7 @@ except ImportError:
 NLP_HARMONY = os.getenv('NLP_HARMONY', 'false').lower() == 'true'
 if NLP_HARMONY:
     try:
-        from langchain_harmony import LexicalSoup
+        from ..langchain_harmony import LexicalSoup
     except ImportError:
         raise ImportError(
             '`NLP_HARMONY` is set to true, but the `langchain_harmony` package is not installed'
@@ -71,7 +67,7 @@ class ChatBot(AbstractBot):
     def _trace_history_chain(self) -> None:
         def _historic_messages_by(n: int) -> List[BaseMessage]:
             messages = self.message_part.message_history.messages[-n:]
-            logging.info(f'Message History {messages}')
+            logger.info(f'Message History {messages}')
             return messages
         runnable = RunnableLambda(
             _historic_messages_by).with_config(run_name='trace_my_history')
@@ -251,7 +247,7 @@ class ChatBot(AbstractBot):
                     num_steps = 4
                     indices = [n**i for i in range(1, num_steps + 1) if n**i < len(documents)]
                     retrieved_docs = [documents[i] for i in indices]
-                    logging.info(f'retrieved docs subset {retrieved_docs}')
+                    logger.info(f'retrieved docs subset {retrieved_docs}')
 
             import random
             source_retriever = random.choice(self.vector_part.source_retrievers)
@@ -265,7 +261,10 @@ class ChatBot(AbstractBot):
 
         return await self.vector_part.aavailable_vectors(message)
     
-    def fetch_retrievers(self) -> List[AbstractVectorRetriever]:
+    async def fetch_retrievers(self, message: str) -> List[AbstractVectorRetriever]:
+        if len(self.vector_part.source_retrievers) >= 1:
+            await self.vector_part.inspect(message)
+
         source_retrievers = self.vector_part.source_retrievers or [self.vector_part.no_doc_retriever]
         return source_retrievers
 
@@ -302,7 +301,7 @@ class ChatBot(AbstractBot):
             elif hasattr(s, 'content'):
                 s_content = s.content
             else:
-                logging.warning(f'Intermediate run async generated: {s}')
+                logger.warning(f'Intermediate run async generated: {s}')
                 continue
 
             token_buff.append(s_content)
@@ -312,7 +311,7 @@ class ChatBot(AbstractBot):
                     corpus = ''.join(token_buff)
                     soup = LexicalSoup(corpus=corpus, temperature=0.3)
                     if soup.is_natural and soup.is_high_frequency:
-                        logging.warning(f'Low P(A) natural language score, got {corpus}')
+                        logger.warning(f'Low P(A) natural language score, got {corpus}')
                         yield '<|model_error|>'
                         return
                     
@@ -363,7 +362,6 @@ class ChatBot(AbstractBot):
     
     # TODO: add trimmer runnable  
     async def astream(self, message: str) -> Callable[[], AsyncGenerator[str, None]]:
-        # await self.vector_part.inspect(message)
         self._trace_history_chain()
 
         if self.guardrails_part.llm:
@@ -376,7 +374,7 @@ class ChatBot(AbstractBot):
         chat_llm = self.llm_part.llm.endpoint_object
         rag_chain = await self.calculate_vecs(message)
 
-        return await self.rag_astream(chat_llm, message, self.fetch_retrievers()) if rag_chain else await self.chat_astream(chat_llm, message)
+        return await self.rag_astream(chat_llm, message, await self.fetch_retrievers(message)) if rag_chain else await self.chat_astream(chat_llm, message)
 
     chat = astream
 
@@ -462,12 +460,16 @@ class ChatBotBuilder:
         def __init__(self, chat_bot: ChatBot, history_config: dict, configurable: dict):
             if not configurable['session_id']:
                 raise ValueError('Session ID Required for History')
+            
             self.configurable = configurable
             message_schema = MongoMessageHistorySchema(
                 session_id=self.configurable['session_id'], 
                 **history_config)
             self.message_schema = message_schema
             self.message_history = MongoMessageHistory(self.message_schema)
+            
+            session_id_var.set(self.configurable['session_id'])
+
             chat_bot.message_part = self
 
         @property

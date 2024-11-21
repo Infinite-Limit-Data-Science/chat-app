@@ -1,7 +1,7 @@
 from typing import TypeAlias, Literal
 from enum import Enum
 from pydantic import BaseModel, Field
-from models.mongo_schema import PrimaryKeyMixinSchema, TimestampMixinSchema
+from .mongo_schema import PrimaryKeyMixinSchema, TimestampMixinSchema
 
 EmbeddingSchema: TypeAlias = BaseModel
 

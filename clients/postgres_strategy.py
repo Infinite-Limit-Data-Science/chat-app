@@ -1,4 +1,4 @@
-from database_strategy import DatabaseStrategy
+from .database_strategy import DatabaseStrategy
 
 class PostgresStrategy(DatabaseStrategy):
     pass

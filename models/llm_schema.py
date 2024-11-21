@@ -1,6 +1,6 @@
-from typing import List, Optional, TypeAlias, TypedDict, Literal
+from typing import Optional, TypeAlias, TypedDict, Literal
 from pydantic import BaseModel, Field
-from models.mongo_schema import PrimaryKeyMixinSchema, TimestampMixinSchema, ChatSchema
+from .mongo_schema import PrimaryKeyMixinSchema, TimestampMixinSchema, ChatSchema
 
 LLMSchema: TypeAlias = BaseModel
 

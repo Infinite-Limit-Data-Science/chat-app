@@ -1,13 +1,10 @@
-import logging
 from typing import Union
-from fastapi import APIRouter, Request, status, Query, Body, Depends
-from auth.bearer_authentication import get_current_user
-from repositories.base_mongo_repository import base_mongo_factory as factory
-from models.setting import (
-    SettingSchema, 
-    UpdateSettingSchema,
-    Setting
-)
+from fastapi import APIRouter, Body, Depends
+from ..logger import logger
+from ..auth.bearer_authentication import get_current_user
+from ..repositories.base_mongo_repository import base_mongo_factory as factory
+from ..models.setting import (
+    SettingSchema, UpdateSettingSchema, Setting)
 
 SettingRepo = factory(Setting)
 
@@ -39,6 +36,8 @@ async def get_setting(id: str):
 )
 async def update_setting(id: str, setting_schema: UpdateSettingSchema = Body(...)):
     """Update settings, where associations are expected to be set up on client"""
+    logger.info(f'updating setting schema {id} with {setting_schema}')
+
     if (
         updated_setting := await SettingRepo.update_one(
             id, 

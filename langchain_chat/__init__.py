@@ -1,4 +1,4 @@
-from langchain_chat.chat_bot import (
+from .chat_bot import (
     ChatBot,
     ChatBotBuilder,
 )

@@ -3,7 +3,8 @@ from abc import ABC, abstractmethod
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from ..vector_stores import AbstractVectorStore
-from langchain_chunkinator import Chunkinator
+from ...langchain_chunkinator import Chunkinator
+from ..task_execution_context import filename_var
 
 class DocumentIngestor(ABC):
     def __init__(
@@ -17,6 +18,8 @@ class DocumentIngestor(ABC):
         self._vector_store_bridge = vector_store
         self._metadata = metadata
         self.smart_chunking = True
+
+        filename_var.set(self._file)
     
     @abstractmethod
     def load(self) -> Iterator[Document]:

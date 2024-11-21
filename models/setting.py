@@ -1,16 +1,15 @@
 from datetime import datetime
-from typing import List, Dict, Optional
-from pydantic import model_validator, field_validator
-from models.abstract_model import AbstractModel
-from models.mongo_schema import (
+from typing import List, Optional
+from .abstract_model import AbstractModel
+from .mongo_schema import (
     ChatSchema,
     PrimaryKeyMixinSchema,
     TimestampMixinSchema,
     Field,
     PyObjectId
 )
-from models.prompt import PromptSchema
-from models.user_model_config import UserModelConfigSchema, UpdateUserModelConfigSchema
+from .prompt import PromptSchema
+from .user_model_config import UserModelConfigSchema, UpdateUserModelConfigSchema
 
 class Setting(AbstractModel):
     __modelname__ = 'settings'

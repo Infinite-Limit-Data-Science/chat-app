@@ -1,10 +1,10 @@
-import logging
 import os
 from typing import List, Optional, Callable, AsyncGenerator
-from langchain_chat import ChatBot, ChatBotBuilder, LLM
-from langchain_doc import AbstractVectorRetriever, BaseEmbedding
-from clients.mongo_strategy import mongo_instance as database_instance
-from models.message import MessageSchema
+from ..langchain_chat import ChatBot, ChatBotBuilder, LLM
+from ..langchain_doc import AbstractVectorRetriever, BaseEmbedding
+from ..logger import logger
+from ..clients.mongo_strategy import mongo_instance as database_instance
+from ..models.message import MessageSchema
 
 async def chat(
     user_prompt_template: str,
@@ -16,6 +16,12 @@ async def chat(
     message_schema: MessageSchema
 ) -> Callable[[], AsyncGenerator[str, None]]:
     """Invoke chat bot"""
+    logger.info(
+        f'`chat-ai` invocation call to {list({llm.name for llm in models})} '
+        f'with content `{message_schema.content}` and conversation '
+        f'id {data['conversation_id']}'
+    )
+
     if not (vector_store := os.getenv('VECTOR_STORE')):
         raise ValueError('Expected `VECTOR_STORE` to be defined')
 

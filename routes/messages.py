@@ -1,38 +1,30 @@
-import logging
-from typing import Dict, Any, Optional, List, Union
+from typing import Optional, List, Union
 from bson import ObjectId
 from fastapi import (
-    APIRouter, 
-    status, 
-    Request, 
-    Form, 
-    Body, 
-    Depends, 
-    File, 
-    UploadFile, 
-    logger,
-)
+    APIRouter, status, Request, Form, 
+    Depends, File, UploadFile)
 from fastapi.responses import StreamingResponse
-from langchain_chat import LLM
-from langchain_doc import BaseEmbedding
-from models.mongo_schema import ObjectId
-from auth.bearer_authentication import get_current_user
-from routes.chats import chat
-from routes.configs import (
-    get_current_models, 
-    get_current_embedding_models, 
-    get_prompt_template,
-    get_current_guardrails,
-    DEFAULT_PREPROMPT,
-)
-from repositories.base_mongo_repository import base_mongo_factory as factory
-from routes.uploads import ingest_files
-from models.message import (
+from ..langchain_chat import LLM
+from ..langchain_doc import BaseEmbedding
+from ..logger import logger
+from ..models.mongo_schema import ObjectId
+from ..auth.bearer_authentication import get_current_user
+from .chats import chat
+from .configs import (
+    get_current_models, get_current_embedding_models, 
+    get_prompt_template, get_current_guardrails,
+    DEFAULT_PREPROMPT)
+from .uploads import ingest_files
+from ..models.message import (
     Message,
     MessageSchema,
 )
-from repositories.conversation_mongo_repository import ConversationMongoRepository as ConversationRepo
+from ..repositories.base_mongo_repository import (
+    base_mongo_factory as factory)
+from ..repositories.conversation_mongo_repository import (
+    ConversationMongoRepository as ConversationRepo)
 
+# TODO: extract to env var
 _DATABASE_STRATEGY = 'mongodb'
 
 MessageRepo = factory(Message)
@@ -59,6 +51,8 @@ async def create_message(
     guardrails: List[LLM] = Depends(get_current_guardrails),
     prompt_template: str = Depends(get_prompt_template)):
     """Insert new message record in configured database, returning AI Response"""
+    logger.info(f'invoking message endpoint with content `{content}`')
+
     retrievers = []
     if _DATABASE_STRATEGY == 'mongodb':
         conversation_id = ObjectId(conversation_id)
@@ -78,7 +72,7 @@ async def create_message(
         retrievers, 
         message_schema)
     
-    return StreamingResponse(llm_stream(), media_type="text/plain", headers={"X-Accel-Buffering": "no"})
+    return StreamingResponse(llm_stream(), media_type='text/event-stream', headers={'X-Accel-Buffering': 'no'})
 
 @router.get(
     '/{conversation_id}/message/{id}',
@@ -93,6 +87,7 @@ async def get_message(request: Request, conversation_id: str, id: str):
         message := await MessageRepo.find_one(id, options={'conversation_id': ObjectId(conversation_id) })
     ) is not None:
         return message
+    
     return {}
 
 # Note Conversational AI does not allow the edit of existing messages
@@ -107,5 +102,6 @@ async def delete_message(request: Request, conversation_id: str, id: str):
         delete_count := await MessageRepo.delete(id, options={'conversation_id': ObjectId(conversation_id)})
     ) is not None:
         await ConversationRepo.remove_from_field(conversation_id, options={'message_ids': ObjectId(id) })
-        return {'delete_count': delete_count}  
+        return {'delete_count': delete_count} 
+     
     return {'delete_count': 0}

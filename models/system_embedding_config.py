@@ -1,8 +1,8 @@
 from typing import List, TypedDict, Optional
-from models.abstract_model import AbstractModel
-from models.mongo_schema import Field
+from .abstract_model import AbstractModel
+from .mongo_schema import Field
 
-from models.embedding_schema import EmbeddingBase
+from .embedding_schema import EmbeddingBase
 
 class EndpointDict(TypedDict):
     url: str

@@ -86,10 +86,11 @@ class Chunkinator:
         def chunk(self) -> List[str]:
             max_chars = self.request_tokens * self.expo.x1
             token_size = max_chars - max_chars % 100
-            token_overlap = token_size * 0.01            
+            token_overlap = token_size * 0.01
+
             splitter = Splitter(
                 length_function=self.len_func, 
-                chunk_size=self.request_tokens, 
+                chunk_size=(self.request_tokens + 100), 
                 chunk_overlap=token_overlap)
             return splitter.split_documents(self.documents)
 

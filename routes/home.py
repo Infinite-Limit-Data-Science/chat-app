@@ -1,10 +1,10 @@
-import logging
-from fastapi import APIRouter, Request, Query, Depends, logger
-from auth.bearer_authentication import get_current_user
-from repositories.base_mongo_repository import base_mongo_factory as factory
-from repositories.conversation_mongo_repository import ConversationMongoRepository
-from models.conversation import Conversation, ConversationSchema, ConversationCollectionSchema
-from models.setting import Setting, SettingSchema
+from fastapi import APIRouter, Request, Query, Depends
+from ..logger import logger
+from ..auth.bearer_authentication import get_current_user
+from ..repositories.base_mongo_repository import base_mongo_factory as factory
+from ..repositories.conversation_mongo_repository import ConversationMongoRepository
+from ..models.conversation import Conversation, ConversationSchema, ConversationCollectionSchema
+from ..models.setting import Setting, SettingSchema
 
 ConversationRepo = factory(Conversation)
 
@@ -21,6 +21,8 @@ router = APIRouter(
 )
 async def dashboard(request: Request, record_offset: int = Query(0, description='record offset', alias='offset'), record_limit: int = Query(20, description="record limit", alias='limit')):
     """Load dashboard"""
+    logger.info('Loading Dashboard')
+
     setting_attributes = await SettingRepo.find_one(options={ 'sessionId': request.state.uuid })
     settings = SettingSchema(**setting_attributes)
     conversation_attributes = await ConversationMongoRepository.all(
@@ -32,4 +34,5 @@ async def dashboard(request: Request, record_offset: int = Query(0, description=
         'uuid': request.state.uuid,
         'settings': settings,
         'conversations': conversation_collection,
+        'session_id': request.state.session_id,
     }

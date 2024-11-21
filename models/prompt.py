@@ -1,14 +1,14 @@
 from datetime import datetime
-from typing import List, Dict, Optional
-from models.abstract_model import AbstractModel
-from models.mongo_schema import (
+from typing import List
+from .abstract_model import AbstractModel
+from .mongo_schema import (
     ChatSchema,
     PrimaryKeyMixinSchema,
     TimestampMixinSchema,
     Field,
     PyObjectId
 )
-from models.llm_schema import LLMPrompt
+from .llm_schema import LLMPrompt
     
 class Prompt(AbstractModel):
     __modelname__ = 'prompts'

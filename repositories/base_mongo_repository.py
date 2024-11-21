@@ -1,14 +1,12 @@
-import logging
 from typing import List, Dict, Any, Optional, Coroutine
 from pymongo import ReturnDocument
 from pymongo.results import UpdateResult
 from motor.motor_asyncio import AsyncIOMotorCollection
 from pydantic import BaseModel
-from clients.mongo_strategy import mongo_instance as instance
-from models.mongo_schema import ObjectId
-from models.abstract_model import AbstractModel
-from models.mongo_schema import ChatSchema
-from hf_chat_ui_decorators.decorators import chat_ui 
+from ..clients.mongo_strategy import mongo_instance as instance
+from ..models.mongo_schema import ObjectId, ChatSchema
+from ..models.abstract_model import AbstractModel
+from ..hf_chat_ui_decorators.decorators import chat_ui 
 
 def base_mongo_factory(model: AbstractModel):
     """Abstract the data storage and retrieval logic from the business logic of the application using first-class object BaseMongoRepository"""

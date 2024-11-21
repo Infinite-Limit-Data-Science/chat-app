@@ -135,6 +135,5 @@ class NaturalMLTask(BaseTask):
     task_type = _task_type
 
     def perform(self, corpus: str) -> Literal['code', 'natural']:
-        import logging
-        logging.warning('Implementation coming soon')
+        """Implementation coming soon"""
         pass
