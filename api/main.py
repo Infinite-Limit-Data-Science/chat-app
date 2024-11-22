@@ -5,6 +5,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from pathlib import Path
 from .clients.mongo_strategy import mongo_instance as database_instance
 from .routes.home import router as home_router
 from .routes.conversations import router as conversations_router
@@ -70,7 +71,8 @@ class CustomStaticFiles(StaticFiles):
         
         return response
 
-app.mount('/assets', CustomStaticFiles(directory='ui/dist/assets'), name='assets')
+path = Path(__file__).resolve().parent.parent / 'ui/dist/assets'
+app.mount('/assets', CustomStaticFiles(directory=path), name='assets')
 
 if os.getenv('IS_LOCAL') == 'true' and os.getenv('JWT_LOOKUP') == 'true':
     app.add_middleware(AddAuthorizationHeaderMiddleware)

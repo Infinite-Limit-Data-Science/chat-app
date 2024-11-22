@@ -23,6 +23,7 @@ python-pptx = "*"
 openai = "*"
 protobuf = "*"
 sentencepiece = "*"
+nltk = "*"
 
 [dev-packages]
 pytest = "*"
