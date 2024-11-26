@@ -24,6 +24,7 @@ openai = "*"
 protobuf = "*"
 sentencepiece = "*"
 nltk = "*"
+cryptography = "*"
 
 [dev-packages]
 pytest = "*"
