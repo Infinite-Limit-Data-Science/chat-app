@@ -5,6 +5,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jwt import decode, DecodeError
 from ..logger import logger
 from ..models.jwt_token import JWTToken as Token
+from ..middleware import fetch_secret_key
 from .users import (
     CURRENT_UUID_NAME,
     fetch_user,
@@ -15,19 +16,22 @@ from .users import (
 
 security = HTTPBearer()
 
-def load_token_schema(token) -> Token:
+def load_token_schema(token: str, request: Request) -> Token:
     keys_to_extract = ['app', 'sub', 'roles', 'aud', 'exp', 'iat']
     required_attributes = {key: token[key] for key in keys_to_extract}
-    token = Token(**required_attributes)
+    token = Token({**required_attributes, 'request': request})
     return token
 
-def validate_jwt(authorization: HTTPAuthorizationCredentials = Depends(security)) -> Tuple[Token, str]:
+def validate_jwt(
+    request: Request, 
+    authorization: HTTPAuthorizationCredentials = Depends(security)
+) -> Tuple[Token, str]:
     credentials = authorization.credentials
     if not credentials:
         raise HTTPException(status_code=401, detail='Missing Token')
     try:
-        decoded_jwt = decode(credentials, options={'verify_signature': False})
-        token = load_token_schema(decoded_jwt)
+        decoded_jwt = decode(credentials, fetch_secret_key, options={'verify_signature': True})
+        token = load_token_schema(decoded_jwt, request)
         if token.is_expired():
             raise HTTPException(status_code=401, detail='Token has expired')
     except DecodeError:

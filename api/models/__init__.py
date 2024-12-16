@@ -10,6 +10,7 @@ from .system_embedding_config import SystemEmbeddingConfig, SystemEmbeddingConfi
 from .system_model_config import SystemModelConfig, SystemModelConfigSchema, UpdateSystemModelConfigSchema, SystemModelConfigCollectionSchema
 from .user_model_config import UserModelConfig, UserModelConfigSchema, UserModelConfigIdSchema, UpdateUserModelConfigSchema, UserModelConfigCollectionSchema
 from .user import User, UserSchema
+from .idp import SymmetricIdp, AsymmetricIdp
 
 __all__ = [
     'AbstractModel', 

@@ -1,9 +1,12 @@
 import re
 from datetime import datetime
-from typing import List
-from pydantic import field_validator
+from typing import List, Dict, Any
+from pydantic import field_validator, model_validator
+from fastapi import Request
 from ..logger import logger
 from .mongo_schema import ChatSchema, Field
+
+_APP_ENV = ['prod', 'stage', 'stg']
 
 class JWTToken(ChatSchema):
     app: str = Field(description='JWT app attribute')
@@ -12,6 +15,7 @@ class JWTToken(ChatSchema):
     roles: List[str] = Field(description='LDAP group entries')
     exp: datetime = Field(description='JWT token expiration time')
     iat: datetime = Field(description='JWT token iat time')
+    req: Request = Field(description='Request object')
 
     class Config:
         frozen = True
@@ -20,7 +24,7 @@ class JWTToken(ChatSchema):
     @classmethod
     def validate_sub(cls, value: str) -> str:
         return value.lower()
-    
+
     @field_validator('roles', mode='before')
     @classmethod
     def validate_roles(cls, value: List[str] | str) -> List[str]:
@@ -52,6 +56,19 @@ class JWTToken(ChatSchema):
     #     if 'sub' not in v and 'roles' not in v and 'exp' not in v and 'iat' not in v:
     #         raise ValueError('Missing attributes are required')
     #     return v
+    
+    @model_validator('aud', mode='before')
+    @classmethod
+    def validate_aud(cls, values: Dict[str: Any]) -> Dict[str: Any]:
+        req: Request = values['req']
+        host = req.url.hostname
+        if not host or 'cluster.local' in host:
+            raise ValueError(f'expected valid host, got {host}')
+        
+        if any(keyword in host for keyword in _APP_ENV) and values['aud'] != host:
+                raise ValueError(f'JWT Audience {values['aud']} does not match host')
+
+        return values
     
     def is_expired(self) -> bool:
         return datetime.now() > self.exp
