@@ -10,7 +10,7 @@ from .system_embedding_config import SystemEmbeddingConfig, SystemEmbeddingConfi
 from .system_model_config import SystemModelConfig, SystemModelConfigSchema, UpdateSystemModelConfigSchema, SystemModelConfigCollectionSchema
 from .user_model_config import UserModelConfig, UserModelConfigSchema, UserModelConfigIdSchema, UpdateUserModelConfigSchema, UserModelConfigCollectionSchema
 from .user import User, UserSchema
-from .idp import SymmetricIdp, AsymmetricIdp
+from .idp import fetch_public_key
 
 __all__ = [
     'AbstractModel', 
@@ -48,4 +48,5 @@ __all__ = [
     'UserModelConfigCollectionSchema',
     'User', 
     'UserSchema',
+    'fetch_public_key',
 ]

@@ -1,3 +1,4 @@
+import os
 import json
 import requests
 from pathlib import Path
@@ -7,6 +8,10 @@ from jwt.algorithms import RSAAlgorithm
 from abc import ABC, abstractmethod
 from pydantic import Field, HttpUrl, field_validator
 from .mongo_schema import ChatSchema
+
+def fetch_public_key() -> str:
+    idp = AsymmetricIdp(**json.loads(os.getenv('IDP')))
+    return idp.get_key()
 
 class Idp(ChatSchema, ABC):
     source: Literal['microsoft_entra','forgerock']
@@ -33,6 +38,7 @@ class SymmetricIdp(Idp):
         return self.secret
 
 class AsymmetricIdp(Idp):
+    source: str
     algorithm: Literal['RS256']
     key_source: Literal['file', 'url'] = Field(..., description='The source of the public key')
     public_key: Optional[Path] = Field(description='Path to the public key file if key_source is file', default=None)
@@ -63,7 +69,8 @@ class AsymmetricIdp(Idp):
     def _load_key_from_file(self) -> str:
         if not self.public_key or not self.public_key.exists():
             raise FileNotFoundError(f'Public key file not found: {self.public_key}')
-        return self.public_key.read_text()
+        
+        return self.public_key.read_bytes()
 
     def _load_key_from_url(self) -> str:
         jwks = requests.get(str(self.public_key_url)).json()

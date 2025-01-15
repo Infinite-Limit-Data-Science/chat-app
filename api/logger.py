@@ -1,10 +1,12 @@
 import os
 import logging
 from .langchain_logging import LangchainLogger
-from .middleware import user_uuid_var
 import warnings
+from contextvars import ContextVar
 
 warnings.filterwarnings("ignore", category=UserWarning, module="pydantic", message=r"^Pydantic serializer warnings:\s+Expected `str` but got `ObjectId`")
+
+user_uuid_var = ContextVar('user_uuid')
 
 class UserUUIDFilter(logging.Filter):
     def filter(self, record):

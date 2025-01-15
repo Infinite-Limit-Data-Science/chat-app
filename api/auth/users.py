@@ -1,7 +1,6 @@
 from fastapi import Request
 from ..models.user import User, UserSchema
 from ..models.setting import Setting, SettingSchema
-from ..models.jwt_token import JWTToken as Token
 from ..repositories.base_mongo_repository import base_mongo_factory as factory
 from ..routes.configs import refresh_model_configs, load_system_model_config
 

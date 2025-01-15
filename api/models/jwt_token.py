@@ -2,7 +2,6 @@ import re
 from datetime import datetime
 from typing import List, Dict, Any
 from pydantic import field_validator, model_validator
-from fastapi import Request
 from ..logger import logger
 from .mongo_schema import ChatSchema, Field
 
@@ -15,7 +14,9 @@ class JWTToken(ChatSchema):
     roles: List[str] = Field(description='LDAP group entries')
     exp: datetime = Field(description='JWT token expiration time')
     iat: datetime = Field(description='JWT token iat time')
-    req: Request = Field(description='Request object')
+    host: str = Field(description='Request hostname')
+    mail: str = Field(description='Email of user')
+    displayname: str = Field(description='Display name of user')
 
     class Config:
         frozen = True
@@ -57,11 +58,10 @@ class JWTToken(ChatSchema):
     #         raise ValueError('Missing attributes are required')
     #     return v
     
-    @model_validator('aud', mode='before')
+    @model_validator(mode='before')
     @classmethod
-    def validate_aud(cls, values: Dict[str: Any]) -> Dict[str: Any]:
-        req: Request = values['req']
-        host = req.url.hostname
+    def validate_aud(cls, values: Dict[str, Any]) -> Dict[str, Any]:
+        host = values['host']
         if not host or 'cluster.local' in host:
             raise ValueError(f'expected valid host, got {host}')
         

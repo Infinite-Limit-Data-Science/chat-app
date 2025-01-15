@@ -1,20 +1,13 @@
 import os
-import json
 from datetime import datetime, timedelta
 import jwt
 from jwt import DecodeError
-from contextvars import ContextVar
 import requests
 from requests.auth import HTTPBasicAuth
 from fastapi import Request, HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
-from .models import AsymmetricIdp
-
-user_uuid_var = ContextVar('user_uuid')
-
-def fetch_secret_key() -> str:
-    idp = AsymmetricIdp(**json.loads(os.getenv('IDP')))
-    return idp.get_key()
+from .models import fetch_public_key
+from .logger import user_uuid_var
 
 class MultiAuthorizationMiddleware(BaseHTTPMiddleware):
     """Middleware to capture only the first valid Bearer token Authorization header, removing 'undefined' headers."""
@@ -33,7 +26,12 @@ class MultiAuthorizationMiddleware(BaseHTTPMiddleware):
 
             try:
                 token = authorization.decode('utf-8').split('Bearer ')[1]
-                decoded_jwt = jwt.decode(token, fetch_secret_key(), options={'verify_signature': True})
+                decoded_jwt = jwt.decode(
+                    token, 
+                    fetch_public_key(), 
+                    algorithms=["RS256"], 
+                    options={'verify_signature': True, "verify_aud": False}
+                )
                 user_uuid = decoded_jwt.get('sub', 'N/A')
                 user_uuid_var.set(user_uuid)
             except DecodeError:
