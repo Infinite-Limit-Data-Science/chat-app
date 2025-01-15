@@ -20,6 +20,8 @@ class User(AbstractModel):
 class UserSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):
     uuid: str = Field(alias="sessionId", description='Unique identifer working across LDAP, ForgeRock, Microsoft Azure Entra ID, and AWS IAM Identity Center', frozen=True)
     roles: Optional[List[str]] = Field(description='Represents LDAP Roles, Entra ID Roles, or IAM Roles', frozen=True, default_factory=list)
+    mail: str = Field(description='email of user', frozen=True)
+    displayname: str = Field(description='display name of the user', frozen=True)
 
     class Config:
         from_attributes = True

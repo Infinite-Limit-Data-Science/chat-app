@@ -52,10 +52,32 @@ async def get_current_user(
     token_credentials: Tuple[Token, str] = Depends(validate_jwt)
 ) -> UserSchema:
     token, session = token_credentials
-    if (
-        user_attributes := await UserRepo.find_one(options={CURRENT_UUID_NAME: token.sub}) 
-    ) is None:
-        user_attributes = await UserRepo.create(schema=UserSchema(uuid=token.sub, roles=token.roles))
+    user_attributes = await UserRepo.find_one(options={CURRENT_UUID_NAME: token.sub})
+
+    if user_attributes is None:
+        user_attributes = await UserRepo.create(
+            schema=UserSchema(
+                uuid=token.sub, 
+                roles=token.roles, 
+                mail=token.mail, 
+                displayname=token.displayname
+            )
+        )
+    else:
+        fields_to_update = {}
+    
+        if not user_attributes.get('mail'):
+            fields_to_update["mail"] = token.mail
+    
+        if not user_attributes.get('displayname'):
+            fields_to_update['displayname'] = token.displayname
+    
+        if fields_to_update:
+            await UserRepo.update_one(
+                user_attributes.get('_id'),
+                update=fields_to_update
+            )
+
     user = await fetch_user(user_attributes)
     logger.info(f'User found {user_attributes}')
     request.state.session_id = get_session_id(session)
