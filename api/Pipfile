@@ -25,6 +25,7 @@ protobuf = "*"
 sentencepiece = "*"
 nltk = "*"
 cryptography = "*"
+pandas = "*"
 
 [dev-packages]
 pytest = "*"
