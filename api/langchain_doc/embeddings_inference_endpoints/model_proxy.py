@@ -4,6 +4,7 @@ from typing import List
 from .embedding import BaseEmbedding
 from ..logger import logger
 
+# TODO: I DONT NEED THIS AS HuggingFace InferenceClient supports its own health checks!
 class ModelProxy:
     def __init__(self, models: List[BaseEmbedding]) -> None:
         self.models = models

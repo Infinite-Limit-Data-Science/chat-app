@@ -11,7 +11,7 @@ class EndpointDict(TypedDict):
     type: str
 
 @dataclass
-class BaseEmbedding:
+class BaseInferenceEndpoint:
     name: str
     description: str
     task: str

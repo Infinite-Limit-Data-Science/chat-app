@@ -12,7 +12,7 @@ async def ingest_files(
     data: dict,
 ) -> Tuple[List[VectorStoreRetriever], List[str]]:
     if not (vector_store := os.getenv('VECTOR_STORE')):
-        raise ValueError('Expected `REDIS_STORE` to be defined')
+        raise ValueError('Expected `VECTOR_STORE` to be defined')
     
     data = {
         **data,

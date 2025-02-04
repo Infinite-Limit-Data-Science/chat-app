@@ -5,3 +5,4 @@ README-local.md
 routes/tests.py
 /api/etc
 .pytest_cache
+__pycache__
