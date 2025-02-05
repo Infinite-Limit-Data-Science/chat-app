@@ -1,1 +1,0 @@
-# I have to create my own class because the HuggingFaceEndpointEmbeddings Class has a hard dependency on the post method of InferenceClient which is deprecated

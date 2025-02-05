@@ -1,4 +1,4 @@
-from ..embedding_models.hf_tei import HFTEI
+from ..embeddings_inference_endpoints.huggingface_tei import HuggingFaceTextEmbeddingsInference
 
 attributes = {
     'name': 'BAAI/bge-large-en-v1.5',
@@ -15,7 +15,7 @@ attributes = {
 }
 
 def test_huggingface_tei():
-    tei = HFTEI(**attributes)
+    tei = HuggingFaceTextEmbeddingsInference(**attributes)
     embeddings = tei.endpoint_object
     query_result = embeddings.embed_query('What did the bra say to the hat?')
     assert query_result == [0.002]
