@@ -8,12 +8,13 @@ from typing import (
     List, 
     Iterable,
     Literal, 
-    overload
+    overload,
+    runtime_checkable
 )
 from typing_extensions import Doc
 from urllib.parse import urlparse
 import numpy as np
-from pydantic import model_validator, field_validator, Field
+from pydantic import model_validator, field_validator, Field, ConfigDict
 from huggingface_hub.inference._generated.types import (
     ChatCompletionOutput, 
     ChatCompletionStreamOutput,
@@ -23,8 +24,11 @@ from huggingface_hub.inference._generated.types import (
     ChatCompletionInputToolChoiceEnum,
     ChatCompletionInputTool
 )
-from .inference_schema import InferenceSchema
+from huggingface_hub.inference._providers import get_provider_helper
+from huggingface_hub.inference._common import _import_numpy, _bytes_to_dict
+from .inference_schema import HuggingFaceTEIMixin
 
+@runtime_checkable
 class HuggingFaceInferenceLike(Protocol):
     def chat_completion(
         self,
@@ -205,28 +209,56 @@ class HuggingFaceInferenceLike(Protocol):
 
     def feature_extraction(
         self,
-        text: str,
+        texts: str | List[str],
         *,
         normalize: Optional[bool] = None,
         prompt_name: Optional[str] = None,
         truncate: Optional[bool] = None,
         truncation_direction: Optional[Literal["Left", "Right"]] = None,
-    ) -> "np.ndarray":
+    ) -> Annotated["np.ndarray", Doc('The returned embedding represents the input text as a float32 numpy array.')]:
         """
         Args:
-            text (`str`):
+            texts (`str`, `List[str]`):
                 The text to embed.
-                                    
+            normalize (`bool`, *optional*):
+                Whether to normalize the embeddings or not.
+                Only available on server powered by Text-Embedding-Inference.
+                Determines whether the returned embedding vectors should be normalized (i.e., converted to unit length).
+                Normalization ensures that the output embedding vectors have a unit norm (i.e., their magnitude is 1). 
+                This is done using L2 normalization
+            prompt_name (`str`, *optional*):
+                The name of the prompt that should be used by for encoding. If not set, no prompt will be applied.
+                Used to prepend a specific prompt template before encoding the input text. 
+                This is mainly used with models that support customized prompt formats, such as those trained with Sentence Transformers.
+                The prompt_name tells the model to apply a predefined template before encoding the text.
+                For example, if the model is trained with prompts for queries and documents, 
+                you might want different representations of the same text depending on whether it's a query (short search phrase) or a document (longer context).
+                Example:
+                embedding_query = client.feature_extraction("What is AI?", prompt_name="query")
+                The input "What is AI?" will be transformed to "query: What is AI?" before embedding
+                embedding_document = client.feature_extraction("What is AI?", prompt_name="document")
+                The input "What is AI?" will be transformed to "document: What is AI?" before embedding.
+            truncate
+                Whether to truncate the embeddings or not.
+                Whether to truncate (cut off) input text if it exceeds the model's maximum token limit.
+                Most text embedding models (such as BAAI/bge-large-en-v1.5) have a fixed token limit (e.g., 512 tokens).
+                If an input text exceeds this limit, the model cannot process the extra tokens.
+                If truncate=True, the model automatically cuts the text down to the allowed length before embedding.
+                Only available on server powered by Text-Embedding-Inference.
+            truncation_direction (`Literal["Left", "Right"]`, *optional*):
+                Which side of the input should be truncated when `truncate=True` is passed.        
         """
         ...
 
-
-class HuggingFaceBaseInferenceClient(InferenceSchema):
-    base_url: str = Field(description='The base url of the self-hosted Inference Endpoint. Do not specify URL segments like /embed or /chat/completions.')
-    credentials: str = Field(description='The authentication token, can be a bearer token or any other form of token represented as a string type.')
-    timeout: Optional[float] = Field(description='Maximum number of seconds to wait for a response. Default of None means it will wait until server available', default=None)
-    headers: Optional[Dict[str, str]] = Field(description='Additional headers to send to the server. By default only the authorization and user-agent headers are sent.', default=None)
+class HuggingFaceBaseInferenceClient(HuggingFaceTEIMixin):
     client: Optional[HuggingFaceInferenceLike] = Field(description='A low-level Inference Client that implements the HuggingFaceInferenceLike protocol', default=None)
+    async_client: Optional[HuggingFaceInferenceLike] = Field(description='A low-level Async Inference Client that implements the HuggingFaceInferenceLike protocol', default=None)
+
+    model_config = ConfigDict(
+        extra='forbid',
+        protected_namespaces=(),
+        arbitrary_types_allowed=True
+    )
 
     @field_validator('base_url')
     @classmethod
@@ -241,17 +273,27 @@ class HuggingFaceInferenceClient(HuggingFaceBaseInferenceClient):
     def validate_environment(self) -> Self:
         try:
             from huggingface_hub import (
-                InferenceClient
+                InferenceClient, 
+                AsyncInferenceClient
             )
 
             client = InferenceClient(
-                base_url=self.base_url,
+                model=self.base_url,
                 api_key=self.credentials,
                 timeout=self.timeout,
                 headers=self.headers
             )
 
             self.client = client
+
+            async_client = AsyncInferenceClient(
+                base_url=self.base_url,
+                api_key=self.credentials,
+                timeout=self.timeout,
+                headers=self.headers
+            )
+
+            self.async_client = async_client
         except ImportError:
             raise ImportError(
                 "Could not import huggingface_hub python package. "
@@ -375,35 +417,27 @@ class HuggingFaceInferenceClient(HuggingFaceBaseInferenceClient):
 
     def feature_extraction(
         self,
-        text: str,
+        texts: str | List[str],
         *,
         normalize: Optional[bool] = None,
         prompt_name: Optional[str] = None,
         truncate: Optional[bool] = None,
         truncation_direction: Optional[Literal["Left", "Right"]] = None,
     ) -> "np.ndarray":
-        
+        provider_helper = get_provider_helper('hf-inference', task='feature-extraction')
+        request_parameters = provider_helper.prepare_request(
+            inputs=texts,
+            parameters={
+                "normalize": normalize,
+                "prompt_name": prompt_name,
+                "truncate": truncate,
+                "truncation_direction": truncation_direction,
+            },
+            headers=self.headers or {},
+            model=self.base_url,
+            api_key=self.credentials,
+        )
 
-class HuggingFaceAsyncInferenceClient(HuggingFaceBaseInferenceClient):
-    @model_validator(mode="after")
-    def validate_environment(self) -> Self:
-        try:
-            from huggingface_hub import (
-                AsyncInferenceClient
-            )
-
-            client = AsyncInferenceClient(
-                base_url=self.base_url,
-                api_key=self.credentials,
-                timeout=self.timeout,
-                headers=self.headers
-            )
-
-            self.client = client
-        except ImportError:
-            raise ImportError(
-                "Could not import huggingface_hub python package. "
-                "Please install it with `pip install huggingface_hub`."
-            )
-        
-        return self
+        response = self.client._inner_post(request_parameters)
+        np = _import_numpy()
+        return np.array(_bytes_to_dict(response), dtype="float32")

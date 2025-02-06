@@ -1,54 +1,10 @@
-from typing import TypeAlias, TypeVar, Generic
-from pydantic import BaseModel
+from typing import TypeAlias, Optional, Dict
+from pydantic import BaseModel, Field
 
 InferenceSchema: TypeAlias = BaseModel
 
-T = TypeVar('T')
-K = TypeVar('K')
-V = TypeVar('V')
-
-
-
-from typing import Protocol, Annotated
-from typing_extensions import Doc
-
-class FileLike(Protocol):
-    @property
-    def filename(self) -> Annotated[str, Doc('Name of binary object')]:
-        ...
-    
-    @property
-    def file(self) -> Annotated[BinaryIO, Doc('Binary object')]:
-        ...
-
-
-Sequence, 
-TypeVar,
-
-T = TypeVar('T')
-def func(l: List[T]) -> T:
-    pass
-
-class MyStuff(Generic[T])
-    
-Subclassing the Generic Type
-
-
-alternative constructor
-@classmethod
-def from_string(cls, emp_str)
-    first, last = empl_str.split('-')
-    cls(first, last)
-
-@staticmethod
-
-__repr__(self)
-
-__str__(self)
-
-def __add__
-
-def __len__
-
-@overload (and true overloading can be done with metaclasses), Note typing class has @overload for static typing
-
+class HuggingFaceTEIMixin(InferenceSchema):
+    base_url: str = Field(description='The base url of the self-hosted Inference Endpoint. Do not specify URL segments like /embed or /chat/completions.')
+    credentials: str = Field(description='The authentication token, can be a bearer token or any other form of token represented as a string type.')
+    timeout: Optional[float] = Field(description='Maximum number of seconds to wait for a response. Default of None means it will wait until server available', default=None)
+    headers: Optional[Dict[str, str]] = Field(description='Additional headers to send to the server. By default only the authorization and user-agent headers are sent.', default=None)
