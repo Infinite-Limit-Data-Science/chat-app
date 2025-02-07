@@ -2,6 +2,7 @@ import pytest
 from ..huggingface_inference_client import HuggingFaceInferenceClient
 from ..huggingface_transformer_tokenizers import BgeLargePretrainedTokenizer
 
+# TODO: start with cleaning up this and then add the async methods and then the example selectors in the dataframe expression tool tests
 attributes = {
     'name': 'BAAI/bge-large-en-v1.5',
     'endpoint': {'url':'http://100.28.34.190:8070/', 'type':'tei'},

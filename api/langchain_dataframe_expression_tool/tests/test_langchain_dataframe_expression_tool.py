@@ -6,6 +6,11 @@ from ...langchain_chat import FACTORIES as LLM_FACTORIES
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 
+from langchain_core.example_selectors import (
+    MaxMarginalRelevanceExampleSelector,
+    SemanticSimilarityExampleSelector,
+)
+
 @pytest.fixture
 def pandas_dataframe():
     data = {

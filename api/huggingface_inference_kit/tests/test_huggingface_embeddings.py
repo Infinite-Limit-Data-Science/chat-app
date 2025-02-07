@@ -1,19 +1,14 @@
 import pytest
 import os
-from typing import List
+from typing import List, Iterator
 from langchain_core.documents import Document
+from langchain_redis import RedisConfig
+from langchain_redis import RedisVectorStore
+from redisvl.query.filter import Tag
 from ..huggingface_embeddings import HuggingFaceEmbeddings
 from ..huggingface_transformer_tokenizers import BgeLargePretrainedTokenizer 
 from ...langchain_chunkinator import Chunkinator
 from .corpus import dummy_corpus1
-
-from langchain_redis import RedisConfig
-from langchain_redis import RedisVectorStore
-
-from langchain_core.example_selectors import (
-    MaxMarginalRelevanceExampleSelector,
-    SemanticSimilarityExampleSelector,
-)
 
 attributes = {
     'name': 'BAAI/bge-large-en-v1.5',
@@ -41,7 +36,7 @@ class ConcreteEmbeddingLike:
 
 @pytest.fixture
 def chunks() -> List[str]:
-    documents = [Document(page_content=dummy_corpus1)]
+    documents = [Document(page_content=dummy_corpus1, metadata={'source': 'book'})]
     chunkinator = Chunkinator.Base(documents, ConcreteEmbeddingLike())
     return chunkinator.chunk() 
 
@@ -60,7 +55,7 @@ def tokenizer() -> BgeLargePretrainedTokenizer:
 def vectorstore(
     embeddings: HuggingFaceEmbeddings, 
     tokenizer: BgeLargePretrainedTokenizer
-) -> RedisVectorStore:
+) -> Iterator[RedisVectorStore]:
     # TODO: need to create a cleaner wrapper class for redis vectorstore
     config = RedisConfig(
         index_name="test1",
@@ -72,9 +67,14 @@ def vectorstore(
         embedding_dimensions=tokenizer.dimensions
     )
 
-    return RedisVectorStore(embeddings, config=config)
+    store = RedisVectorStore(embeddings, config=config)
 
-@pytest.mark.skip(reason="Temporarily disabled for debugging")
+    yield store
+
+    store.index.clear()
+    store.index.delete(drop=True)
+
+# @pytest.mark.skip(reason="Temporarily disabled for debugging")
 def test_embed_documents(embeddings: HuggingFaceEmbeddings):
     """
     Embeds text as high-dimensional vectors using the lower level 
@@ -105,12 +105,10 @@ def test_embed_documents(embeddings: HuggingFaceEmbeddings):
     embedded_vectors = embeddings.embed_documents([dummy_corpus1])
     assert len(embedded_vectors) > 0
 
-@pytest.mark.skip(reason="Temporarily disabled for debugging")
 def test_embed_multiple_documents(embeddings: HuggingFaceEmbeddings):
     embedded_vectors = embeddings.embed_documents([dummy_corpus1, dummy_corpus1.upper()])
     assert len(embedded_vectors) > 0
 
-@pytest.mark.skip(reason="Temporarily disabled for debugging")    
 def test_embed_query(embeddings: HuggingFaceEmbeddings):
     """
     Takes a single query text. In effect, this returns a single
@@ -119,7 +117,6 @@ def test_embed_query(embeddings: HuggingFaceEmbeddings):
     embedded_vectors = embeddings.embed_query(dummy_corpus1)
     assert len(embedded_vectors) > 0
 
-@pytest.mark.skip(reason="Temporarily disabled for debugging")
 def test_embed_documents_in_vector_db(vectorstore: RedisVectorStore):
     """
     Search over unstructured data embedded in vector database
@@ -135,39 +132,35 @@ def test_embed_documents_in_vector_db(vectorstore: RedisVectorStore):
     assert ids[0].startswith('test1')
 
 def test_embed_documents_with_similarity_search(vectorstore: RedisVectorStore, chunks: List[str]):
+    """
+    Use vector store to store embeddings in a database. This internally 
+    invokes the embeddings class to generate the embeddings and, thus,
+    goes out to the TEI. The returned vectors are stored in a Redis
+    field which defaults to the name "embedding". The embeddings, the
+    original text, and metadata are all stored together in a Redis hash
+    type, which olds the following structure:
+
+    "index_name"
+    "type", "HASH",
+    "fields", [
+        "text", "TEXT",
+        "embedding", "VECTOR HNSW 1024 FLOAT32",
+        "metadata_field", "TAG"
+    ]
+
+    The Redis storage type of the vector field is either JSON or hash.
+    """
     vectorstore.add_documents(chunks)
     query = "What did King Ulfric Stormborn do in 879"
-    results = vectorstore.similarity_search(query, k=2)
-    results
+    results = vectorstore.similarity_search(
+        query, 
+        k=2, 
+        filter=Tag('source') == 'book'
+    )
+    assert len(results) == 2
 
-
-            # texts = [doc.page_content for doc in documents]
-            # metadatas = [doc.metadata for doc in documents]
-            # return self.add_texts(texts, metadatas, **kwargs)
-
-            # embeddings = self._embeddings.embed_documents(texts_list)
-
-            # def embed_documents(self, texts: List[str], **feat_extract_kwargs) -> List[List[float]]:
-       
-            # texts = [text.replace("\n", " ") for text in texts]
-            # texts = texts[0] if len(texts) == 1 else texts
-            # embeddings = self.client.feature_extraction(texts, **feat_extract_kwargs).tolist() 
-      
-        #             request_parameters = provider_helper.prepare_request(
-        #     inputs=texts,
-        #     parameters={
-        #         "normalize": normalize,
-        #         "prompt_name": prompt_name,
-        #         "truncate": truncate,
-        #         "truncation_direction": truncation_direction,
-        #     },
-        #     headers=self.headers or {},
-        #     model=self.base_url,
-        #     api_key=self.credentials,
-        # )
-
-        # response = self.client._inner_post(request_parameters)
-
-# Similarity Selector
-# Max Marginal Relevance (MMR) Selector
-# N-gram Overlap Selector    
+def test_max_marginal_relevance_selector():
+    # Similarity Selector
+    # Max Marginal Relevance (MMR) Selector
+    # N-gram Overlap Selector  
+    pass  
