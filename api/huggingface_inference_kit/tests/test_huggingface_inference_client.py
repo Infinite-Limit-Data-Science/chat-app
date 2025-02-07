@@ -26,26 +26,70 @@ def bge() -> BgeLargePretrainedTokenizer:
 
 @pytest.fixture
 def corpus() -> str:
-    documents = """
+    text = """
     The quick brown fox jumps over the lazy dog near the riverbank. 
     As the sun set, the sky turned shades of orange and pink, casting a golden glow on the water. 
     Birds chirped melodiously in the background while a gentle breeze rustled the leaves.
     """
-    return documents
+    return text
 
 def test_inference_client_feature_extraction(inference_client: HuggingFaceInferenceClient, corpus: str):
+    """
+    Invokes the feature-extraction task of the HuggingFace TEI. Note
+    this expects the TEI is running in a self-hosted environment.
+    A single text or a list of texts are accepted for embedding.
+    Internally calls InferenceClient of langchain_huggingface,
+    which uses the requests package to send a post request to TEI.
+
+    Note requests package has a json= parameter which will be sent 
+    as part of post request to TEI. The format of the json field changes  
+    whether using a single text or list of texts:
+
+    single text: '{"inputs":"What is Deep Learning?"}'
+    list of texts: '{"inputs":["Today is a nice day", "I like you"]}'
+    
+    The json= parameter takes a dictionary and it internally gets converted 
+    to an actual json string
+
+    TEI returns a byte string of high-dimensional vectors from the requests 
+    package post request.
+    Example: b'[[0.006687683,-0.02827644,0.021200065,-0.006164584, ... ]'
+
+    Curl examples:
+
+    curl 127.0.0.1:8080/embed \
+        -X POST \
+        -d '{"inputs":"What is Deep Learning?"}' \
+        -H 'Content-Type: application/json'
+    curl 127.0.0.1:8080/embed \
+        -X POST \
+        -d '{"inputs":["Today is a nice day", "I like you"]}' \
+        -H 'Content-Type: application/json'    
+
+    Note the InferenceClient doesn't append /embed but rather specifies
+    the task 'feature_extraction'
+        
+    feature_extract converts the bytes to a numpy array of dtype float32. 
+    These floats are representations of dense numerical vectors of the 
+    original input text. If there were six inputs of text, then there will 
+    be 6 arrays of floats returned. Each array will be of size 1024, if 
+    the dimensions of the model are 1024, such as in BGE-Large. In effect,
+    each array is a vector.
+
+    In the case of BGE-Large and most modern embedding models, the entire 
+    query text is converted into a single vector representation rather than 
+    breaking it into individual word vectors like word2vec or TF-IDF.
+
+    Unlike traditional word embeddings (like word2vec), BGE-Large and 
+    transformer-based models use contextual embeddings where the meaning 
+    of a word depends on the surrounding words. The model processes the 
+    entire query as a sequence and outputs a single vector representing 
+    the meaning of the whole query.
+    """
     embeddings = inference_client.feature_extraction(corpus)
     assert embeddings.dtype == 'float32'
 
 def test_inference_client_feature_extraction_trunc(inference_client: HuggingFaceInferenceClient, corpus: str, bge: BgeLargePretrainedTokenizer):
-    """
-    feature_extract returns dense numerical vector representations of the input text
-    Depending on the model used, each vector will have a specified number of dimensions
-    For example, each vector of bge-large will have 1024 features
-
-    The return value is a numpy array which contains the 1024 features 
-    of the first vector of the embeddings
-    """
     corpus = " ".join([corpus] * 10)
     embeddings = inference_client.feature_extraction(corpus, truncate=True)
 
@@ -53,14 +97,24 @@ def test_inference_client_feature_extraction_trunc(inference_client: HuggingFace
 
 def test_inference_client_feature_extraction_not_tokens(inference_client: HuggingFaceInferenceClient, corpus: str, bge: BgeLargePretrainedTokenizer):
     """
-    The output of feature_extraction() is not tokenized text, 
-    but rather dense numerical vector representations of the input text.
-    feature_extraction returns a high-dimensional vector (1024 features for BGE-Large).
+    The output of feature_extraction() is not tokens of text, 
+    but rather dense numerical vector representations of the 
+    input text.
     
-    The tokenizer converts text into token IDs.
-    These numbers are indices in the tokenizer's vocabulary. 
+    feature_extraction returns a high-dimensional vector 
+    (1024 features for BGE-Large).
+    
+    The tokenizer converts text into token IDs. The token ids 
+    are indices in the tokenizer's vocabulary. But that's not 
+    what is returned here. 
     
     Hence, the vectors do not correspond to token IDs
+
+    As such, you cannot directly do anything with the vectors. 
+    You cannot convert them back into tokens or text. You can, 
+    however, embed a query and then use the vectors of that 
+    query to find semantically similar vectors from the original 
+    text.
     """
     tokens  = bge.tokenizer.encode(corpus, add_special_tokens=True)
     embeddings = inference_client.feature_extraction(corpus, truncate=True)

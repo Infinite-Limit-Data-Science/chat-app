@@ -44,20 +44,7 @@ class HuggingFaceEmbeddings(HuggingFaceBaseEmbeddings):
         return self    
 
     def embed_documents(self, texts: List[str], **feat_extract_kwargs) -> List[List[float]]:
-        """
-        Embeds text as high-dimensional vectors
-        TEI supports both single input and multiple inputs in a batch:
-        curl 127.0.0.1:8080/embed \
-            -X POST \
-            -d '{"inputs":"What is Deep Learning?"}' \
-            -H 'Content-Type: application/json'
-        curl 127.0.0.1:8080/embed \
-            -X POST \
-            -d '{"inputs":["Today is a nice day", "I like you"]}' \
-            -H 'Content-Type: application/json'
-        
-        Replace newlines, which can negatively affect performance.
-        """
+        #  Replace newlines, which can negatively affect performance.
         texts = [text.replace("\n", " ") for text in texts]
         texts = texts[0] if len(texts) == 1 else texts
         embeddings = self.client.feature_extraction(texts, **feat_extract_kwargs).tolist() 
