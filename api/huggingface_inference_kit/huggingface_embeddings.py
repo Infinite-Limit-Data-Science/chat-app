@@ -3,10 +3,10 @@ from urllib.parse import urlparse
 from langchain_core.embeddings import Embeddings
 from pydantic import ConfigDict, Field, field_validator, model_validator
 from typing_extensions import Self
-from .inference_schema import HuggingFaceTEIMixin
+from .inference_schema import HuggingFaceInferenceServerMixin
 from .huggingface_inference_client import HuggingFaceInferenceLike, HuggingFaceInferenceClient
 
-class HuggingFaceBaseEmbeddings(HuggingFaceTEIMixin, Embeddings):
+class HuggingFaceBaseEmbeddings(HuggingFaceInferenceServerMixin, Embeddings):
     client: Optional[HuggingFaceInferenceLike] = Field(description='Low-level Inference Client to interface to the self-hosted HF TEI Server', default=None)
 
     model_config = ConfigDict(
@@ -52,4 +52,15 @@ class HuggingFaceEmbeddings(HuggingFaceBaseEmbeddings):
     
     def embed_query(self, text: str) -> List[float]:
         embedding = self.embed_documents([text])[0]
+        return embedding
+    
+    async def aembed_documents(self, texts: List[str], **feat_extract_kwargs) -> List[List[float]]:
+        #  Replace newlines, which can negatively affect performance.
+        texts = [text.replace("\n", " ") for text in texts]
+        texts = texts[0] if len(texts) == 1 else texts
+        embeddings = (await self.client.afeature_extraction(texts, **feat_extract_kwargs)).tolist()
+        return embeddings
+    
+    async def aembed_query(self, text: str) -> List[float]:
+        embedding = (await self.aembed_documents([text]))[0]
         return embedding

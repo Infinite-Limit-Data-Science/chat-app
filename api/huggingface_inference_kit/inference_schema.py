@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 
 InferenceSchema: TypeAlias = BaseModel
 
-class HuggingFaceTEIMixin(InferenceSchema):
+class HuggingFaceInferenceServerMixin(InferenceSchema):
     base_url: str = Field(description='The base url of the self-hosted Inference Endpoint. Do not specify URL segments like /embed or /chat/completions.')
     credentials: str = Field(description='The authentication token, can be a bearer token or any other form of token represented as a string type.')
     timeout: Optional[float] = Field(description='Maximum number of seconds to wait for a response. Default of None means it will wait until server available', default=None)

@@ -9,7 +9,8 @@ from typing import (
     Iterable,
     Literal, 
     overload,
-    runtime_checkable
+    runtime_checkable,
+    AsyncIterable
 )
 from typing_extensions import Doc
 from urllib.parse import urlparse
@@ -25,8 +26,8 @@ from huggingface_hub.inference._generated.types import (
     ChatCompletionInputTool
 )
 from huggingface_hub.inference._providers import get_provider_helper
-from huggingface_hub.inference._common import _import_numpy, _bytes_to_dict
-from .inference_schema import HuggingFaceTEIMixin
+from huggingface_hub.inference._common import _import_numpy, _bytes_to_dict, RequestParameters
+from .inference_schema import HuggingFaceInferenceServerMixin
 
 @runtime_checkable
 class HuggingFaceInferenceLike(Protocol):
@@ -36,6 +37,7 @@ class HuggingFaceInferenceLike(Protocol):
         *,
         stream: Optional[bool] = False,
         frequency_penalty: Optional[float] = None,
+        logit_bias: Optional[List[float]] = None,
         logprobs: Optional[bool] = None,
         max_tokens: Optional[int] = None,
         num_generations: Optional[int] = None,
@@ -67,9 +69,20 @@ class HuggingFaceInferenceLike(Protocol):
             frequency_penalty (`float`, *optional*):
                 Number between -2.0 and 2.0. Positive values penalize new tokens based on their existing frequency in
                 the text so far, decreasing the model's likelihood to repeat the same line verbatim.
+            logit_bias (`List[float]`, *optional*):
+                Increase or decrease the likelihood of specific tokens appearing in the generated output. 
+                It works by directly modifying the model's logits (the raw probability scores before applying the softmax function).
+                It is a list of floats, where each value corresponds to a token ID (from the tokenizer).
+                Positive values increase the probability of a token appearing.
+                Negative values decrease the probability of a token appearing.
+                A value of -100 or lower strongly suppresses a token.
+                A value of 100 or higher strongly forces a token to appear.
+                Example: logit_bias={2021: 10.0} where 2021 is a token id
             logprobs (`bool`, *optional*):
                 Whether to return log probabilities of the output tokens or not. If true, returns the log
                 probabilities of each output token returned in the content of message.
+                The higher the log probability (closer to 0 in log scale), the more confident the model was in selecting that token.
+                Example: Token "Viking" has 90% probability (p = 0.9); Log probability: log(0.9) ≈ -0.105
             max_tokens (`int`, *optional*):
                 Maximum number of tokens allowed in the response. 
                 That is, the maximum number of tokens that can be generated in the chat completion.
@@ -250,10 +263,41 @@ class HuggingFaceInferenceLike(Protocol):
         """
         ...
 
-class HuggingFaceBaseInferenceClient(HuggingFaceTEIMixin):
-    client: Optional[HuggingFaceInferenceLike] = Field(description='A low-level Inference Client that implements the HuggingFaceInferenceLike protocol', default=None)
-    async_client: Optional[HuggingFaceInferenceLike] = Field(description='A low-level Async Inference Client that implements the HuggingFaceInferenceLike protocol', default=None)
+    async def achat_completion(
+        self,
+        messages: List[Dict],
+        *,
+        stream: Optional[bool] = False,
+        frequency_penalty: Optional[float] = None,
+        logprobs: Optional[bool] = None,
+        max_tokens: Optional[int] = None,
+        num_generations: Optional[int] = None,
+        presence_penalty: Optional[float] = None,
+        response_format: Optional[ChatCompletionInputGrammarType] = None,
+        seed: Optional[int] = None,
+        stop: Optional[List[str]] = None,
+        stream_options: Optional[ChatCompletionInputStreamOptions] = None,
+        temperature: Optional[float] = None,
+        tools: Optional[List[ChatCompletionInputTool]] = None,
+        tool_choice: Optional[Union[ChatCompletionInputToolChoiceClass, "ChatCompletionInputToolChoiceEnum"]] = None,
+        tool_prompt: Optional[str] = None,
+        top_logprobs: Optional[int] = None,
+        top_p: Optional[float] = None,
+    ) -> Annotated[Union[ChatCompletionOutput, AsyncIterable[ChatCompletionStreamOutput]], Doc('OpenAI-compatible API for chat-based text generation')]:
+        ...
 
+    async def afeature_extraction(
+        self,
+        texts: str | List[str],
+        *,
+        normalize: Optional[bool] = None,
+        prompt_name: Optional[str] = None,
+        truncate: Optional[bool] = None,
+        truncation_direction: Optional[Literal["Left", "Right"]] = None,
+    ) -> Annotated["np.ndarray", Doc('The returned embedding represents the input text as a float32 numpy array.')]:
+        ...
+
+class HuggingFaceBaseInferenceClient(HuggingFaceInferenceServerMixin):
     model_config = ConfigDict(
         extra='forbid',
         protected_namespaces=(),
@@ -302,6 +346,31 @@ class HuggingFaceInferenceClient(HuggingFaceBaseInferenceClient):
         
         return self
 
+    def _prepare_request_params(
+        self,
+        texts: str | List[str],
+        *,
+        normalize: Optional[bool] = None,
+        prompt_name: Optional[str] = None,
+        truncate: Optional[bool] = None,
+        truncation_direction: Optional[Literal["Left", "Right"]] = None, 
+    ) -> RequestParameters:
+        provider_helper = get_provider_helper('hf-inference', task='feature-extraction')
+        request_parameters = provider_helper.prepare_request(
+            inputs=texts,
+            parameters={
+                "normalize": normalize,
+                "prompt_name": prompt_name,
+                "truncate": truncate,
+                "truncation_direction": truncation_direction,
+            },
+            headers=self.headers or {},
+            model=self.base_url,
+            api_key=self.credentials,
+        )
+
+        return request_parameters
+
     @overload
     def chat_completion(  # type: ignore
         self,
@@ -309,6 +378,7 @@ class HuggingFaceInferenceClient(HuggingFaceBaseInferenceClient):
         *,
         stream: Literal[False] = False,
         frequency_penalty: Optional[float] = None,
+        logit_bias: Optional[List[float]] = None,
         logprobs: Optional[bool] = None,
         max_tokens: Optional[int] = None,
         num_generations: Optional[int] = None,
@@ -333,6 +403,7 @@ class HuggingFaceInferenceClient(HuggingFaceBaseInferenceClient):
         *,
         stream: Literal[True] = True,
         frequency_penalty: Optional[float] = None,
+        logit_bias: Optional[List[float]] = None,
         logprobs: Optional[bool] = None,
         max_tokens: Optional[int] = None,
         num_generations: Optional[int] = None,
@@ -357,6 +428,7 @@ class HuggingFaceInferenceClient(HuggingFaceBaseInferenceClient):
         *,
         stream: bool = False,
         frequency_penalty: Optional[float] = None,
+        logit_bias: Optional[List[float]] = None,
         logprobs: Optional[bool] = None,
         max_tokens: Optional[int] = None,
         num_generations: Optional[int] = None,
@@ -380,6 +452,7 @@ class HuggingFaceInferenceClient(HuggingFaceBaseInferenceClient):
         *,
         stream: Optional[bool] = False,
         frequency_penalty: Optional[float] = None,
+        logit_bias: Optional[List[float]] = None,
         logprobs: Optional[bool] = None,
         max_tokens: Optional[int] = None,
         num_generations: Optional[int] = None,
@@ -395,10 +468,11 @@ class HuggingFaceInferenceClient(HuggingFaceBaseInferenceClient):
         top_logprobs: Optional[int] = None,
         top_p: Optional[float] = None,
     ) -> Union[ChatCompletionOutput, Iterable[ChatCompletionStreamOutput]]:
-        self.client.chat_completion(
+        return self.client.chat_completion(
             messages=messages,
             stream=stream,
             frequency_penalty=frequency_penalty,
+            logit_bias=logit_bias,
             logprobs=logprobs,
             max_tokens=max_tokens,
             n=num_generations,
@@ -424,20 +498,148 @@ class HuggingFaceInferenceClient(HuggingFaceBaseInferenceClient):
         truncate: Optional[bool] = None,
         truncation_direction: Optional[Literal["Left", "Right"]] = None,
     ) -> "np.ndarray":
-        provider_helper = get_provider_helper('hf-inference', task='feature-extraction')
-        request_parameters = provider_helper.prepare_request(
-            inputs=texts,
-            parameters={
-                "normalize": normalize,
-                "prompt_name": prompt_name,
-                "truncate": truncate,
-                "truncation_direction": truncation_direction,
-            },
-            headers=self.headers or {},
-            model=self.base_url,
-            api_key=self.credentials,
+        request_parameters = self._prepare_request_params(
+            texts, 
+            normalize=normalize, 
+            prompt_name=prompt_name, 
+            truncate=truncate, 
+            truncation_direction=truncation_direction
         )
-
+        
         response = self.client._inner_post(request_parameters)
+        np = _import_numpy()
+        return np.array(_bytes_to_dict(response), dtype="float32")
+    
+    @overload
+    async def achat_completion(  # type: ignore
+        self,
+        messages: List[Dict],
+        *,
+        stream: Literal[False] = False,
+        frequency_penalty: Optional[float] = None,
+        logprobs: Optional[bool] = None,
+        max_tokens: Optional[int] = None,
+        num_generations: Optional[int] = None,
+        presence_penalty: Optional[float] = None,
+        response_format: Optional[ChatCompletionInputGrammarType] = None,
+        seed: Optional[int] = None,
+        stop: Optional[List[str]] = None,
+        stream_options: Optional[ChatCompletionInputStreamOptions] = None,
+        temperature: Optional[float] = None,
+        tools: Optional[List[ChatCompletionInputTool]] = None,
+        tool_choice: Optional[Union[ChatCompletionInputToolChoiceClass, "ChatCompletionInputToolChoiceEnum"]] = None,
+        tool_prompt: Optional[str] = None,
+        top_logprobs: Optional[int] = None,
+        top_p: Optional[float] = None,
+    ) -> ChatCompletionOutput: 
+        ...
+
+    @overload
+    async def achat_completion(  # type: ignore
+        self,
+        messages: List[Dict],
+        *,
+        stream: Literal[True] = True,
+        frequency_penalty: Optional[float] = None,
+        logprobs: Optional[bool] = None,
+        max_tokens: Optional[int] = None,
+        num_generations: Optional[int] = None,
+        presence_penalty: Optional[float] = None,
+        response_format: Optional[ChatCompletionInputGrammarType] = None,
+        seed: Optional[int] = None,
+        stop: Optional[List[str]] = None,
+        stream_options: Optional[ChatCompletionInputStreamOptions] = None,
+        temperature: Optional[float] = None,
+        tools: Optional[List[ChatCompletionInputTool]] = None,
+        tool_choice: Optional[Union[ChatCompletionInputToolChoiceClass, "ChatCompletionInputToolChoiceEnum"]] = None,
+        tool_prompt: Optional[str] = None,
+        top_logprobs: Optional[int] = None,
+        top_p: Optional[float] = None,
+    ) -> AsyncIterable[ChatCompletionStreamOutput]: 
+        ...
+
+    @overload
+    async def achat_completion(
+        self,
+        messages: List[Dict],
+        *,
+        stream: bool = False,
+        frequency_penalty: Optional[float] = None,
+        logprobs: Optional[bool] = None,
+        max_tokens: Optional[int] = None,
+        num_generations: Optional[int] = None,
+        presence_penalty: Optional[float] = None,
+        response_format: Optional[ChatCompletionInputGrammarType] = None,
+        seed: Optional[int] = None,
+        stop: Optional[List[str]] = None,
+        stream_options: Optional[ChatCompletionInputStreamOptions] = None,
+        temperature: Optional[float] = None,
+        tools: Optional[List[ChatCompletionInputTool]] = None,
+        tool_choice: Optional[Union[ChatCompletionInputToolChoiceClass, "ChatCompletionInputToolChoiceEnum"]] = None,
+        tool_prompt: Optional[str] = None,
+        top_logprobs: Optional[int] = None,
+        top_p: Optional[float] = None,
+    ) -> Union[ChatCompletionOutput, AsyncIterable[ChatCompletionStreamOutput]]: 
+        ...
+
+    async def achat_completion(
+        self,
+        messages: List[Dict],
+        *,
+        stream: bool = False,
+        frequency_penalty: Optional[float] = None,
+        logprobs: Optional[bool] = None,
+        max_tokens: Optional[int] = None,
+        num_generations: Optional[int] = None,
+        presence_penalty: Optional[float] = None,
+        response_format: Optional[ChatCompletionInputGrammarType] = None,
+        seed: Optional[int] = None,
+        stop: Optional[List[str]] = None,
+        stream_options: Optional[ChatCompletionInputStreamOptions] = None,
+        temperature: Optional[float] = None,
+        tools: Optional[List[ChatCompletionInputTool]] = None,
+        tool_choice: Optional[Union[ChatCompletionInputToolChoiceClass, "ChatCompletionInputToolChoiceEnum"]] = None,
+        tool_prompt: Optional[str] = None,
+        top_logprobs: Optional[int] = None,
+        top_p: Optional[float] = None,
+    ) -> Union[ChatCompletionOutput, AsyncIterable[ChatCompletionStreamOutput]]:
+        return await self.client.chat_completion(
+            messages=messages,
+            stream=stream,
+            frequency_penalty=frequency_penalty,
+            logprobs=logprobs,
+            max_tokens=max_tokens,
+            n=num_generations,
+            presence_penalty=presence_penalty,
+            response_format=response_format,
+            seed=seed,
+            stop=stop,
+            stream_options=stream_options, # returns tokens used if set
+            temperature=temperature,
+            tools=tools,
+            tool_choice=tool_choice,
+            tool_prompt=tool_prompt,
+            top_logprobs=top_logprobs,
+            top_p=top_p
+        )
+    
+    async def afeature_extraction(
+        self,
+        texts: str | List[str],
+        *,
+        normalize: Optional[bool] = None,
+        prompt_name: Optional[str] = None,
+        truncate: Optional[bool] = None,
+        truncation_direction: Optional[Literal["Left", "Right"]] = None,
+    ) -> "np.ndarray":
+        request_parameters = self._prepare_request_params(
+            texts, 
+            normalize=normalize, 
+            prompt_name=prompt_name, 
+            truncate=truncate, 
+            truncation_direction=truncation_direction
+        )
+        
+        response = await self.async_client._inner_post(request_parameters)
         np = _import_numpy()
         return np.array(_bytes_to_dict(response), dtype="float32")

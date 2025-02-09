@@ -1,24 +1,43 @@
 import pytest
 from ..huggingface_inference_client import HuggingFaceInferenceClient
 from ..huggingface_transformer_tokenizers import BgeLargePretrainedTokenizer
-
-# TODO: start with cleaning up this and then add the async methods and then the example selectors in the dataframe expression tool tests
-attributes = {
-    'name': 'BAAI/bge-large-en-v1.5',
-    'endpoint': {'url':'http://100.28.34.190:8070/', 'type':'tei'},
-    'max_batch_tokens': 32768,
-    'max_client_batch_size': 128,
-    'max_batch_requests': 64,
-    'num_workers': 8,
-    'auto_truncate': True,
-    'token': 'eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJhcHAiOiJzdmMtY2hhdC10ZXN0Iiwic3ViIjoibjFtNCIsIm1haWwiOiJqb2huLmRvZUBiY2JzZmwuY29tIiwic3JjIjoiam9obi5kb2VAYmNic2ZsLmNvbSIsInJvbGVzIjpbIiJdLCJpc3MiOiJQTUktVGVzdCIsImF0dHJpYnV0ZXMiOlt7ImdpdmVubmFtZSI6IkpvaG4ifSx7InNuIjoiSkRvZSJ9LHsibWFpbCI6ImpvaG4uZG9lQGJjYnNmbC5jb20ifSx7ImRpc3BsYXluYW1lIjoiSkRvZSwgSm9obiJ9LHsiYmNic2ZsLWlkbVBpY3R1cmVVUkwiOiIifV0sImF1ZCI6ImNoYXRhcHAtdHN0YS50aHJvdGwuY29tIiwiZ2l2ZW5uYW1lIjoiSm9obiIsImRpc3BsYXluYW1lIjoiRG9lLCBKb2huIiwic24iOiJKRG9lIiwiaWRtX3BpY3R1cmVfdXJsIjoiIiwiZXhwIjoxODkzNDU2MDAwLCJpYXQiOjE3MTQxNDQ4NDEsInNlc3Npb25faWQiOiIiLCJqdGkiOiIifQ.rxHyA_WeMprlMtDsTGPvqgjRbQ2qT7VkiT6Ak1aSQmTl3nOFR_v0ev2AmUogUHXJi9CmGZcw3i-Wsis86ggOJKl4e7TwuKSBqt-s81jzGePI2yIsyKInEXwieKHXpWl1JFMtSkDpkRBeaiSlM1qpJ33BJLekRRkW-mDhV-yG5VVxyOWxRZDSfXRgrQ3CoNzChvITqdC1VOCeMAMI5Vg5zvo9bNOjOqOCLEtncsHdDiD7gYmPsGWeR9eXcT0y2-KONa0LvsYBewBcXjvJE63xe3XViiQ3HQPayjA1UAxWekD83_Kq7y-LJEjrQNNphEq_XyocpzvlmK-tlf59UGJJcw'
-}
+from ..huggingface_inference_server_config import HuggingFaceTEIConfig, HuggingFaceTGIConfig
 
 @pytest.fixture
-def inference_client() -> HuggingFaceInferenceClient:
+def tgi_self_hosted_config() -> HuggingFaceTGIConfig:
+    return HuggingFaceTGIConfig(
+        name='meta-llama/Meta-Llama-3.1-70B-Instruct',
+        url='http://3.210.60.7:8080/',
+        auth_token='eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJhcHAiOiJzdmMtY2hhdC10ZXN0Iiwic3ViIjoibjFtNCIsIm1haWwiOiJqb2huLmRvZUBiY2JzZmwuY29tIiwic3JjIjoiam9obi5kb2VAYmNic2ZsLmNvbSIsInJvbGVzIjpbIiJdLCJpc3MiOiJQTUktVGVzdCIsImF0dHJpYnV0ZXMiOlt7ImdpdmVubmFtZSI6IkpvaG4ifSx7InNuIjoiSkRvZSJ9LHsibWFpbCI6ImpvaG4uZG9lQGJjYnNmbC5jb20ifSx7ImRpc3BsYXluYW1lIjoiSkRvZSwgSm9obiJ9LHsiYmNic2ZsLWlkbVBpY3R1cmVVUkwiOiIifV0sImF1ZCI6ImNoYXRhcHAtdHN0YS50aHJvdGwuY29tIiwiZ2l2ZW5uYW1lIjoiSm9obiIsImRpc3BsYXluYW1lIjoiRG9lLCBKb2huIiwic24iOiJKRG9lIiwiaWRtX3BpY3R1cmVfdXJsIjoiIiwiZXhwIjoxODkzNDU2MDAwLCJpYXQiOjE3MTQxNDQ4NDEsInNlc3Npb25faWQiOiIiLCJqdGkiOiIifQ.rxHyA_WeMprlMtDsTGPvqgjRbQ2qT7VkiT6Ak1aSQmTl3nOFR_v0ev2AmUogUHXJi9CmGZcw3i-Wsis86ggOJKl4e7TwuKSBqt-s81jzGePI2yIsyKInEXwieKHXpWl1JFMtSkDpkRBeaiSlM1qpJ33BJLekRRkW-mDhV-yG5VVxyOWxRZDSfXRgrQ3CoNzChvITqdC1VOCeMAMI5Vg5zvo9bNOjOqOCLEtncsHdDiD7gYmPsGWeR9eXcT0y2-KONa0LvsYBewBcXjvJE63xe3XViiQ3HQPayjA1UAxWekD83_Kq7y-LJEjrQNNphEq_XyocpzvlmK-tlf59UGJJcw',
+        max_input_tokens=12582,
+        max_total_tokens=16777,
+        max_batch_prefill_tokens=12582+50,
+    )
+
+@pytest.fixture
+def tei_self_hosted_config() -> HuggingFaceTEIConfig:
+    return HuggingFaceTEIConfig(
+        name='BAAI/bge-large-en-v1.5',
+        url='http://100.28.34.190:8070/',
+        auth_token='eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJhcHAiOiJzdmMtY2hhdC10ZXN0Iiwic3ViIjoibjFtNCIsIm1haWwiOiJqb2huLmRvZUBiY2JzZmwuY29tIiwic3JjIjoiam9obi5kb2VAYmNic2ZsLmNvbSIsInJvbGVzIjpbIiJdLCJpc3MiOiJQTUktVGVzdCIsImF0dHJpYnV0ZXMiOlt7ImdpdmVubmFtZSI6IkpvaG4ifSx7InNuIjoiSkRvZSJ9LHsibWFpbCI6ImpvaG4uZG9lQGJjYnNmbC5jb20ifSx7ImRpc3BsYXluYW1lIjoiSkRvZSwgSm9obiJ9LHsiYmNic2ZsLWlkbVBpY3R1cmVVUkwiOiIifV0sImF1ZCI6ImNoYXRhcHAtdHN0YS50aHJvdGwuY29tIiwiZ2l2ZW5uYW1lIjoiSm9obiIsImRpc3BsYXluYW1lIjoiRG9lLCBKb2huIiwic24iOiJKRG9lIiwiaWRtX3BpY3R1cmVfdXJsIjoiIiwiZXhwIjoxODkzNDU2MDAwLCJpYXQiOjE3MTQxNDQ4NDEsInNlc3Npb25faWQiOiIiLCJqdGkiOiIifQ.rxHyA_WeMprlMtDsTGPvqgjRbQ2qT7VkiT6Ak1aSQmTl3nOFR_v0ev2AmUogUHXJi9CmGZcw3i-Wsis86ggOJKl4e7TwuKSBqt-s81jzGePI2yIsyKInEXwieKHXpWl1JFMtSkDpkRBeaiSlM1qpJ33BJLekRRkW-mDhV-yG5VVxyOWxRZDSfXRgrQ3CoNzChvITqdC1VOCeMAMI5Vg5zvo9bNOjOqOCLEtncsHdDiD7gYmPsGWeR9eXcT0y2-KONa0LvsYBewBcXjvJE63xe3XViiQ3HQPayjA1UAxWekD83_Kq7y-LJEjrQNNphEq_XyocpzvlmK-tlf59UGJJcw',
+        max_batch_tokens=32768,
+        max_client_batch_size=128,
+        max_batch_requests=64,
+        auto_truncate=True
+    )
+
+@pytest.fixture
+def tgi_inference_client(tgi_self_hosted_config: HuggingFaceTGIConfig) -> HuggingFaceInferenceClient:
     return HuggingFaceInferenceClient(
-        base_url=attributes['endpoint']['url'],
-        credentials=attributes['token']
+        base_url=tgi_self_hosted_config.url,
+        credentials=tgi_self_hosted_config.auth_token
+    )
+
+@pytest.fixture
+def tei_inference_client(tei_self_hosted_config: HuggingFaceTEIConfig) -> HuggingFaceInferenceClient:
+    return HuggingFaceInferenceClient(
+        base_url=tei_self_hosted_config.url,
+        credentials=tei_self_hosted_config.auth_token
     )
 
 @pytest.fixture
@@ -34,7 +53,7 @@ def corpus() -> str:
     """
     return text
 
-def test_inference_client_feature_extraction(inference_client: HuggingFaceInferenceClient, corpus: str):
+def test_inference_client_feature_extraction(tei_inference_client: HuggingFaceInferenceClient, corpus: str):
     """
     Invokes the feature-extraction task of the HuggingFace TEI. Note
     this expects the TEI is running in a self-hosted environment.
@@ -87,16 +106,16 @@ def test_inference_client_feature_extraction(inference_client: HuggingFaceInfere
     entire query as a sequence and outputs a single vector representing 
     the meaning of the whole query.
     """
-    embeddings = inference_client.feature_extraction(corpus)
+    embeddings = tei_inference_client.feature_extraction(corpus)
     assert embeddings.dtype == 'float32'
 
-def test_inference_client_feature_extraction_trunc(inference_client: HuggingFaceInferenceClient, corpus: str, bge: BgeLargePretrainedTokenizer):
+def test_inference_client_feature_extraction_trunc(tei_inference_client: HuggingFaceInferenceClient, corpus: str, bge: BgeLargePretrainedTokenizer):
     corpus = " ".join([corpus] * 10)
-    embeddings = inference_client.feature_extraction(corpus, truncate=True)
+    embeddings = tei_inference_client.feature_extraction(corpus, truncate=True)
 
     assert embeddings.size == bge.dimensions
 
-def test_inference_client_feature_extraction_not_tokens(inference_client: HuggingFaceInferenceClient, corpus: str, bge: BgeLargePretrainedTokenizer):
+def test_inference_client_feature_extraction_not_tokens(tei_inference_client: HuggingFaceInferenceClient, corpus: str, bge: BgeLargePretrainedTokenizer):
     """
     The output of feature_extraction() is not tokens of text, 
     but rather dense numerical vector representations of the 
@@ -118,7 +137,25 @@ def test_inference_client_feature_extraction_not_tokens(inference_client: Huggin
     text.
     """
     tokens  = bge.tokenizer.encode(corpus, add_special_tokens=True)
-    embeddings = inference_client.feature_extraction(corpus, truncate=True)
+    embeddings = tei_inference_client.feature_extraction(corpus, truncate=True)
     decoded = bge.tokenizer.decode(embeddings[0])
 
     assert tokens != decoded
+
+@pytest.mark.asyncio
+async def test_async_inference_client_feature_extraction(tei_inference_client: HuggingFaceInferenceClient, corpus: str):
+    embeddings = await tei_inference_client.afeature_extraction(corpus)
+    assert embeddings.dtype == 'float32'
+
+def test_inference_client_chat_completions(tgi_inference_client: HuggingFaceInferenceClient, corpus: str):
+    tgi_inference_client.chat_completion(
+        messages=
+    )
+
+    # TODO: and then the chat_completions sync and async endpoints and then chat_model and llm classes
+    # then the example selectors in the dataframe expression tool tests
+    #def test_max_marginal_relevance_selector():
+        # Similarity Selector
+        # Max Marginal Relevance (MMR) Selector
+        # N-gram Overlap Selector  
+        # pass  
