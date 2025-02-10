@@ -28,6 +28,7 @@ from huggingface_hub.inference._generated.types import (
 from huggingface_hub.inference._providers import get_provider_helper
 from huggingface_hub.inference._common import _import_numpy, _bytes_to_dict, RequestParameters
 from .inference_schema import HuggingFaceInferenceServerMixin
+from.huggingface_inference_server_config import HuggingFaceTGIConfig, HuggingFaceTEIConfig
 
 @runtime_checkable
 class HuggingFaceInferenceLike(Protocol):
@@ -93,6 +94,8 @@ class HuggingFaceInferenceLike(Protocol):
                 If n=1 (default), the model returns one response.
                 If n=3, the model returns three different completions for the same prompt.
                 Each completion is independently generated, meaning they can be different depending on settings like temperature and top_p.
+                UNSUPPORTED: This OpenAI API option, officially known as "n", is not supported in the Hugging Face TGI's Messages Chat Completion API:
+                https://huggingface.co/docs/api-inference/en/tasks/chat-completion
             presence_penalty (`float`, *optional*):
                 Number between -2.0 and 2.0. Positive values penalize new tokens based on whether they appear in the
                 text so far, increasing the model's likelihood to talk about new topics.
@@ -169,6 +172,8 @@ class HuggingFaceInferenceLike(Protocol):
             temperature (`float`, *optional*):
                 Controls randomness of the generations. Lower values ensure
                 less random completions. Range: [0, 2]. Defaults to 1.0.
+                Higher values like 0.8 will make the output more random, while lower values like 0.2 will make it more focused and deterministic. 
+                It's recommended to alter either this or top_p but not both.
             tools (List of [`ChatCompletionInputTool`], *optional*):
                 A list of tools the model may "call". Currently, only functions are supported as a tool. Use this to
                 provide a list of functions the model may generate JSON inputs for. 
@@ -298,6 +303,9 @@ class HuggingFaceInferenceLike(Protocol):
         ...
 
 class HuggingFaceBaseInferenceClient(HuggingFaceInferenceServerMixin):
+    client: Optional[HuggingFaceInferenceLike] = Field(description='A low-level Inference Client that implements the HuggingFaceInferenceLike protocol', default=None)
+    async_client: Optional[HuggingFaceInferenceLike] = Field(description='A low-level Async Inference Client that implements the HuggingFaceInferenceLike protocol', default=None)
+
     model_config = ConfigDict(
         extra='forbid',
         protected_namespaces=(),
@@ -313,6 +321,9 @@ class HuggingFaceBaseInferenceClient(HuggingFaceInferenceServerMixin):
         return value
     
 class HuggingFaceInferenceClient(HuggingFaceBaseInferenceClient):
+    tgi_config: Optional[HuggingFaceTGIConfig] = None
+    tei_config: Optional[HuggingFaceTEIConfig] = None
+
     @model_validator(mode="after")
     def validate_environment(self) -> Self:
         try:
@@ -468,6 +479,16 @@ class HuggingFaceInferenceClient(HuggingFaceBaseInferenceClient):
         top_logprobs: Optional[int] = None,
         top_p: Optional[float] = None,
     ) -> Union[ChatCompletionOutput, Iterable[ChatCompletionStreamOutput]]:
+        if self.tgi_config:
+            if not max_tokens:
+                max_tokens = self.tgi_config.available_generated_tokens
+
+            if not (1 <= max_tokens <= self.tgi_config.available_generated_tokens):
+                raise ValueError(f'max_tokens must be between 1 and {self.tgi_config.available_generated_tokens}, got {max_tokens}')
+
+        if num_generations:
+            print('Warning: The OpenAI API `n` option is unsupported by HuggingFace TGI. Ignoring the num_generations option..')
+
         return self.client.chat_completion(
             messages=messages,
             stream=stream,

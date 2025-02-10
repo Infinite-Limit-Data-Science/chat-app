@@ -64,7 +64,7 @@ model=meta-llama/Llama-3.2-90B-Vision-Instruct
 token=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
 volume=$PWD/data
 
-docker container run --gpus all --shm-size 1g -e HUGGING_FACE_HUB_TOKEN=$token -p 8080:80 -v $volume:/data ghcr.io/huggingface/text-generation-inference:3.0.2 --model-id $model --max-batch-prefill-tokens 12582 --max-input-tokens 12582 --max-total-tokens 16777 --num-shard 8 --quantize bitsandbytes-nf4
+docker container run --gpus all --shm-size 1g -e HUGGING_FACE_HUB_TOKEN=$token -p 8080:80 -v $volume:/data ghcr.io/huggingface/text-generation-inference:3.0.2 --model-id $model --max-batch-prefill-tokens 12582 --max-input-tokens 12582 --max-total-tokens 16777 --num-shard 8 --quantize bitsandbytes-nf4 --payload-limit 5000000
 
 docker container exec 06b214cb37af printenv
     PATH=/opt/conda/bin:/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin

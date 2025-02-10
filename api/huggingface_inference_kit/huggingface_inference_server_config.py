@@ -29,6 +29,7 @@ class HuggingFaceTGIConfig(HuggingFaceSelfHostedServer):
     max_batch_total_tokens: Optional[int] = Field(description='Hard limit on the total number of tokens (input + generated tokens) across all queries in a batch.', default=None)
     max_waiting_tokens: Optional[int] = Field(description='Number of tokens to accumulate before the server forces waiting queries to join the running batch.', default=None)
     max_client_batch_size: Optional[int] = Field(description='Refers to the number of input queries per request. A request can contain one or multiple queries (input texts) bundled together. A query is an individual input text or a single inference task that the model processes. For example, a query could be a single sentence or a paragraph that needs to be processed by the model to generate a response. TGI uses structured input formats, such as JSON arrays, to distinguish multiple queries in a single API call. This structured format ensures that TGI can parse and identify each query separately, regardless of whether the query is a single sentence or multiple paragraphs.', default=None)
+    payload_limit: Optional[int] = Field(description='Payload size limit in bytes (e.g. specify maximum size in bytes of base64 encoded images sent to TGI)', ge=2_000_000, le=5_000_000, default=None)
 
     @model_validator(mode='before')
     @classmethod

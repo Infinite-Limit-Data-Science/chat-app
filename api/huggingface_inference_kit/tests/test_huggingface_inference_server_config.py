@@ -10,6 +10,7 @@ def tgi_self_hosted_config() -> HuggingFaceTGIConfig:
         max_input_tokens=12582,
         max_total_tokens=16777,
         max_batch_prefill_tokens=12582+50,
+        payload_limit=5_000_000
     )
 
 @pytest.fixture
