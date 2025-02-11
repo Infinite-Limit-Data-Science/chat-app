@@ -487,7 +487,7 @@ class HuggingFaceInferenceClient(HuggingFaceBaseInferenceClient):
                 raise ValueError(f'max_tokens must be between 1 and {self.tgi_config.available_generated_tokens}, got {max_tokens}')
 
         if num_generations:
-            print('Warning: The OpenAI API `n` option is unsupported by HuggingFace TGI. Ignoring the num_generations option..')
+            print('Warning: The OpenAI API `n` option is unsupported by Hugging Face TGI (even if supported by Hugging Face Hub Messages API). Ignoring the num_generations option..')
 
         return self.client.chat_completion(
             messages=messages,
@@ -624,7 +624,7 @@ class HuggingFaceInferenceClient(HuggingFaceBaseInferenceClient):
         top_logprobs: Optional[int] = None,
         top_p: Optional[float] = None,
     ) -> Union[ChatCompletionOutput, AsyncIterable[ChatCompletionStreamOutput]]:
-        return await self.client.chat_completion(
+        return await self.async_client.chat_completion(
             messages=messages,
             stream=stream,
             frequency_penalty=frequency_penalty,

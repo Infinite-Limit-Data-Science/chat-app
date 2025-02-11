@@ -12,3 +12,11 @@ def tgi_self_hosted_config() -> HuggingFaceTGIConfig:
         max_batch_prefill_tokens=12582+50,
         payload_limit=5_000_000
     )
+
+    # TODO: chat_model and llm classes
+    # then the example selectors in the dataframe expression tool tests
+    #def test_max_marginal_relevance_selector():
+        # Similarity Selector
+        # Max Marginal Relevance (MMR) Selector
+        # N-gram Overlap Selector  
+        # pass  

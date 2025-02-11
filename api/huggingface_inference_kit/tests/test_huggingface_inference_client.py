@@ -4,6 +4,7 @@ import asyncio
 import base64
 from pathlib import Path
 import numpy as np
+from pydantic import BaseModel, Field
 from huggingface_hub.inference._generated.types import ChatCompletionOutput
 from ..huggingface_inference_client import HuggingFaceInferenceClient
 from ..huggingface_transformer_tokenizers import BgeLargePretrainedTokenizer
@@ -233,6 +234,10 @@ async def test_inference_client_chat_completion_with_logprobs(tgi_inference_clie
     vary temperature, top_p, frequency_penalty to send multiple requests
     and then compare logprobs from the results.
 
+    Remember the Messages API is simply Hugging Face's attempt to mimic
+    the behavior of OpenAI's Chat Completions API, but currently is not
+    a 1:1 match in features.
+
     In terms of variation between responses, we can leverage temperature
     or top_p. It's not recommended to alter both of them together.
 
@@ -399,30 +404,186 @@ def test_inference_client_chat_completion_with_output_usage(tgi_inference_client
     assert chat_completion_output.usage.completion_tokens > 0
     assert chat_completion_output.usage.total_tokens > 0
 
-@pytest.mark.skip(reason="Temporarily disabled for debugging")
+# @pytest.mark.skip(reason="Temporarily disabled for debugging")
 def test_inference_client_chat_completion_with_tool_calling(tgi_inference_client: HuggingFaceInferenceClient):
     """
-    The ChatCompletionOutputToolCall object is used when the model calls 
-    a tool (e.g., a function). 
+    The Hugging Face Model Hub (huggingface_hub) has a collection of APIs 
+    to interface with the models on Hugging Face Hub. This includes the
+    ChatCompletionOutputComplete, ChatCompletionOutputMessage, and the new
+    one, ChatCompletionOutputToolCall. These are objects of the Hugging Face
+    Messages API, which seeks to mimic OpenAI's Chat Completions API.
 
-    It is comprised of the following:
-    - function: The function that was invoked.
-    - id: str: A unique identifier for this tool call.
-    - type: str: The type of tool (e.g., "function"). 
+    A `ChatCompletionOutputMessage` (the message of the completion candidate) 
+    of a `ChatCompletionOutputComplete` (the completion candidate) contains 
+    a tool_calls attribute (in addition to the standard role and content 
+    attributes). The tool_calls attribute is a list of `ChatCompletionOutputToolCall`. 
+    It is available when the model "calls" a tool. These classes are available
+    in huggingface_hub (a package of Hugging Face Model Hub).
+   
+    In collaboration, Hugging Face TGI supports function calling (tool calling) by 
+    forcing the model to generate structured outputs based on your own predefined 
+    output schemas.
+
+    TGI supports function calling through a feature known as Guidance. Guidance is 
+    a feature that allows users to constrain the generation of a large language 
+    model with a specified grammar. This feature is particularly useful when you 
+    want to generate text that follows a specific structure or uses a specific 
+    set of words or produce output in a specific format. A prominent example is 
+    JSON grammar, where the model is forced to output valid JSON.
+
+    Guidance accomplishes this by including a grammar with a generation request 
+    that is compiled, and used to modify the chosen tokens. The model does a 
+    forward pass over the batch. This returns probabilities for each token in the 
+    vocabulary for each request in the batch. The process of choosing one of those 
+    tokens is called sampling. The model samples from the distribution of 
+    probabilities to choose the next token. In TGI all of the steps before sampling 
+    are called processor. Grammars are applied as a processor that masks out tokens 
+    that are not allowed by the grammar. Guidance is possible using the 
+    /chat/completion endpoint with tools.
+
+    Under the hood tools are a special case of grammars that allows the model to 
+    choose one or none of the provided tools.
+
+    A Grammar would look like this in the Messages API:
+
+    schema = {
+        "properties": {
+            "location": {"title": "Location", "type": "string"},
+            "activity": {"title": "Activity", "type": "string"},
+            "animals_seen": {
+                "maximum": 5,
+                "minimum": 1,
+                "title": "Animals Seen",
+                "type": "integer",
+            },
+            "animals": {"items": {"type": "string"}, "title": "Animals", "type": "array"},
+        },
+        "required": ["location", "activity", "animals_seen", "animals"],
+        "title": "Animals",
+        "type": "object",
+    }
+
+    Tools are a set of user defined functions that can be used in tandem with the chat 
+    functionality to enhance the LLM's capabilities. Functions, similar to grammar are 
+    defined as JSON schema and can be passed as part of the parameters to the Messages 
+    API.
+
+    {
+        "type": "function",
+        "function": {
+            "name": "get_current_weather",
+            "description": "Get the current weather",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "location": {
+                        "type": "string",
+                        "description": "The city and state, e.g. San Francisco, CA"
+                    },
+                    "format": {
+                        "type": "string",
+                        "enum": ["celsius", "fahrenheit"],
+                        "description": "The temperature unit to use. Infer this from the users location."
+                    }
+                },
+                "required": ["location", "format"]
+            }
+        }
+    }
+
+    Not all models on the Hugging Face Model Hub support Tool Calling but the
+    Meta Llama models support it.The larger ones, such as Llama 3.1 70B support
+    it better than the smaller ones, such as 8B.
     """
-    # tool_call = response.choices[0].message.tool_calls[0]
-    # print(tool_call.function.name)  # "get_n_day_weather_forecast"
-    # print(tool_call.function.arguments)  # {"location": "San Francisco, CA", "num_days": 3}
-    ...
+    class WeatherForecastRequest(BaseModel):
+        location: str = Field(..., description="The city and state, e.g., 'San Francisco, CA'")
+        format: str = Field(..., description="Temperature unit: 'celsius' or 'fahrenheit'", enum=["celsius", "fahrenheit"])
+        num_days: int = Field(..., description="Number of days to forecast (1-7)", ge=1, le=7)
 
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "get_weather_forecast",
+                "description": "Get an N-day weather forecast",
+                "parameters": WeatherForecastRequest.model_json_schema(),
+            },
+        }
+    ]
 
+    chat_completion_output: ChatCompletionOutput = tgi_inference_client.chat_completion(
+        messages = [
+            {'role': 'system', 'content': 'Use the provided tools to answer user questions.'},
+            {'role': 'user', 'content': "What's the weather like in New York for the next 3 days?"}
+        ],
+        max_tokens=tgi_inference_client.tgi_config.available_generated_tokens,
+        tools=tools,
+        tool_choice='auto',
+        temperature=0.8
+    )  
 
-# MUST ADD ASYNC TESTING!
+    for tool_call in chat_completion_output.choices[0].message.tool_calls:
+        assert tool_call.type == 'function'
+        assert tool_call.function.name == 'get_weather_forecast'
+        assert tool_call.function.arguments['num_days'] == 3
+        assert tool_call.function.arguments['location'] == 'New York'
+        assert tool_call.function.arguments['format'] == 'celsius'
 
-    # TODO: and then the chat_completions sync and async endpoints and then chat_model and llm classes
-    # then the example selectors in the dataframe expression tool tests
-    #def test_max_marginal_relevance_selector():
-        # Similarity Selector
-        # Max Marginal Relevance (MMR) Selector
-        # N-gram Overlap Selector  
-        # pass  
+@pytest.mark.asyncio
+async def test_async_inference_client_chat_completion(tgi_inference_client: HuggingFaceInferenceClient):
+    """
+    HuggingFaceInferenceClient supports returning a coroutine object
+    """
+    chat_completion_output = await tgi_inference_client.achat_completion(
+        messages = [
+            {
+                'role': 'user',
+                'content': 'What is Generative AI?'
+            }
+        ],
+        max_tokens=tgi_inference_client.tgi_config.available_generated_tokens,
+        temperature=0.8
+    )
+
+    assert len(chat_completion_output.choices) == 1
+    assert chat_completion_output.choices[0].finish_reason in ('stop', 'eos_token')
+    assert chat_completion_output.choices[0].message.role == 'assistant'
+    assert len(chat_completion_output.choices[0].message.content) > 0
+
+@pytest.mark.asyncio
+async def test_async_streaming_inference_client_chat_completion(tgi_inference_client: HuggingFaceInferenceClient):
+    """
+    Token streaming is the mode in which the server returns the tokens 
+    one by one as the model generates them. This enables showing 
+    progressive generations to the user rather than waiting for the 
+    whole generation.
+
+    `HuggingFaceInferenceClient` supports yielding AsyncGenerator objects
+    during streaming. These are instances of `ChatCompletionStreamOutput`.
+    Another object type provided by the Hugging Face Hub Messages API. 
+    It holds a list of choices, similar to the ChatCompletionOutput in the
+    non-streaming version. Instead of choices (multiple candidate 
+    completions) being instances of `ChatCompletionOutputComplete`, the
+    choices are instances of `ChatCompletionStreamOutputChoice`. This object
+    contains a finish_reason, index, and logprobs like its counterpart. But
+    instead of message attribute, it contains a delta attribute. The delta
+    attribute represents the current token being streamed. 
+    """
+    chat_completion_output = await tgi_inference_client.achat_completion(
+        messages = [
+            {
+                'role': 'user',
+                'content': 'What is Generative AI?'
+            }
+        ],
+        max_tokens=tgi_inference_client.tgi_config.available_generated_tokens,
+        temperature=0.8,
+        stream=True,
+        logprobs=True
+    )
+
+    async for chunk in chat_completion_output:
+        for choice in chunk.choices:
+            assert -10 <= choice.logprobs.content[0].logprob <= 1.0, f'logprob out of range'
+            assert choice.delta.role == 'assistant'
+            assert len(choice.delta.content) >= 0 # content represents streamed token
