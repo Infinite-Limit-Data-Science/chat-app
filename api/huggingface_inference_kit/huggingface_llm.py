@@ -9,11 +9,12 @@ from langchain_core.callbacks import (
     CallbackManagerForLLMRun,
 )
 from langchain_core.language_models.llms import LLM
-from langchain_core.outputs import GenerationChunk
+from langchain_core.outputs import GenerationChunk, Generation, LLMResult
 from langchain_core.utils import get_pydantic_field_names
 from pydantic import ConfigDict, Field, model_validator
 from typing_extensions import Self
 from huggingface_hub.inference._generated.types import (
+    ChatCompletionOutput,
     ChatCompletionInputGrammarType,
     ChatCompletionInputStreamOptions,
     ChatCompletionInputTool,
@@ -22,15 +23,20 @@ from huggingface_hub.inference._generated.types import (
 )
 from .inference_schema import HuggingFaceInferenceServerMixin
 from .huggingface_inference_client import HuggingFaceInferenceClient
+from .huggingface_inference_server_config import HuggingFaceTGIConfig
 
 logger = logging.getLogger(__name__)
 
+# from langchain_huggingface import HuggingFaceEndpoint
+
 class HuggingFaceLLM(LLM, HuggingFaceInferenceServerMixin):
+    client: Optional[HuggingFaceInferenceClient] = Field(description='Hugging Face Inference Client to interface with Hugging Face Hub Messages API', default=None)
     # InferenceClient parameters (in addition to HuggingFaceInferenceServerMixin)
     timeout: float = 120
+    tgi_config: Optional[HuggingFaceTGIConfig] = None
 
-    # chat completion parameters (since chat completion is called inside `_call` (which is in turned called by `invoke`))
-    # common parameters are provided explicitly, the remaining parameters to HuggingFaceInferenceClient.chat_completion is provided through `model_kwargs`
+    # chat_completion parameters supported by Hugging Face Hub Messages API and Hugging Face TGI
+    # common parameters are provided explicitly, the remaining parameters to HuggingFaceInferenceClient.chat_completion are provided through `model_kwargs`
     # max_tokens is a critical parameter. And it is often overriden. Here we default to 512 tokens, but you may want to increase it.
     max_tokens: Optional[int] = Field(description='Maximum number of tokens allowed in the response. That is, the maximum number of tokens that can be generated in the chat completion.', default=512)
     num_generations: Optional[int] = Field(description='The number of completions to generate for each prompt. Specifies how many responses the model should generate for a single input prompt.', default=None)
@@ -74,12 +80,14 @@ class HuggingFaceLLM(LLM, HuggingFaceInferenceServerMixin):
             )
         
         values["model_kwargs"] = extra
+        return values
 
     @model_validator(mode='after')
     def validate_environment(self) -> Self:
         client = HuggingFaceInferenceClient(
             base_url=self.base_url,
             credentials=self.credentials,
+            tgi_config=self.tgi_config,
             timeout=self.timeout,
             headers=self.headers
         )
@@ -129,6 +137,10 @@ class HuggingFaceLLM(LLM, HuggingFaceInferenceServerMixin):
         run_manager: Optional[CallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> str:
+        """
+        Hugging Face TGI only supports one completion candidate in
+        the chat_completion endpoint of the Hugging Face Hub Messages API
+        """
         invocation_params = self._invocation_params(stop, **kwargs)
         if self.streaming:
             completion = ""
@@ -137,11 +149,42 @@ class HuggingFaceLLM(LLM, HuggingFaceInferenceServerMixin):
             # return completion
         else:
             invocation_params['stream'] = False
-            response = self.client.chat_completion(
-                [('human', prompt)],
+            chat_completion_output: ChatCompletionOutput = self.client.chat_completion(
+                messages=[
+                    {
+                        'role': 'user',
+                        'content': prompt
+                    }
+                ],
                 **invocation_params
             )
-            response_text = str(response)
+
+            completion_candidate = chat_completion_output.choices[0]
+            response_text = completion_candidate.message.content
+            finish_reason = completion_candidate.finish_reason
+
+            token_usage = {}
+            if finish_reason in ('stop', 'eos_token'):
+                token_usage['prompt_tokens'] = chat_completion_output.usage.prompt_tokens
+                token_usage['completion_tokens'] = chat_completion_output.usage.completion_tokens
+                token_usage['total_tokens'] = chat_completion_output.usage.total_tokens
+
+            if invocation_params.get('logprobs', False) and completion_candidate.logprobs:
+                import numpy as np
+                content = completion_candidate.logprobs.content
+                logprobs = [logprob.logprob for logprob in content]
+                mean_logprob = np.mean(logprobs)
+                token_usage['mean_logprob'] = mean_logprob
+
+            if run_manager:
+                run_manager.on_llm_end(
+                    LLMResult(
+                        generations=[[Generation(text=response_text)]],
+                        llm_output={
+                            'token_usage': token_usage
+                        }
+                    )
+                )
 
             for stop_seq in invocation_params['stop']:
                 if response_text[-len(stop_seq) :] == stop_seq:
