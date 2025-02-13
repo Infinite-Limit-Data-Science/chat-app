@@ -1,7 +1,20 @@
 import pytest
-from langchain_core.prompts import PromptTemplate
+import re
+import os
+from typing import Iterator
+from pydantic import BaseModel, Field, field_validator
+from langchain_core.prompts import PromptTemplate, FewShotPromptTemplate
+from langchain.output_parsers import PydanticOutputParser, RetryOutputParser
+from langchain_core.example_selectors import MaxMarginalRelevanceExampleSelector
+from langchain_redis import RedisConfig
+from langchain_redis import RedisVectorStore
+from redisvl.query.filter import Tag
 from ..huggingface_inference_server_config import HuggingFaceTGIConfig
 from ..huggingface_llm import HuggingFaceLLM
+from ..huggingface_embeddings import HuggingFaceEmbeddings
+from ..huggingface_inference_server_config import HuggingFaceTEIConfig
+from ..huggingface_transformer_tokenizers import BgeLargePretrainedTokenizer 
+from .corpus import examples
 
 @pytest.fixture
 def tgi_self_hosted_config() -> HuggingFaceTGIConfig:
@@ -24,6 +37,71 @@ def llm(tgi_self_hosted_config: HuggingFaceTGIConfig) -> HuggingFaceLLM:
         max_tokens=tgi_self_hosted_config.available_generated_tokens,
         temperature=0.8 
     )
+
+@pytest.fixture
+def tei_self_hosted_config() -> HuggingFaceTEIConfig:
+    return HuggingFaceTEIConfig(
+        name='BAAI/bge-large-en-v1.5',
+        url='http://100.28.34.190:8070/',
+        auth_token='eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJhcHAiOiJzdmMtY2hhdC10ZXN0Iiwic3ViIjoibjFtNCIsIm1haWwiOiJqb2huLmRvZUBiY2JzZmwuY29tIiwic3JjIjoiam9obi5kb2VAYmNic2ZsLmNvbSIsInJvbGVzIjpbIiJdLCJpc3MiOiJQTUktVGVzdCIsImF0dHJpYnV0ZXMiOlt7ImdpdmVubmFtZSI6IkpvaG4ifSx7InNuIjoiSkRvZSJ9LHsibWFpbCI6ImpvaG4uZG9lQGJjYnNmbC5jb20ifSx7ImRpc3BsYXluYW1lIjoiSkRvZSwgSm9obiJ9LHsiYmNic2ZsLWlkbVBpY3R1cmVVUkwiOiIifV0sImF1ZCI6ImNoYXRhcHAtdHN0YS50aHJvdGwuY29tIiwiZ2l2ZW5uYW1lIjoiSm9obiIsImRpc3BsYXluYW1lIjoiRG9lLCBKb2huIiwic24iOiJKRG9lIiwiaWRtX3BpY3R1cmVfdXJsIjoiIiwiZXhwIjoxODkzNDU2MDAwLCJpYXQiOjE3MTQxNDQ4NDEsInNlc3Npb25faWQiOiIiLCJqdGkiOiIifQ.rxHyA_WeMprlMtDsTGPvqgjRbQ2qT7VkiT6Ak1aSQmTl3nOFR_v0ev2AmUogUHXJi9CmGZcw3i-Wsis86ggOJKl4e7TwuKSBqt-s81jzGePI2yIsyKInEXwieKHXpWl1JFMtSkDpkRBeaiSlM1qpJ33BJLekRRkW-mDhV-yG5VVxyOWxRZDSfXRgrQ3CoNzChvITqdC1VOCeMAMI5Vg5zvo9bNOjOqOCLEtncsHdDiD7gYmPsGWeR9eXcT0y2-KONa0LvsYBewBcXjvJE63xe3XViiQ3HQPayjA1UAxWekD83_Kq7y-LJEjrQNNphEq_XyocpzvlmK-tlf59UGJJcw',        
+        max_batch_tokens=32768,
+        max_client_batch_size=128,
+        max_batch_requests=64,
+        auto_truncate=True
+    )
+
+@pytest.fixture
+def embeddings(tei_self_hosted_config: HuggingFaceTEIConfig) -> HuggingFaceEmbeddings:
+    return HuggingFaceEmbeddings(
+        base_url=tei_self_hosted_config.url,
+        credentials=tei_self_hosted_config.auth_token
+    )
+
+@pytest.fixture
+def tokenizer() -> BgeLargePretrainedTokenizer:
+    return BgeLargePretrainedTokenizer()
+
+@pytest.fixture
+def vectorstore(
+    embeddings: HuggingFaceEmbeddings, 
+    tokenizer: BgeLargePretrainedTokenizer
+) -> Iterator[RedisVectorStore]:
+    config = RedisConfig(
+        index_name="test1",
+        redis_url=os.environ['REDIS_URL'],
+        metadata_schema=[
+            {"name": "source", "type": "tag"},
+        ],
+        # setting this avoids unnecessary request for embeddings
+        embedding_dimensions=tokenizer.dimensions
+    )
+
+    store = RedisVectorStore(embeddings, config=config)
+
+    yield store
+
+    store.index.clear()
+    store.index.delete(drop=True)
+
+class MovieSummary(BaseModel):
+    title: str = Field(description='Title of the movie')
+    release_year: int = Field(description='Year the movie was released')
+    director: str = Field(description='Director of the movie')
+    plot_summary: str = Field(description='Brief summary of the movie plot')
+
+    @field_validator("release_year")
+    @classmethod
+    def validate_release_year(cls, year: int) -> int:
+        if year < 1888 or year > 2100:
+            raise ValueError("Invalid release year. Must be between 1888 and 2100.")
+        return year
+
+    @field_validator("director")
+    @classmethod
+    def validate_director_name(cls, name: str) -> str:
+        if not re.match(r"^[a-zA-Z\s.]+$", name):
+            raise ValueError("Invalid director name. Must contain only letters and spaces.")
+        return name
 
 def test_llm_type(llm: HuggingFaceLLM):
     assert getattr(llm, '_llm_type') == 'huggingface_llm'
@@ -49,19 +127,71 @@ def test_llm_invoke_with_prompt_template(llm: HuggingFaceLLM):
     ai_message = chain.invoke({'input': 'Memento'})
     assert len(ai_message) > 0
 
-@pytest.mark.skip(reason="Temporarily disabled for debugging")
 def test_llm_invoke_with_output_parser(llm: HuggingFaceLLM):
     """
-    START HERE
-    """
-    ...
+    Output Parser generates instructions injected in prompt, prompting
+    LLM to generate json using Pydantic model schema. JSON Parser 
+    validates and fixes the JSON string into actual JSON, and Pydantic
+    Parser validates the actual JSON data against the Pydantic Schema.
+    The result of the Runnable is a valid Pydantic model.
 
-@pytest.mark.skip(reason="Temporarily disabled for debugging")
-def test_llm_invoke_with_few_shot_prompt(llm: HuggingFaceLLM):
+    Some LLMs are inferior to others when generating json. For the Meta
+    Llama models, I found I had to include 'Return ONLY a single valid 
+    JSON object.' in the prompt to get a single json response back.
     """
-    Use Example Selector, FewShotPromptTemplate, MaximumMarginalRelevance
+    output_parser = PydanticOutputParser(pydantic_object=MovieSummary)
+
+    prompt = PromptTemplate(
+        template="Tell me about the movie {input}.\nReturn ONLY a single valid JSON object.\n{format_instructions}\n",
+        input_variables=["input"],
+        partial_variables={"format_instructions": output_parser.get_format_instructions()},
+    )
+    print(prompt.format(input='Memento'))
+
+    chain = prompt | llm | output_parser
+    ai_message = chain.invoke({'input': 'Memento'})
+    assert isinstance(ai_message, MovieSummary)
+    assert ai_message.release_year == 2000
+    assert ai_message.director == 'Christopher Nolan'
+    assert len(ai_message.plot_summary) > 1
+
+def test_llm_invoke_with_few_shot_prompt(llm: HuggingFaceLLM, embeddings: HuggingFaceEmbeddings, vectorstore: Iterator[RedisVectorStore]):
     """
-    ...
+    """
+    def example_to_text(
+        example: dict[str, str], 
+    ) -> str:
+        sorted_keys = sorted(example.keys())
+        return " ".join(example[k] for k in sorted_keys)
+
+    string_examples = [example_to_text(eg) for eg in examples]
+
+    vectorstore.add_texts(string_examples, metadatas=[{"source": "pandas"}] * len(string_examples))
+
+    example_selector = MaxMarginalRelevanceExampleSelector(
+        vectorstore=vectorstore,
+        k=3
+    )
+
+    example_prompt = PromptTemplate(
+        input_variables=["input", "output"],
+        template="Input: {input}\nOutput: {output}",
+    )
+
+    mmr_prompt = FewShotPromptTemplate(
+        example_selector=example_selector,
+        example_prompt=example_prompt,
+        prefix="Give the pandas expression of every input",
+        suffix="Input: {adjective}\nOutput:",
+        input_variables=["input"],
+    )
+
+    print(mmr_prompt.format(input="Aggregate the tables"))
+
+    chain = mmr_prompt | llm
+    ai_message = chain.invoke({ 'input': 'Aggregate the tables' })
+
+    assert ai_message == '...'
 
 @pytest.mark.skip(reason="Temporarily disabled for debugging")
 def test_llm_invoke_with_callbacks():
@@ -82,6 +212,14 @@ def test_llm_invoke_with_run_information():
     ...
 
 @pytest.mark.skip(reason="Temporarily disabled for debugging")
+def test_llm_invoke_with_image_to_text():
+    ...
+
+@pytest.mark.skip(reason="Temporarily disabled for debugging")
+def test_llm_invoke_with_tool_calling():
+    ...
+
+@pytest.mark.skip(reason="Temporarily disabled for debugging")
 def test_llm_ainvoke():
     ...
 
@@ -97,16 +235,10 @@ def test_llm_batch():
 def test_llm_abatch():
     ...
 
-@pytest.mark.skip(reason="Temporarily disabled for debugging")
-def test_llm_with_few_shot():
-    ...
 
 
-
-    # TODO: chat_model and llm classes
-    # then the example selectors in the dataframe expression tool tests
-    #def test_max_marginal_relevance_selector():
-        # Similarity Selector
-        # Max Marginal Relevance (MMR) Selector
-        # N-gram Overlap Selector  
-        # pass  
+    # TODO: chat_model 
+    # huggingface bot
+    # then the example selectors in the dataframe expression tool tests    
+    # document loader with metadata and smart vector retriever
+    # langgraph
