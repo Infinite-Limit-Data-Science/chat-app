@@ -1,14 +1,18 @@
 import pytest
 import re
 import os
-from typing import Iterator
+import itertools
+from typing import Iterator, List
+from faker import Faker
+import pandas as pd
 from pydantic import BaseModel, Field, field_validator
 from langchain_core.prompts import PromptTemplate, FewShotPromptTemplate
 from langchain.output_parsers import PydanticOutputParser, RetryOutputParser
 from langchain_core.example_selectors import MaxMarginalRelevanceExampleSelector
 from langchain_redis import RedisConfig
 from langchain_redis import RedisVectorStore
-from redisvl.query.filter import Tag
+from langchain_core.callbacks import StdOutCallbackHandler
+from langchain_core.runnables.config import RunnableConfig
 from ..huggingface_inference_server_config import HuggingFaceTGIConfig
 from ..huggingface_llm import HuggingFaceLLM
 from ..huggingface_embeddings import HuggingFaceEmbeddings
@@ -70,7 +74,8 @@ def vectorstore(
         index_name="test1",
         redis_url=os.environ['REDIS_URL'],
         metadata_schema=[
-            {"name": "source", "type": "tag"},
+            {"name": "input", "type": "text"},
+            {"name": "output", "type": "text"},
         ],
         # setting this avoids unnecessary request for embeddings
         embedding_dimensions=tokenizer.dimensions
@@ -82,6 +87,11 @@ def vectorstore(
 
     store.index.clear()
     store.index.delete(drop=True)
+
+@pytest.fixture
+def sample_population() -> List[str]:
+    fake = Faker("en_GB")
+    return [fake.name() for _ in range(100)]
 
 class MovieSummary(BaseModel):
     title: str = Field(description='Title of the movie')
@@ -155,7 +165,10 @@ def test_llm_invoke_with_output_parser(llm: HuggingFaceLLM):
     assert ai_message.director == 'Christopher Nolan'
     assert len(ai_message.plot_summary) > 1
 
-def test_llm_invoke_with_few_shot_prompt(llm: HuggingFaceLLM, embeddings: HuggingFaceEmbeddings, vectorstore: Iterator[RedisVectorStore]):
+def test_llm_invoke_with_few_shot_prompt(
+        llm: HuggingFaceLLM, 
+        vectorstore: Iterator[RedisVectorStore],
+        sample_population: List[str]):
     """
     """
     def example_to_text(
@@ -166,38 +179,74 @@ def test_llm_invoke_with_few_shot_prompt(llm: HuggingFaceLLM, embeddings: Huggin
 
     string_examples = [example_to_text(eg) for eg in examples]
 
-    vectorstore.add_texts(string_examples, metadatas=[{"source": "pandas"}] * len(string_examples))
+    index_ids = vectorstore.add_texts(string_examples, metadatas=examples)
+    print(index_ids)
 
     example_selector = MaxMarginalRelevanceExampleSelector(
         vectorstore=vectorstore,
         k=3
     )
 
+    selector_output = example_selector.select_examples({'input': 'Which names have the highest salaries?'})
+    print(selector_output)
+    
+    # Once we have the selected examples example selector returned, then we format them for the eventual prompt sent to the model
     example_prompt = PromptTemplate(
         input_variables=["input", "output"],
         template="Input: {input}\nOutput: {output}",
     )
 
+    salaries = itertools.count(start=10_000, step=10_000)
+    ages = itertools.count(start=25, step=5)
+    data = zip(sample_population, ages, salaries)
+    df = pd.DataFrame(data, columns=['Name', 'Age', 'Salary'])
+
+    prefix = f"""
+    You are working with a pandas dataframe in Python. The name of the dataframe is `df`.
+    This is the result of `print(df.head())`:
+    {df.head()}
+
+    IMPORTANT: Return EXACTLY a Python expression referencing df, with NO extra text or explanation. 
+    You must NOT provide any additional commentary or lines.
+
+    In the following examples, any string wrapped in angle brackets (e.g., <col_name>, <col1>, <value>, <n>, <start_date>, etc.) is a placeholder. It represents a variable that can change depending on the user's actual DataFrame or query.
+    
+    Give the pandas expression of every input.
+    """
     mmr_prompt = FewShotPromptTemplate(
         example_selector=example_selector,
         example_prompt=example_prompt,
-        prefix="Give the pandas expression of every input",
-        suffix="Input: {adjective}\nOutput:",
+        prefix=prefix,
+        suffix="Input: {input}\nOutput:",
         input_variables=["input"],
     )
 
-    print(mmr_prompt.format(input="Aggregate the tables"))
+    mmr_prompt_output = mmr_prompt.format(input='Which names have the highest salaries?')
+    print(mmr_prompt_output)
 
+    # another option is to add a PandasOutputParser to determine if response is valid pandas
+    # expression, for example, a @field_validator on an expression field which loads
+    # the returned string into eval to validate its valid pandas expression. If not,
+    # then OutputParser will generate error and in a langgraph we can send the prompt
+    # back to the language model with additional context to correct the mistake.
     chain = mmr_prompt | llm
-    ai_message = chain.invoke({ 'input': 'Aggregate the tables' })
+    ai_message = chain.invoke({ 'input': 'Which names have the highest salaries?' })
+    
+    df_content = eval(ai_message, {'df': df})
 
-    assert ai_message == '...'
+    assert len(df_content) > 0
 
-@pytest.mark.skip(reason="Temporarily disabled for debugging")
-def test_llm_invoke_with_callbacks():
-    # from langchain_core.callbacks import StdOutCallbackHandler
-    # config = RunnableConfig(callbacks=[StdOutCallbackHandler()])
-    ...
+def test_llm_invoke_with_callbacks(llm: HuggingFaceLLM):
+    config = RunnableConfig(callbacks=[StdOutCallbackHandler()])
+    prompt = PromptTemplate(
+        input_variables=['input'],
+        template="Tell me about the movie {input}."
+    )
+
+    chain = prompt | llm
+    chain.invoke({'input': 'Memento'}, config)
+
+    assert call_handler.on_llm_start_called
 
 @pytest.mark.skip(reason="Temporarily disabled for debugging")
 def test_llm_invoke_with_run_information():
@@ -209,6 +258,11 @@ def test_llm_invoke_with_run_information():
     # config = RunnableConfig(metadata={"user_id": "12345", "model": "gpt-4"})
     # config = RunnableConfig(run_name="SummarizationRun")
     # config = RunnableConfig(run_id=uuid4())
+    ...
+
+@pytest.mark.skip(reason="Temporarily disabled for debugging")
+def test_llm_invoke_with_token_usage_in_response():
+    # Need to validate that token usage is passed in response from chain
     ...
 
 @pytest.mark.skip(reason="Temporarily disabled for debugging")

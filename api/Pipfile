@@ -31,6 +31,7 @@ pandas = "*"
 pytest = "*"
 mypy = "*"
 pytest-asyncio = "*"
+faker = "*"
 
 [requires]
 python_version = "3.12"

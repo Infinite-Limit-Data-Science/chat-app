@@ -1,183 +1,199 @@
 examples = [
     {
-        'input': 'Provide the number of rows and columns', 
+        'input': 'Provide the number of rows and columns.', 
         'output': 'df.shape'
     },
     {
-        'input': 'Provide a summary of the data',
+        'input': 'Provide a summary of the data.',
         'output': 'df.info()'
     },
     {
-        'input': 'Show the last 5 rows in the data',
+        'input': 'Show the last 5 rows in the data.',
         'output': 'df.tail()'
     },
     {
-        'input': 'Show the data in "column_a"',
-        'output': 'df["column_a"]'
-    },
-    {
-        'input': 'List the content of "column_a" and "column_b"',
-        'output': 'df[["column_a", "column_b"]]'
-    },
-    {
-        'input': 'List the column names',
+        'input': 'List the column names.',
         'output': 'df.columns'
     },
     {
-        'input': 'List the content of the first row',
+        'input': 'List the content of the first row.',
         'output': 'df.iloc[0]'
     },
     {
-        'input': 'What is the content of the first and second row',
+        'input': 'What is the content of the first and second row?',
         'output': 'df.iloc[[0,1]]'
+    },
+    {
+        "input": "Show the data in \"{col_name}\".",
+        "output": "df[{col_name!r}]"
+    },
+    {
+        "input": "What are the first 3 rows of the \"{col_name}\" column?",
+        "output": "df.loc[0:2, {col_name!r}]"
+    },
+    {
+        "input": "List the unique values in \"{col_name}\".",
+        "output": "df[{col_name!r}].unique()"
+    },
+    {
+        "input": "Select rows where \"{col_name}\" is equal to \"value1\".",
+        "output": "df[df[{col_name!r}] == \"value1\"]"
+    },
+    {
+        "input": "List the content of \"{col1}\" and \"{col2}\".",
+        "output": "df[[{col1!r}, {col2!r}]]"
+    },
+    {
+        "input": "What is the content of rows 0 and 1 for the \"{col_name}\" column?",
+        "output": "df.loc[[0, 1], {col_name!r}]"
     },
     {
         'input': 'What is the content of the first and second row and the last column, given there are three total columns',
         'output': 'df.iloc[[0,1], 2]'
     },
     {
-        'input': 'What is the content of the first and second row and the "column_a" column',
-        'output': 'df.loc[[0,1], "column_a"]'
+        "input": "What is the content of rows {row1} and {row2} for the \"{col_a}\" and \"{col_b}\" columns?",
+        "output": "df.loc[[{row1}, {row2}], [{col_a!r}, {col_b!r}]]"
     },
     {
-        'input': 'What is the content of the first and second row and the "column_a" and "column_b" columns',
-        'output': 'df.loc[[0,1], "column_a", "column_b"]'
+        "input": "What are the values of the first three rows of the \"{col_name}\" column?",
+        "output": "df.loc[0:2, {col_name!r}]"
     },
     {
-        'input': 'What are the values of the first three rows of the "column_a" column',
-        'output': 'df.loc[0:2, "column_a"]'
+        "input": "What are the values of the first three rows from \"{start_col}\" to \"{end_col}\" columns?",
+        "output": "df.loc[0:2, {start_col!r}:{end_col!r}]"
     },
     {
-        'input': 'What are the values of the first three rows of "column_a" to "column_d" columns',
-        'output': 'df.loc[0:2, "column_a":"column_d"]'
+        "input": "Sort the data by \"{col1}\" in ascending order.",
+        "output": "df.sort_values(by={col1!r})"
     },
     {
-        'input': 'Select rows from the range "value1" to "value10" in "column_a"',
-        'output': 'df.set_index("column_a").loc["value1":"value10"]'
+        "input": "Sort the data by \"{col1}\" in descending order.",
+        "output": "df.sort_values(by={col1!r}, ascending=False)"
     },
     {
-        'input': 'Select rows where "column_a" is equal to "value1"',
-        'output': 'df[df["column_a"] == "value1"]'
+        "input": "Sort the data by \"{col1}\" and \"{col2}\" in ascending order.",
+        "output": "df.sort_values(by=[{col1!r}, {col2!r}])"
     },
     {
-        'input': 'Select values in column "column_a" where the "column_b" is equal to "value1"',
-        'output': 'df.loc[df["column_b"] == "value1", "column_a"]'
+        "input": "Sort the data by \"{col1}\" and \"{col2}\" in descending order.",
+        "output": "df.sort_values(by=[{col1!r}, {col2!r}], ascending=False)"
     },
     {
-        'input': 'Select rows where "column_a" column is equal to "value1" and "column_b" column is equal to "value2"',
-        'output': 'df[(df["column_a"] == "value1") & (df["column_b"] == "value2")]'
+        "input": "Sort the data by \"{col1}\" and \"{col2}\" with \"{col1}\" in descending order and \"{col2}\" in ascending order.",
+        "output": "df.sort_values(by=[{col1!r}, {col2!r}], ascending=[False, True])"
     },
     {
-        'input': 'Select rows where "column_a" column is equal to "value1" or "column_b" column is equal to "value2"',
-        'output': 'df[(df["column_a"] == "value1") | (df["column_b"] == "value2")]'
+        "input": "Sort the data by \"{col1}\" in descending order and \"{col2}\" in ascending order, then list the first {n} results.",
+        "output": "df.sort_values(by=[{col1!r}, {col2!r}], ascending=[False, True]).head({n})"
     },
     {
-        'input': 'Select rows where "column_a" column is not equal to "value1" or "column_b" column is not equal to "value2"',
-        'output': 'df[~((df["column_a"] == "value1") | (df["column_b"] == "value2"))]'
+        "input": "Select rows from the range \"{value1}\" to \"{value2}\" in \"{col_name}\".",
+        "output": "df.set_index({col_name!r}).loc[{value1!r}:{value2!r}]"
     },
     {
-        'input': 'Select "column_a" column, "column_b" column, and "column_c" column where "column_c" column is greater than 70000',
-        'output': 'df.loc[df["column_c"] > 70000, "column_a":"column_c"]'
+        "input": "Select rows where \"{col1}\" equals \"{value1}\" and \"{col2}\" equals\"{value2}\".",
+        "output": "df[(df[{col1!r}] == {value1!r}) & (df[{col2!r}] == {value2!r})]"
     },
     {
-        'input': 'Select "column_a" column where "value1", "value2", "value3" are in "column_a"',
-        'output': 'df.loc[df["column_a"].isin(["value1", "value2", "value3"]), "column_a"]'
+        "input": "Select rows where \"{col_name}\" is equal to \"{value}\".",
+        "output": "df[df[{col_name!r}] == {value!r}]"
     },
     {
-        'input': 'Select "column_a" column where "value1", "value2", "value3" are not in "column_a"',
-        'output': 'df.loc[~df["column_a"].isin(["value1", "value2", "value3"]), "column_a"]'
+        "input": "Select values in column \"{col1}\" where \"{col2}\" is equal to \"{value}\".",
+        "output": "df.loc[df[{col2!r}] == {value!r}, {col1!r}]"
     },
     {
-        'input': 'Select "column_a" where "column_a" contains text "value"',
-        'output': 'df.loc[df["column_a"].str.contains("value"), "column_a"]'
+        "input": "Select rows where \"{col1}\" is equal to \"{value1}\" AND \"{col2}\" is equal to \"{value2}\".",
+        "output": "df[(df[{col1!r}] == {value1!r}) & (df[{col2!r}] == {value2!r})]"
     },
     {
-        'input': 'Sort the data by column "column_a" in ascending order',
-        'output': 'df.sort_values(by="column_a")'
+        "input": "Select rows where \"{col1}\" is equal to \"{value1}\" OR \"{col2}\" is equal to \"{value2}\".",
+        "output": "df[(df[{col1!r}] == {value1!r}) | (df[{col2!r}] == {value2!r})]"
     },
     {
-        'input': 'Sort the data by column "column_a" in descending order',
-        'output': 'df.sort_values(by="column_a", ascending=False)'        
+        "input": "Select rows where \"{col1}\" is NOT equal to \"{value1}\" OR \"{col2}\" is NOT equal to \"{value2}\".",
+        "output": "df[~((df[{col1!r}] == {value1!r}) | (df[{col2!r}] == {value2!r}))]"
     },
     {
-        'input': 'Sort the data by column "column_a" and column "column_b" in descending order',
-        'output': 'df.sort_values(by=["column_a", "column_b"], ascending=False)'
+        "input": "Select \"{col1}\", \"{col2}\", and \"{col3}\" columns where \"{col3}\" is greater than {threshold}.",
+        "output": "df.loc[df[{col3!r}] > {threshold}, {col1!r}:{col3!r}]"
     },
     {
-        'input': 'Sort the data by column "column_a" and column "column_b" with "column_a" in descending order and "column_b" in ascending order',
-        'output': 'df.sort_values(by=["column_a", "column_b"], ascending=[False, True])'
+        "input": "Select \"{col1}\" where \"{col1}\" is in the list \"{value_list}\".",
+        "output": "df.loc[df[{col1!r}].isin({value_list!r}), {col1!r}]"
     },
     {
-        'input': 'Sort the data by column "column_a" and column "column_b" with "column_a" in descending order and "column_b" in ascending order and list the first 50 results',
-        'output': 'df.sort_values(by=["column_a", "column_b"], ascending=[False, True]).head(50)'
+        "input": "Select \"{col1}\" where \"{col1}\" is NOT in the list \"{value_list}\".",
+        "output": "df.loc[~df[{col1!r}].isin({value_list!r}), {col1!r}]"
     },
     {
-        'input': 'What are the 10 largest values of column "column_a"',
-        'output': 'df["column_a"].nlargest(10)'
+        "input": "Select \"{col1}\" rows where \"{col1}\" contains text \"{value}\".",
+        "output": "df.loc[df[{col1!r}].str.contains({value!r}), {col1!r}]"
+    }, 
+    {
+        "input": "What are the {n} largest values of \"{col_name}\"?",
+        "output": "df[{col_name!r}].nlargest({n})"
     },
     {
-        'input': 'Show all of the data of the 10 largest values of column "column_a"',
-        'output': 'df.nlargest(10, "column_a")'
+        "input": "Show all of the data of the {n} largest values of \"{col_name}\".",
+        "output": "df.nlargest({n}, {col_name!r})"
     },
     {
-        'input': 'Show all of the data of the 10 smallest values of column "column_a"',
-        'output': 'df.nsmallest(10, "column_a")'
+        "input": "Show all of the data of the {n} smallest values of \"{col_name}\".",
+        "output": "df.nsmallest({n}, {col_name!r})"
     },
     {
-        'input': 'What is the median value of column "column_a"',
-        'output': 'df["column_a"].median()'
+        "input": "What is the median value of \"{col_name}\"?",
+        "output": "df[{col_name!r}].median()"
     },
     {
-        'input': 'What are the median values of our data',
-        'output': 'df.median()'
+        "input": "What are the median values of the data?",
+        "output": "df.median()"
     },
     {
-        'input': 'Provide some statistics of the data',
-        'output': 'df.describe()'
+        "input": "Describe the data.",
+        "output": "df.describe()"
     },
     {
-        'input': 'Count the occurrences of unique values in column "column_a"',
-        'output': 'df["column_a"].value_counts()'
+        "input": "Count the occurrences of unique values in \"{col_name}\".",
+        "output": "df[{col_name!r}].value_counts()"
     },
     {
-        'input': 'Break down the count the occurrences of unique values in column "column_a" by percentage',
-        'output': 'df["column_a"].value_counts(normalize=True)'
+        "input": "Break down the count of unique values in \"{col_name}\" by percentage.",
+        "output": "df[{col_name!r}].value_counts(normalize=True)"
+    },
+    {   
+        "input": "What is the count of different values in \"{col1}\" broken down or grouped by \"{col2}\"?",
+        "output": "df.groupby({col2!r})[{col1!r}].value_counts()"
+    }, 
+    {
+        "input": "What is the median value of \"{col1}\" broken down or grouped by \"{col2}\"?",
+        "output": "df.groupby({col2!r})[{col1!r}].median()"
     },
     {
-        'input': 'What is the counts of different values in column "column_a" broken down or grouped by column "column_b"',
-        'output': 'df.groupby(["column_b"])["column_a"].value_counts()'
+        "input": "What are the median and mean of \"{col1}\" broken down or grouped by \"{col2}\"?",
+        "output": "df.groupby({col2!r})[{col1!r}].agg([\"median\", \"mean\"])"
     },
     {
-        'input': 'What is the median value of column "column_a" broken down or grouped by column "column_b"',
-        'output': 'df.groupby(["column_b"])["column_a"].median()'
+        "input": "How many entries in column \"{col1}\" contain \"{value}\", when column \"{col2}\" is equal to \"{value2}\"?",
+        "output": "df[df[{col2!r}] == {value2!r}][{col1!r}].str.contains({value!r}).sum()"
     },
     {
-        'input': 'What is the median value and the mean of column "column_a" broken down or grouped by column "column_b"',
-        'output': 'df.groupby(["column_b])["column_a"].agg(["median", "mean"])'
+        "input": "How many rows in \"{col2}\" contain \"{value}\", broken down or grouped by \"{col1}\"?",
+        "output": "df.groupby({col1!r})[{col2!r}].apply(lambda x: x.str.contains({value!r}).sum())"
     },
     {
-        'input': 'How many contain "value1" for column "column_a" filtered by "value2" in "column_b"',
-        'output': 'df[df["columnb"] == "value2"]["column_a"].str.contains("value1").sum()'
-    },
-    {
-        'input': 'How many contain "value1" for column "column_a" broken down or grouped by "column_b"',
-        'output': 'df.groupby(["column_a"])["column_b"].apply(lambda x: x.str.contains("value1").sum())'
-    },
-    {
-        'input': 'List rows without any missing values',
-        'output': 'df.dropna()'
-    },
-    {
-        'input': 'List the data without columns with all missing values',
+        'input': 'Remove columns that are entirely empty and display the remaining data.',
         'output': 'df.dropna(axis="columns", how="all")'
     },
     {
-        'input': 'List the rows whose column "column_a" is not empty',
-        'output': 'df.dropna(axis="index", how="any", subset=["column_a"])'
+        "input": "Drop rows with any missing values in \"{col_name}\".",
+        "output": "df.dropna(axis='index', how='any', subset=[{col_name!r}])"
     },
     {
-        'input': 'List the rows where at least "column_a" or "column_b" is not empty',
-        'output': 'df.dropna(axis="index", how="all", subset=["column_a", "column_b"])'
+        "input": "List the rows where at least \"{col1}\" or \"{col2}\" is not empty.",
+        "output": "df.dropna(axis='index', how='all', subset=[{col1!r}, {col2!r}])"
     },
     {
         'input': 'List the data where empty values are filled with 0s',
@@ -188,35 +204,32 @@ examples = [
         'output': 'df.dtypes'
     },
     {
-        'input': 'Calculate the average of "column_a" ignoring empty values',
-        'output': 'df["column_a"].replace(["", " ", "None"], np.nan).astype(float).dropna().mean()'
+        "input": "Calculate the average of \"{col_name}\" ignoring empty values.",
+        "output": "df[{col_name!r}].replace(['', ' ', 'None'], np.nan).astype(float).dropna().mean()"
     },
     {
-        'input': 'Calculate the average of "column_a" with empty values filled with 0s',
-        'output': 'df["column_a"].replace(["", " ", "None"], np.nan).astype(float).fillna(0).mean()'
+        "input": "Calculate the average of \"{col_name}\" with empty values filled with 0s.",
+        "output": "df[{col_name!r}].replace(['', ' ', 'None'], np.nan).astype(float).fillna(0).mean()"
     },
     {
-        'input': 'List the unique values of "column_a"',
-        'output': 'df["column_a"].unique'
+        "input": "Show the day of the week for each date in \"{col_name}\".",
+        "output": "df[{col_name!r}].dt.day_name()"
     },
     {
-        'input': 'Show the date column "column_a" as day of the week',
-        'output': 'df["column_a"].dt.day_name()'
+        "input": "What's the earliest date listed in \"{col_name}\"?",
+        "output": "df[{col_name!r}].min()"
+    },
+
+    {
+        "input": "Find the most recent date in \"{col_name}\".",
+        "output": "df[{col_name!r}].max()"
     },
     {
-        'input': 'Show the earliest date in the date column "column_a',
-        'output': 'df["column_a"].min()'
+        "input": "List all rows where \"{col_name}\" is after \"{start_date}\".",
+        "output": "df[df[{col_name!r}] >= {start_date!r}]"
     },
     {
-        'input': 'Show the most recent date in the date column "column_a',
-        'output': 'df["column_a"].max()'
-    },
-    {
-        'input': 'Show data newer than 2024-01-01 in the date column "column_a"',
-        'output': 'df[df["column_a"] >= 2024-01-01]'
-    },
-    {
-        'input': 'Show data greater than 2024-01-01 and less than 2025-01-01 in the date column "column_a"',
-        'output': 'df[(df["column_a"] >= 2024-01-01) & (df["column_a"] <= 2025-01-01)]'
+        "input": "Show data greater than \"{start_date}\" and less than \"{end_date}\" in the column \"{col_name}\".",
+        "output": "df[(df[{col_name!r}] >= {start_date!r}) & (df[{col_name!r}] <= {end_date!r})]"
     }
 ]
