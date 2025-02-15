@@ -1,6 +1,8 @@
 import pytest
 import re
 import os
+import uuid
+from uuid import UUID
 import itertools
 from typing import Iterator, List
 from faker import Faker
@@ -11,8 +13,10 @@ from langchain.output_parsers import PydanticOutputParser, RetryOutputParser
 from langchain_core.example_selectors import MaxMarginalRelevanceExampleSelector
 from langchain_redis import RedisConfig
 from langchain_redis import RedisVectorStore
-from langchain_core.callbacks import StdOutCallbackHandler
 from langchain_core.runnables.config import RunnableConfig
+from langchain_core.callbacks.base import BaseCallbackHandler
+from langchain.schema import LLMResult
+from langchain_core.runnables.utils import ConfigurableField
 from ..huggingface_inference_server_config import HuggingFaceTGIConfig
 from ..huggingface_llm import HuggingFaceLLM
 from ..huggingface_embeddings import HuggingFaceEmbeddings
@@ -112,6 +116,55 @@ class MovieSummary(BaseModel):
         if not re.match(r"^[a-zA-Z\s.]+$", name):
             raise ValueError("Invalid director name. Must contain only letters and spaces.")
         return name
+
+class MockCallbackHandler(BaseCallbackHandler):
+    def __init__(self):
+        super().__init__()
+        self.llm_end_called = False
+        self.llm_end_data = None
+
+    def on_llm_end(self, response: LLMResult, **kwargs):
+        self.llm_end_called = True
+        self.llm_end_data = response
+
+class SpyHuggingFaceLLM(HuggingFaceLLM):
+    last_used_temperature: float | None = Field(None, exclude=True)
+    
+    def _generate(self, prompts, stop=None, run_manager=None, **kwargs):
+        llm_result = super()._generate(prompts, stop=stop, run_manager=run_manager, **kwargs)
+        if not llm_result.llm_output:
+            llm_result.llm_output = {}
+        llm_result.llm_output['final_temp'] = self.temperature
+
+        return llm_result
+
+class TokenUsageCollector(BaseCallbackHandler):
+    def __init__(self):
+        self.usage_by_run_id = {}
+    
+    def on_llm_end(self, response: LLMResult, run_id: UUID, **kwargs):
+        usage = response.llm_output.get('token_usage')
+        if usage:
+            self.usage_by_run_id[run_id] = usage
+
+class ConfigurableCaptureCallbackHandler(BaseCallbackHandler):
+    def __init__(self):
+        super().__init__()
+        self.captured_temp = None
+
+    def on_llm_end(self, response: LLMResult, run_id=None, **kwargs):
+        if response.llm_output is not None:
+            self.captured_temp = response.llm_output.get('final_temp')
+
+@pytest.fixture
+def spy_llm(tgi_self_hosted_config: HuggingFaceTGIConfig) -> SpyHuggingFaceLLM:
+    return SpyHuggingFaceLLM(
+        base_url=tgi_self_hosted_config.url,
+        credentials=tgi_self_hosted_config.auth_token,
+        tgi_config=tgi_self_hosted_config,
+        max_tokens=tgi_self_hosted_config.available_generated_tokens,
+        temperature=0.8 
+    )
 
 def test_llm_type(llm: HuggingFaceLLM):
     assert getattr(llm, '_llm_type') == 'huggingface_llm'
@@ -237,7 +290,8 @@ def test_llm_invoke_with_few_shot_prompt(
     assert len(df_content) > 0
 
 def test_llm_invoke_with_callbacks(llm: HuggingFaceLLM):
-    config = RunnableConfig(callbacks=[StdOutCallbackHandler()])
+    mock_handler = MockCallbackHandler()
+    config = RunnableConfig(callbacks=[mock_handler])
     prompt = PromptTemplate(
         input_variables=['input'],
         template="Tell me about the movie {input}."
@@ -246,24 +300,74 @@ def test_llm_invoke_with_callbacks(llm: HuggingFaceLLM):
     chain = prompt | llm
     chain.invoke({'input': 'Memento'}, config)
 
-    assert call_handler.on_llm_start_called
+    assert mock_handler.llm_end_data is not None
 
-@pytest.mark.skip(reason="Temporarily disabled for debugging")
-def test_llm_invoke_with_run_information():
-    # tags=config.get("tags"),
-    # metadata=config.get("metadata"),
-    # run_name=config.get("run_name"),
-    # run_id=config.pop("run_id", None),
-    # config = RunnableConfig(tags=["my_custom_chain", "summarization"])
-    # config = RunnableConfig(metadata={"user_id": "12345", "model": "gpt-4"})
-    # config = RunnableConfig(run_name="SummarizationRun")
-    # config = RunnableConfig(run_id=uuid4())
-    ...
+def test_llm_invoke_with_run_information(spy_llm: SpyHuggingFaceLLM):
+    """
+    configurable_fields returns a new RunnableSerializable object
+    with newly configured fields
+    
+    Most of behavior is in RunnableConfigurableFields with extends
+    DynamicRunnable
 
-@pytest.mark.skip(reason="Temporarily disabled for debugging")
-def test_llm_invoke_with_token_usage_in_response():
-    # Need to validate that token usage is passed in response from chain
-    ...
+    Note the change in Configurable is ephemeral. It does not affect
+    the original llm object, only for an ephemeral operation on the 
+    chain to use the changed field, such as temperature from 0.8 to
+    0.3 temporarily.
+    """
+    llm = spy_llm.configurable_fields(
+        temperature=ConfigurableField(
+            id='temperature',
+            name='LLM Temperature',
+            description='The temperature of the LLM'
+        )
+    )
+
+    handler = ConfigurableCaptureCallbackHandler()
+    
+    run_uuid = uuid.uuid4()
+    config = RunnableConfig(
+        tags=['huggingface_llm', 'llm_123'],
+        metadata={'user_uuid': '12345', 'model': 'meta/llama-3.2-90b-vision-instruct'},
+        run_name='huggingface_llm_invoke_role',
+        max_concurrency=1, # more applicable when batching or using composite chains
+        configurable={'temperature': 0.3}, # more applicable when you have multiple models in chain and want some to have configurable attribute like temperature but not others
+        run_id=run_uuid,
+        callbacks=[handler], 
+    )
+    prompt = PromptTemplate(
+        input_variables=['input'],
+        template="Tell me about the movie {input}."
+    )
+
+    chain = prompt | llm
+    chain.invoke({'input': 'Memento'}, config)
+
+    assert handler.captured_temp == 0.3, (
+        f"Expected temperature to be 0.3, got {spy_llm.last_used_temperature}"
+    )
+
+def test_llm_invoke_with_token_usage_in_response(llm: HuggingFaceLLM):
+    usage_collector = TokenUsageCollector()
+    config = RunnableConfig(callbacks=[usage_collector])
+    
+    prompt = PromptTemplate(
+        input_variables=['input'],
+        template="Tell me about the movie {input}."
+    )
+
+    chain = prompt | llm
+    ai_message = chain.invoke({'input': 'Memento'}, config)
+
+    run_id = config.run_id
+    usage_info = usage_collector.usage_by_run_id.get(run_id)
+
+    final_response = {
+        'answer': ai_message,
+        'token_usage': usage_info
+    }
+
+    assert final_response['token_usage'] == 100
 
 @pytest.mark.skip(reason="Temporarily disabled for debugging")
 def test_llm_invoke_with_image_to_text():
@@ -275,6 +379,10 @@ def test_llm_invoke_with_tool_calling():
 
 @pytest.mark.skip(reason="Temporarily disabled for debugging")
 def test_llm_ainvoke():
+    ...
+
+@pytest.mark.skip(reason="Temporarily disabled for debugging")
+def test_llm_stream():
     ...
 
 @pytest.mark.skip(reason="Temporarily disabled for debugging")

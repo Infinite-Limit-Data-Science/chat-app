@@ -142,51 +142,60 @@ class HuggingFaceLLM(LLM, HuggingFaceInferenceServerMixin):
         the chat_completion endpoint of the Hugging Face Hub Messages API
         """
         invocation_params = self._invocation_params(stop, **kwargs)
-        if self.streaming:
-            completion = ""
-            # for chunk in self._stream(prompt, stop, run_manager, **invocation_params):
-            #     completion += chunk.text
-            # return completion
-        else:
-            invocation_params['stream'] = False
-            chat_completion_output: ChatCompletionOutput = self.client.chat_completion(
-                messages=[
-                    {
-                        'role': 'user',
-                        'content': prompt
-                    }
-                ],
-                **invocation_params
-            )
+        
+        try:
+            if self.streaming:
+                completion = ""
+                for chunk in self._stream(prompt, stop, run_manager, **invocation_params):
+                    completion += chunk.text
 
-            completion_candidate = chat_completion_output.choices[0]
-            response_text = completion_candidate.message.content
-            finish_reason = completion_candidate.finish_reason
-
-            token_usage = {}
-            if finish_reason in ('stop', 'eos_token'):
-                token_usage['prompt_tokens'] = chat_completion_output.usage.prompt_tokens
-                token_usage['completion_tokens'] = chat_completion_output.usage.completion_tokens
-                token_usage['total_tokens'] = chat_completion_output.usage.total_tokens
-
-            if invocation_params.get('logprobs', False) and completion_candidate.logprobs:
-                import numpy as np
-                content = completion_candidate.logprobs.content
-                logprobs = [logprob.logprob for logprob in content]
-                mean_logprob = np.mean(logprobs)
-                token_usage['mean_logprob'] = mean_logprob
-
-            if run_manager:
-                run_manager.on_llm_end(
-                    LLMResult(
-                        generations=[[Generation(text=response_text)]],
-                        llm_output={
-                            'token_usage': token_usage
+                    if run_manager:
+                        run_manager.on_llm_new_token(
+                            token=chunk.text,
+                            chunk=chunk
+                        )
+                return completion
+            else:
+                invocation_params['stream'] = False
+                chat_completion_output: ChatCompletionOutput = self.client.chat_completion(
+                    messages=[
+                        {
+                            'role': 'user',
+                            'content': prompt
                         }
-                    )
+                    ],
+                    **invocation_params
                 )
 
-            for stop_seq in invocation_params['stop']:
-                if response_text[-len(stop_seq) :] == stop_seq:
-                    response_text = response_text[: -len(stop_seq)]
-            return response_text
+                completion_candidate = chat_completion_output.choices[0]
+                response_text = completion_candidate.message.content
+                finish_reason = completion_candidate.finish_reason
+
+                token_usage = {}
+                if finish_reason in ('stop', 'eos_token'):
+                    token_usage['prompt_tokens'] = chat_completion_output.usage.prompt_tokens
+                    token_usage['completion_tokens'] = chat_completion_output.usage.completion_tokens
+                    token_usage['total_tokens'] = chat_completion_output.usage.total_tokens
+
+                if invocation_params.get('logprobs', False) and completion_candidate.logprobs:
+                    import numpy as np
+                    content = completion_candidate.logprobs.content
+                    logprobs = [logprob.logprob for logprob in content]
+                    mean_logprob = np.mean(logprobs)
+                    token_usage['mean_logprob'] = mean_logprob
+
+                if run_manager:
+                    llm_result = LLMResult(
+                        generations=[[Generation(text=response_text)]],
+                        llm_output={'token_usage': token_usage}
+                    )
+                    run_manager.on_llm_end(llm_result)
+
+                for stop_seq in invocation_params['stop']:
+                    if response_text[-len(stop_seq) :] == stop_seq:
+                        response_text = response_text[: -len(stop_seq)]
+                return response_text
+        except Exception as e:
+            if run_manager:
+                run_manager.on_llm_error(e, response=LLMResult(generations=[]))
+            raise
