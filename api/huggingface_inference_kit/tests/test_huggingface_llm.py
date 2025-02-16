@@ -4,6 +4,8 @@ import os
 import uuid
 from uuid import UUID
 import itertools
+import base64
+from pathlib import Path
 from typing import Iterator, List, Optional, Dict
 from faker import Faker
 import pandas as pd
@@ -401,21 +403,38 @@ def test_llm_invoke_with_token_usage_in_response(llm: HuggingFaceLLM):
 
     assert all(structured_output['token_usage'].values())
 
-@pytest.mark.skip(reason="Temporarily disabled for debugging")
+@pytest.mark.skip(reason='LLM only supports text inputs, image-to-text is not implemented.')
 def test_llm_invoke_with_image_to_text():
-    ...
+    pass
 
-@pytest.mark.skip(reason="Temporarily disabled for debugging")
+@pytest.mark.skip(reason='LLM only supports text inputs, tool calling is not implemented.')
 def test_llm_invoke_with_tool_calling():
-    ...
+    pass
 
-@pytest.mark.skip(reason="Temporarily disabled for debugging")
-def test_llm_ainvoke():
-    ...
+@pytest.mark.asyncio
+async def test_llm_ainvoke(llm: HuggingFaceLLM):
+    prompt = PromptTemplate(
+        input_variables=['input'],
+        template="Tell me about the movie {input}."
+    )
 
-@pytest.mark.skip(reason="Temporarily disabled for debugging")
+    chain = prompt | llm
+    ai_message = await chain.ainvoke({'input': 'Memento'})
+    assert len(ai_message) > 0
+
 def test_llm_stream():
-    ...
+    prompt = PromptTemplate(
+        input_variables=['input'],
+        template="Tell me about the movie {input}."
+    )
+
+    chain = prompt | llm
+
+    ai_message = ''
+    for chunk in chain.stream({'input': 'Memento'}):
+        ai_message += chunk
+
+    assert len(ai_message) > 0    
 
 @pytest.mark.skip(reason="Temporarily disabled for debugging")
 def test_llm_astream():
@@ -431,8 +450,7 @@ def test_llm_abatch():
 
 
 
-    # TODO: chat_model 
-    # huggingface bot
-    # then the example selectors in the dataframe expression tool tests    
+    # TODO: chat_model, chat_bot (which is an abstraction over chat_model)
+    # dataframe expression tool   
     # document loader with metadata and smart vector retriever
     # langgraph

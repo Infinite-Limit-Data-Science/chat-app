@@ -2,7 +2,7 @@ import inspect
 import json  # type: ignore[import-not-found]
 import logging
 import os
-from typing import Any, AsyncIterator, Dict, Iterator, List, Mapping, Optional, Union
+from typing import Any, AsyncIterator, Dict, Iterator, List, Mapping, Optional, Union, Tuple
 
 from langchain_core.callbacks import (
     AsyncCallbackManagerForLLMRun,
@@ -19,7 +19,8 @@ from huggingface_hub.inference._generated.types import (
     ChatCompletionInputStreamOptions,
     ChatCompletionInputTool,
     ChatCompletionInputToolChoiceClass,
-    ChatCompletionInputToolChoiceEnum
+    ChatCompletionInputToolChoiceEnum,
+    ChatCompletionStreamOutput
 )
 from .inference_schema import HuggingFaceInferenceServerMixin
 from .huggingface_inference_client import HuggingFaceInferenceClient
@@ -130,6 +131,103 @@ class HuggingFaceLLM(LLM, HuggingFaceInferenceServerMixin):
         params['stop'] = params['stop'] + (runtime_stop or [])
         return params
 
+    def _postprocess_chat_completion_output(
+        self,
+        chat_completion_output: ChatCompletionOutput,
+        invocation_params: Dict[str, Any],
+    ) -> Tuple[str, Dict[str, Any]]:
+        """Extract the text from `chat_completion_output` and gather token usage."""
+        completion_candidate = chat_completion_output.choices[0]
+        response_text = completion_candidate.message.content
+        finish_reason = completion_candidate.finish_reason
+
+        token_usage = {}
+        if finish_reason in ("stop", "eos_token") and chat_completion_output.usage:
+            token_usage["prompt_tokens"] = chat_completion_output.usage.prompt_tokens
+            token_usage["completion_tokens"] = chat_completion_output.usage.completion_tokens
+            token_usage["total_tokens"] = chat_completion_output.usage.total_tokens
+
+        if invocation_params.get("logprobs", False) and completion_candidate.logprobs:
+            import numpy as np
+            content = completion_candidate.logprobs.content
+            logprobs = [logprob.logprob for logprob in content]
+            mean_logprob = np.mean(logprobs)
+            token_usage["mean_logprob"] = mean_logprob
+
+        return response_text, token_usage
+
+    def _handle_sync_run_manager(
+        self,
+        run_manager: Optional[CallbackManagerForLLMRun],
+        response_text: str,
+        token_usage: Dict[str, Any],
+    ) -> None:
+        if run_manager is None:
+            return
+        llm_result = LLMResult(
+            generations=[[Generation(text=response_text)]],
+            llm_output={"token_usage": token_usage},
+        )
+        run_manager.on_llm_end(llm_result)
+
+    async def _handle_async_run_manager(
+        self,
+        run_manager: Optional[AsyncCallbackManagerForLLMRun],
+        response_text: str,
+        token_usage: Dict[str, Any],
+    ) -> None:
+        if run_manager is None:
+            return
+        llm_result = LLMResult(
+            generations=[[Generation(text=response_text)]],
+            llm_output={"token_usage": token_usage},
+        )
+        await run_manager.on_llm_end(llm_result)
+
+    def _strip_stop_sequences(self, text: str, stop_sequences: List[str]) -> str:
+        for stop_seq in stop_sequences:
+            if text.endswith(stop_seq):
+                text = text[: -len(stop_seq)]
+        return text
+
+    def _process_stream_output(
+        self,
+        chat_completion_stream_output: ChatCompletionStreamOutput,
+        invocation_params: Dict[str, Any],
+    ) -> Tuple[Optional[GenerationChunk], bool, Dict[str, Any]]:
+        completion_candidate = chat_completion_stream_output.choices[0]
+        token = completion_candidate.delta.content or ""
+
+        stop_seq_found: Optional[str] = None
+        for stop_seq in invocation_params.get("stop", []):
+            if stop_seq in token:
+                stop_seq_found = stop_seq
+                break
+
+        text = token
+        if stop_seq_found:
+            idx = text.index(stop_seq_found)
+            text = text[:idx]
+
+        chunk: Optional[GenerationChunk] = None
+        if text:
+            chunk = GenerationChunk(text=text)
+
+        finish_reason = completion_candidate.finish_reason
+        token_usage: Dict[str, Any] = {}
+        if finish_reason in ("stop", "eos_token") and chat_completion_stream_output.usage:
+            token_usage["prompt_tokens"] = chat_completion_stream_output.usage.prompt_tokens
+            token_usage["completion_tokens"] = chat_completion_stream_output.usage.completion_tokens
+            token_usage["total_tokens"] = chat_completion_stream_output.usage.total_tokens
+
+        if invocation_params.get("logprobs", False) and completion_candidate.logprobs:
+            import numpy as np
+            content = completion_candidate.logprobs.content
+            logprobs = [logprob.logprob for logprob in content]
+            token_usage["mean_logprob"] = float(np.mean(logprobs))
+
+        return chunk, (stop_seq_found is not None), token_usage
+
     def _call(
         self,
         prompt: str,
@@ -137,65 +235,104 @@ class HuggingFaceLLM(LLM, HuggingFaceInferenceServerMixin):
         run_manager: Optional[CallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> str:
-        """
-        Hugging Face TGI only supports one completion candidate in
-        the chat_completion endpoint of the Hugging Face Hub Messages API
-        """
         invocation_params = self._invocation_params(stop, **kwargs)
-        
         try:
             if self.streaming:
                 completion = ""
                 for chunk in self._stream(prompt, stop, run_manager, **invocation_params):
                     completion += chunk.text
-
-                    if run_manager:
-                        run_manager.on_llm_new_token(
-                            token=chunk.text,
-                            chunk=chunk
-                        )
                 return completion
             else:
-                invocation_params['stream'] = False
-                chat_completion_output: ChatCompletionOutput = self.client.chat_completion(
-                    messages=[
-                        {
-                            'role': 'user',
-                            'content': prompt
-                        }
-                    ],
+                chat_completion_output = self.client.chat_completion(
+                    messages=[{"role": "user", "content": prompt}],
                     **invocation_params
                 )
-
-                completion_candidate = chat_completion_output.choices[0]
-                response_text = completion_candidate.message.content
-                finish_reason = completion_candidate.finish_reason
-
-                token_usage = {}
-                if finish_reason in ('stop', 'eos_token'):
-                    token_usage['prompt_tokens'] = chat_completion_output.usage.prompt_tokens
-                    token_usage['completion_tokens'] = chat_completion_output.usage.completion_tokens
-                    token_usage['total_tokens'] = chat_completion_output.usage.total_tokens
-
-                if invocation_params.get('logprobs', False) and completion_candidate.logprobs:
-                    import numpy as np
-                    content = completion_candidate.logprobs.content
-                    logprobs = [logprob.logprob for logprob in content]
-                    mean_logprob = np.mean(logprobs)
-                    token_usage['mean_logprob'] = mean_logprob
-
-                if run_manager:
-                    llm_result = LLMResult(
-                        generations=[[Generation(text=response_text)]],
-                        llm_output={'token_usage': token_usage}
-                    )
-                    run_manager.on_llm_end(llm_result)
-
-                for stop_seq in invocation_params['stop']:
-                    if response_text[-len(stop_seq) :] == stop_seq:
-                        response_text = response_text[: -len(stop_seq)]
-                return response_text
+                response_text, token_usage = self._postprocess_chat_completion_output(
+                    chat_completion_output, invocation_params
+                )
+                self._handle_sync_run_manager(run_manager, response_text, token_usage)
+                return self._strip_stop_sequences(response_text, invocation_params["stop"])
         except Exception as e:
             if run_manager:
                 run_manager.on_llm_error(e, response=LLMResult(generations=[]))
+            raise    
+
+    async def _acall(
+        self,
+        prompt: str,
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[AsyncCallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> str:
+        invocation_params = self._invocation_params(stop, **kwargs)
+        try:
+            if self.streaming:
+                completion = ""
+                async for chunk in self._astream(
+                    prompt, stop, run_manager, **invocation_params
+                ):
+                    completion += chunk.text
+                return completion
+            chat_completion_output = await self.client.achat_completion(
+                messages=[{"role": "user", "content": prompt}],
+                **invocation_params
+            )
+            response_text, token_usage = self._postprocess_chat_completion_output(
+                chat_completion_output, invocation_params
+            )
+            await self._handle_async_run_manager(run_manager, response_text, token_usage)
+            return self._strip_stop_sequences(response_text, invocation_params["stop"])
+        except Exception as e:
+            if run_manager:
+                await run_manager.on_llm_error(e, response=LLMResult(generations=[]))
             raise
+    
+    def _stream(
+        self,
+        prompt: str,
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[CallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> Iterator[GenerationChunk]:
+        invocation_params = self._invocation_params(stop, **kwargs)
+
+        for chat_completion_stream_output in self.client.chat_completion(
+            messages=[{"role": "user", "content": prompt}],
+            **invocation_params,
+            stream=True
+        ):
+            chunk, found_stop, token_usage = self._process_stream_output(
+                chat_completion_stream_output, invocation_params
+            )
+            if chunk:
+                if run_manager:
+                    run_manager.on_llm_new_token(chunk.text, **token_usage)
+                yield chunk
+
+            if found_stop:
+                break
+
+    async def _astream(
+        self,
+        prompt: str,
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[AsyncCallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> AsyncIterator[GenerationChunk]:
+        invocation_params = self._invocation_params(stop, **kwargs)
+
+        async for chat_completion_stream_output in self.client.achat_completion(
+            messages=[{"role": "user", "content": prompt}],
+            **invocation_params,
+            stream=True
+        ):
+            chunk, found_stop, token_usage = self._process_stream_output(
+                chat_completion_stream_output, invocation_params
+            )
+            if chunk:
+                if run_manager:
+                    await run_manager.on_llm_new_token(chunk.text, **token_usage)
+                yield chunk
+
+            if found_stop:
+                break
