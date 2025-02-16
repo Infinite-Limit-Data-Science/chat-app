@@ -4,7 +4,7 @@ import os
 import uuid
 from uuid import UUID
 import itertools
-from typing import Iterator, List
+from typing import Iterator, List, Optional, Dict
 from faker import Faker
 import pandas as pd
 from pydantic import BaseModel, Field, field_validator
@@ -138,13 +138,34 @@ class SpyHuggingFaceLLM(HuggingFaceLLM):
 
         return llm_result
 
-class TokenUsageCollector(BaseCallbackHandler):
+class UsageCollectorWithChainID(BaseCallbackHandler):
     def __init__(self):
-        self.usage_by_run_id = {}
-    
-    def on_llm_end(self, response: LLMResult, run_id: UUID, **kwargs):
+        super().__init__()
+        self.chain_run_ids: List[UUID] = []
+        self.usage_by_run_id: Dict[UUID, any] = {}
+
+    def on_chain_start(
+        self,
+        serialized: dict[str, any],
+        inputs: dict[str, any],
+        run_id: Optional[UUID] = None,
+        **kwargs: any,
+    ):
+        if run_id is not None:
+            self.chain_run_ids.append(run_id)
+
+    def on_llm_end(
+        self,
+        response: LLMResult,
+        run_id: Optional[UUID] = None,
+        **kwargs: any,
+    ):
+        """
+        Load usage statistics in all runs part of
+        the composite Runnable
+        """
         usage = response.llm_output.get('token_usage')
-        if usage:
+        for run_id in self.chain_run_ids:
             self.usage_by_run_id[run_id] = usage
 
 class ConfigurableCaptureCallbackHandler(BaseCallbackHandler):
@@ -298,7 +319,7 @@ def test_llm_invoke_with_callbacks(llm: HuggingFaceLLM):
     )
 
     chain = prompt | llm
-    chain.invoke({'input': 'Memento'}, config)
+    chain.invoke({'input': 'Memento'}, config=config)
 
     assert mock_handler.llm_end_data is not None
 
@@ -341,15 +362,27 @@ def test_llm_invoke_with_run_information(spy_llm: SpyHuggingFaceLLM):
     )
 
     chain = prompt | llm
-    chain.invoke({'input': 'Memento'}, config)
+    chain.invoke({'input': 'Memento'}, config=config)
 
     assert handler.captured_temp == 0.3, (
         f"Expected temperature to be 0.3, got {spy_llm.last_used_temperature}"
     )
 
 def test_llm_invoke_with_token_usage_in_response(llm: HuggingFaceLLM):
-    usage_collector = TokenUsageCollector()
-    config = RunnableConfig(callbacks=[usage_collector])
+    """
+    run id is ephemeral. It is consumed by the first runner, RunnableSequence
+    below in the composite pattern.
+
+    Therefore, we generate a callback id in order to capture token usage
+    in callback handler.
+    """
+    usage_collector = UsageCollectorWithChainID()
+    run_uuid = uuid.uuid4()
+    config = RunnableConfig(
+        run_id=run_uuid, 
+        tags=['huggingface_llm_role'], 
+        callbacks=[usage_collector]
+    )
     
     prompt = PromptTemplate(
         input_variables=['input'],
@@ -357,17 +390,16 @@ def test_llm_invoke_with_token_usage_in_response(llm: HuggingFaceLLM):
     )
 
     chain = prompt | llm
-    ai_message = chain.invoke({'input': 'Memento'}, config)
+    ai_message = chain.invoke({'input': 'Memento'}, config=config)
 
-    run_id = config.run_id
-    usage_info = usage_collector.usage_by_run_id.get(run_id)
+    usage_info = usage_collector.usage_by_run_id.get(run_uuid)
 
-    final_response = {
+    structured_output = {
         'answer': ai_message,
         'token_usage': usage_info
     }
 
-    assert final_response['token_usage'] == 100
+    assert all(structured_output['token_usage'].values())
 
 @pytest.mark.skip(reason="Temporarily disabled for debugging")
 def test_llm_invoke_with_image_to_text():
