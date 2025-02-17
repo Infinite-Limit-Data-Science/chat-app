@@ -1,7 +1,4 @@
-import inspect
-import json  # type: ignore[import-not-found]
 import logging
-import os
 from typing import Any, AsyncIterator, Dict, Iterator, List, Mapping, Optional, Union, Tuple
 
 from langchain_core.callbacks import (
@@ -20,7 +17,8 @@ from huggingface_hub.inference._generated.types import (
     ChatCompletionInputTool,
     ChatCompletionInputToolChoiceClass,
     ChatCompletionInputToolChoiceEnum,
-    ChatCompletionStreamOutput
+    ChatCompletionStreamOutput,
+    ChatCompletionStreamOutputChoice
 )
 from .inference_schema import HuggingFaceInferenceServerMixin
 from .huggingface_inference_client import HuggingFaceInferenceClient
@@ -142,7 +140,7 @@ class HuggingFaceLLM(LLM, HuggingFaceInferenceServerMixin):
         finish_reason = completion_candidate.finish_reason
 
         token_usage = {}
-        if finish_reason in ("stop", "eos_token") and chat_completion_output.usage:
+        if finish_reason in ("stop", "eos_token", "length") and chat_completion_output.usage:
             token_usage["prompt_tokens"] = chat_completion_output.usage.prompt_tokens
             token_usage["completion_tokens"] = chat_completion_output.usage.completion_tokens
             token_usage["total_tokens"] = chat_completion_output.usage.total_tokens
@@ -195,7 +193,14 @@ class HuggingFaceLLM(LLM, HuggingFaceInferenceServerMixin):
         chat_completion_stream_output: ChatCompletionStreamOutput,
         invocation_params: Dict[str, Any],
     ) -> Tuple[Optional[GenerationChunk], bool, Dict[str, Any]]:
-        completion_candidate = chat_completion_stream_output.choices[0]
+        """
+        Hugging Face Text Generation Inference (TGI) does not support
+        multiple completion candidates for the `chat_completion` task
+        as of yet.
+
+        We pull the first and only chat completion stream output choice.
+        """
+        completion_candidate: ChatCompletionStreamOutputChoice = chat_completion_stream_output.choices[0]
         token = completion_candidate.delta.content or ""
 
         stop_seq_found: Optional[str] = None
@@ -209,13 +214,10 @@ class HuggingFaceLLM(LLM, HuggingFaceInferenceServerMixin):
             idx = text.index(stop_seq_found)
             text = text[:idx]
 
-        chunk: Optional[GenerationChunk] = None
-        if text:
-            chunk = GenerationChunk(text=text)
-
         finish_reason = completion_candidate.finish_reason
         token_usage: Dict[str, Any] = {}
-        if finish_reason in ("stop", "eos_token") and chat_completion_stream_output.usage:
+        # if finish_reason is None, it means streaming and hence we are mid-generation and no finish reason yet
+        if finish_reason in ("stop", "eos_token", "length") and chat_completion_stream_output.usage:
             token_usage["prompt_tokens"] = chat_completion_stream_output.usage.prompt_tokens
             token_usage["completion_tokens"] = chat_completion_stream_output.usage.completion_tokens
             token_usage["total_tokens"] = chat_completion_stream_output.usage.total_tokens
@@ -226,7 +228,14 @@ class HuggingFaceLLM(LLM, HuggingFaceInferenceServerMixin):
             logprobs = [logprob.logprob for logprob in content]
             token_usage["mean_logprob"] = float(np.mean(logprobs))
 
-        return chunk, (stop_seq_found is not None), token_usage
+        chunk: Optional[GenerationChunk] = None
+        if text:
+            chunk = GenerationChunk(
+                text=text,
+                generation_info=token_usage
+            )
+
+        return chunk, (stop_seq_found is not None)
 
     def _call(
         self,
@@ -301,12 +310,12 @@ class HuggingFaceLLM(LLM, HuggingFaceInferenceServerMixin):
             **invocation_params,
             stream=True
         ):
-            chunk, found_stop, token_usage = self._process_stream_output(
+            chunk, found_stop = self._process_stream_output(
                 chat_completion_stream_output, invocation_params
             )
             if chunk:
                 if run_manager:
-                    run_manager.on_llm_new_token(chunk.text, **token_usage)
+                    run_manager.on_llm_new_token(chunk.text, **chunk.generation_info)
                 yield chunk
 
             if found_stop:
@@ -321,17 +330,18 @@ class HuggingFaceLLM(LLM, HuggingFaceInferenceServerMixin):
     ) -> AsyncIterator[GenerationChunk]:
         invocation_params = self._invocation_params(stop, **kwargs)
 
-        async for chat_completion_stream_output in self.client.achat_completion(
+        streaming_completion = await self.client.achat_completion(
             messages=[{"role": "user", "content": prompt}],
             **invocation_params,
             stream=True
-        ):
-            chunk, found_stop, token_usage = self._process_stream_output(
+        )
+        async for chat_completion_stream_output in streaming_completion:
+            chunk, found_stop = self._process_stream_output(
                 chat_completion_stream_output, invocation_params
             )
             if chunk:
                 if run_manager:
-                    await run_manager.on_llm_new_token(chunk.text, **token_usage)
+                    await run_manager.on_llm_new_token(chunk.text, **chunk.generation_info)
                 yield chunk
 
             if found_stop:

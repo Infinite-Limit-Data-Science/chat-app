@@ -403,12 +403,22 @@ def test_llm_invoke_with_token_usage_in_response(llm: HuggingFaceLLM):
 
     assert all(structured_output['token_usage'].values())
 
-@pytest.mark.skip(reason='LLM only supports text inputs, image-to-text is not implemented.')
+@pytest.mark.skip(reason='LLM model only supports text inputs, image-to-text is not implemented.')
 def test_llm_invoke_with_image_to_text():
+    """
+    `HuggingFaceLLM` only supports text input.
+
+    For multimodal and tool calling, use the `HuggingFaceChatModel` class of the huggingface_inference_kit package.
+    """
     pass
 
-@pytest.mark.skip(reason='LLM only supports text inputs, tool calling is not implemented.')
+@pytest.mark.skip(reason='LLM model only supports text inputs, tool calling is not implemented.')
 def test_llm_invoke_with_tool_calling():
+    """
+    `HuggingFaceLLM` only supports text input.
+
+    For multimodal and tool calling, use the `HuggingFaceChatModel` class of the huggingface_inference_kit package.
+    """
     pass
 
 @pytest.mark.asyncio
@@ -422,7 +432,7 @@ async def test_llm_ainvoke(llm: HuggingFaceLLM):
     ai_message = await chain.ainvoke({'input': 'Memento'})
     assert len(ai_message) > 0
 
-def test_llm_stream():
+def test_llm_stream(llm: HuggingFaceLLM):
     prompt = PromptTemplate(
         input_variables=['input'],
         template="Tell me about the movie {input}."
@@ -436,21 +446,35 @@ def test_llm_stream():
 
     assert len(ai_message) > 0    
 
-@pytest.mark.skip(reason="Temporarily disabled for debugging")
-def test_llm_astream():
-    ...
+@pytest.mark.asyncio
+async def test_llm_astream(llm: HuggingFaceLLM):
+    prompt = PromptTemplate(
+        input_variables=['input'],
+        template="Tell me about the movie {input}."
+    )
 
-@pytest.mark.skip(reason="Temporarily disabled for debugging")
-def test_llm_batch():
-    ...
+    chain = prompt | llm
+    ai_message = ''
+    async for chunk in chain.astream({'input': 'Memento'}):
+        ai_message += chunk
+    
+    assert len(ai_message) > 0
 
-@pytest.mark.skip(reason="Temporarily disabled for debugging")
-def test_llm_abatch():
-    ...
+def test_llm_batch(llm: HuggingFaceLLM):
+    """
+    Batching support right now is basic.
 
+    More features coming soon
+    """
+    ai_messages = llm.batch(['Tell me about the movie Memento', 'Tell me about the movie Reservoir Dogs'])
+    assert len(ai_messages) > 0
 
+@pytest.mark.asyncio
+async def test_llm_abatch(llm: HuggingFaceLLM):
+    """
+    Batching support right now is basic.
 
-    # TODO: chat_model, chat_bot (which is an abstraction over chat_model)
-    # dataframe expression tool   
-    # document loader with metadata and smart vector retriever
-    # langgraph
+    More features coming soon
+    """
+    ai_message = await llm.abatch(['Tell me about the movie Memento', 'Tell me about the movie Reservoir Dogs'])
+    assert len(ai_message) > 0

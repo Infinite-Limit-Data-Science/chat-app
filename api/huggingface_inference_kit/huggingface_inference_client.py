@@ -405,6 +405,9 @@ class HuggingFaceInferenceClient(HuggingFaceBaseInferenceClient):
         top_logprobs: Optional[int] = None,
         top_p: Optional[float] = None,
     ) -> ChatCompletionOutput: 
+        """
+        If stream False, we return `ChatCompletionOutput` object
+        """
         ...
 
     @overload
@@ -429,32 +432,10 @@ class HuggingFaceInferenceClient(HuggingFaceBaseInferenceClient):
         tool_prompt: Optional[str] = None,
         top_logprobs: Optional[int] = None,
         top_p: Optional[float] = None,
-    ) -> Iterable[ChatCompletionStreamOutput]: 
-        ...
-
-    @overload
-    def chat_completion(
-        self,
-        messages: List[Dict],
-        *,
-        stream: bool = False,
-        frequency_penalty: Optional[float] = None,
-        logit_bias: Optional[List[float]] = None,
-        logprobs: Optional[bool] = None,
-        max_tokens: Optional[int] = None,
-        num_generations: Optional[int] = None,
-        presence_penalty: Optional[float] = None,
-        response_format: Optional[ChatCompletionInputGrammarType] = None,
-        seed: Optional[int] = None,
-        stop: Optional[List[str]] = None,
-        stream_options: Optional[ChatCompletionInputStreamOptions] = None,
-        temperature: Optional[float] = None,
-        tools: Optional[List[ChatCompletionInputTool]] = None,
-        tool_choice: Optional[Union[ChatCompletionInputToolChoiceClass, "ChatCompletionInputToolChoiceEnum"]] = None,
-        tool_prompt: Optional[str] = None,
-        top_logprobs: Optional[int] = None,
-        top_p: Optional[float] = None,
-    ) -> Union[ChatCompletionOutput, Iterable[ChatCompletionStreamOutput]]: 
+    ) -> Iterable[ChatCompletionStreamOutput]:
+        """
+        If stream True, we return an iterable, `ChatCompletionStreamOutput`
+        """
         ...
 
     def chat_completion(
@@ -479,6 +460,24 @@ class HuggingFaceInferenceClient(HuggingFaceBaseInferenceClient):
         top_logprobs: Optional[int] = None,
         top_p: Optional[float] = None,
     ) -> Union[ChatCompletionOutput, Iterable[ChatCompletionStreamOutput]]:
+        """
+        A normal ChatCompletionOutput if stream=False
+        A generator object that implements Iterable[ChatCompletionStreamOutput] protocol if stream=True,
+        Hence, `chat_completion` can return either a regular object or a generator object
+        
+        If stream True, it returns an generator object—a special object implementing 
+        the iteration protocol (__iter__/__next__).
+
+        Example:
+        ```python
+        
+        def _async_stream_chat_completion_response() -> Iterable[ChatCompletionStreamOutput]::
+            yield ChatCompletionStreamOutput1
+            yield ChatCompletionStreamOutput2
+
+        gen_obj = _stream_chat_completion_response()
+        ```
+        """
         if self.tgi_config:
             if not max_tokens:
                 max_tokens = self.tgi_config.available_generated_tokens
@@ -552,7 +551,10 @@ class HuggingFaceInferenceClient(HuggingFaceBaseInferenceClient):
         tool_prompt: Optional[str] = None,
         top_logprobs: Optional[int] = None,
         top_p: Optional[float] = None,
-    ) -> ChatCompletionOutput: 
+    ) -> ChatCompletionOutput:
+        """
+        Streaming False, returns ChatCompletionOutput
+        """
         ...
 
     @overload
@@ -577,30 +579,9 @@ class HuggingFaceInferenceClient(HuggingFaceBaseInferenceClient):
         top_logprobs: Optional[int] = None,
         top_p: Optional[float] = None,
     ) -> AsyncIterable[ChatCompletionStreamOutput]: 
-        ...
-
-    @overload
-    async def achat_completion(
-        self,
-        messages: List[Dict],
-        *,
-        stream: bool = False,
-        frequency_penalty: Optional[float] = None,
-        logprobs: Optional[bool] = None,
-        max_tokens: Optional[int] = None,
-        num_generations: Optional[int] = None,
-        presence_penalty: Optional[float] = None,
-        response_format: Optional[ChatCompletionInputGrammarType] = None,
-        seed: Optional[int] = None,
-        stop: Optional[List[str]] = None,
-        stream_options: Optional[ChatCompletionInputStreamOptions] = None,
-        temperature: Optional[float] = None,
-        tools: Optional[List[ChatCompletionInputTool]] = None,
-        tool_choice: Optional[Union[ChatCompletionInputToolChoiceClass, "ChatCompletionInputToolChoiceEnum"]] = None,
-        tool_prompt: Optional[str] = None,
-        top_logprobs: Optional[int] = None,
-        top_p: Optional[float] = None,
-    ) -> Union[ChatCompletionOutput, AsyncIterable[ChatCompletionStreamOutput]]: 
+        """
+        Streaming True, returns async iterable, ChatCompletionStreamOutput
+        """
         ...
 
     async def achat_completion(
@@ -624,6 +605,24 @@ class HuggingFaceInferenceClient(HuggingFaceBaseInferenceClient):
         top_logprobs: Optional[int] = None,
         top_p: Optional[float] = None,
     ) -> Union[ChatCompletionOutput, AsyncIterable[ChatCompletionStreamOutput]]:
+        """
+        A normal ChatCompletionOutput if stream=False
+        An async generator object that implements AsyncIterable[ChatCompletionStreamOutput] protocol if stream=True,
+        Hence, `achat_completion` can return either a regular object or an async generator object
+        
+        If stream True, it returns an async generator object—a special object implementing 
+        the asynchronous iteration protocol (__aiter__/__anext__).
+
+        Example:
+        ```python
+        
+        async def _async_stream_chat_completion_response() -> AsyncIterable[ChatCompletionStreamOutput]::
+            yield ChatCompletionStreamOutput1
+            yield ChatCompletionStreamOutput2
+
+        gen_obj = _async_stream_chat_completion_response()
+        ```
+        """
         return await self.async_client.chat_completion(
             messages=messages,
             stream=stream,
