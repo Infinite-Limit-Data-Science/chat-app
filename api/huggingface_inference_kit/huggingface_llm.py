@@ -26,8 +26,6 @@ from .huggingface_inference_server_config import HuggingFaceTGIConfig
 
 logger = logging.getLogger(__name__)
 
-# from langchain_huggingface import HuggingFaceEndpoint
-
 class HuggingFaceLLM(LLM, HuggingFaceInferenceServerMixin):
     client: Optional[HuggingFaceInferenceClient] = Field(description='Hugging Face Inference Client to interface with Hugging Face Hub Messages API', default=None)
     # InferenceClient parameters (in addition to HuggingFaceInferenceServerMixin)

@@ -10,6 +10,13 @@ U = TypeVar('U')
 
 TRANSFORMER_TOKENIZER_CACHE = 'transformers/tokenizers/cache'
 
+def get_tokenizer_class_by_prefix(prefix: str):
+    class_name = f'{prefix}PretrainedTokenizer'
+    try:
+        return globals()[class_name]
+    except KeyError:
+        raise ImportError(f'Could not find class {class_name} in {__name__}')
+    
 class PretrainedTokenizerLike(Protocol):
     tokenizer: Annotated[PreTrainedTokenizerBase, Doc('A reference to a Pretrained Tokenizer used for underlying model')]
     sequence_length: Annotated[int, Doc('Maximum tokens per pass')]

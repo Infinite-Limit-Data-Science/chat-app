@@ -4,8 +4,6 @@ import os
 import uuid
 from uuid import UUID
 import itertools
-import base64
-from pathlib import Path
 from typing import Iterator, List, Optional, Dict
 from faker import Faker
 import pandas as pd
