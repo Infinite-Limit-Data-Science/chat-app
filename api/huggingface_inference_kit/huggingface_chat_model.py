@@ -69,11 +69,23 @@ class HuggingFaceChatModel(BaseChatModel):
         run_manager: Optional[CallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> ChatResult:
-        """TODO: START HERE!"""
         message_dicts = self._create_message_dicts(messages, stop)
         answer = self.llm.client.chat_completion(messages=message_dicts, **kwargs)
         return self._create_chat_result(answer)
 
+    async def _agenerate(
+        self,
+        messages: List[BaseMessage],
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[AsyncCallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> ChatResult:
+        llm_input = self._to_chat_prompt(messages)
+        llm_result = await self.llm._agenerate(
+            prompts=[llm_input], stop=stop, run_manager=run_manager, **kwargs
+        )
+        return self._to_chat_result(llm_result)
 
 
-# from langchain_huggingface import ChatHuggingFace
+
+from langchain_huggingface import ChatHuggingFace
