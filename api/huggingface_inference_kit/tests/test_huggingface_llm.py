@@ -474,5 +474,5 @@ async def test_llm_abatch(llm: HuggingFaceLLM):
 
     More features coming soon
     """
-    ai_message = await llm.abatch(['Tell me about the movie Memento', 'Tell me about the movie Reservoir Dogs'])
-    assert len(ai_message) > 0
+    ai_messages = await llm.abatch(['Tell me about the movie Memento', 'Tell me about the movie Reservoir Dogs'])
+    assert len(ai_messages) > 0

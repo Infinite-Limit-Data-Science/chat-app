@@ -4,14 +4,22 @@ from transformers import PreTrainedTokenizerBase
 import importlib
 import os
 import json
+import re
 
 T = TypeVar('T')
 U = TypeVar('U')
 
 TRANSFORMER_TOKENIZER_CACHE = 'transformers/tokenizers/cache'
 
+def transform_name(s: str) -> str:
+    parts = s.split('/', 1)
+    remainder = parts[1] if len(parts) > 1 else parts[0]
+    
+    result = re.sub(r'[.\-]', '', remainder)
+    return result
+
 def get_tokenizer_class_by_prefix(prefix: str):
-    class_name = f'{prefix}PretrainedTokenizer'
+    class_name = f'{transform_name(prefix)}PretrainedTokenizer'
     try:
         return globals()[class_name]
     except KeyError:
@@ -76,7 +84,7 @@ class NomicPretrainedTokenizer:
     def extract_dimensions(config: dict) -> int:
         return config.get('n_embd')
     
-class Llama70BInstructPretrainedTokenizer:
+class MetaLlama3170BInstructPretrainedTokenizer:
     _tokenizer_name = TokenizerDescriptor()
 
     def __init__(self, name: Optional[str] = None):
