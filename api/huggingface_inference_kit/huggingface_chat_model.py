@@ -86,6 +86,7 @@ def _convert_message_to_chat_message(
 
 def _convert_tgi_message_to_langchain_message(
     message: ChatCompletionOutputMessage,
+    token_usage: Dict[str, any]
 ) -> BaseMessage:
     role = message.role
     assert role == 'assistant', f"Expected role to be 'assistant', got {role}"
@@ -93,6 +94,7 @@ def _convert_tgi_message_to_langchain_message(
     if content is None:
         content = ""
     additional_kwargs: Dict = {}
+    additional_kwargs['token_usage'] = token_usage
     if tool_calls := message.tool_calls:
         if 'arguments' in tool_calls[0]['function']:
             functions_string = str(tool_calls[0]['function'].pop('arguments'))
@@ -167,7 +169,7 @@ class HuggingFaceChatModel(BaseChatModel):
     def _create_chat_result(self, message: ChatCompletionOutputMessage, token_usage: Dict[str, any]) -> ChatResult:
         generations = []
         gen = ChatGeneration(
-            message=_convert_tgi_message_to_langchain_message(message),
+            message=_convert_tgi_message_to_langchain_message(message, token_usage),
             generation_info=token_usage,
         )
         generations.append(gen)
@@ -216,5 +218,44 @@ class HuggingFaceChatModel(BaseChatModel):
             prompts=[llm_input], stop=stop, run_manager=run_manager, **kwargs
         )
         return self._to_chat_result(llm_result)
+
+    def bind_tools(
+        self,
+        tools: Sequence[Union[Dict[str, Any], Type, Callable, BaseTool]],
+        *,
+        tool_choice: Optional[Union[dict, str, Literal["auto", "none"], bool]] = None,
+        **kwargs: Any,
+    ) -> Runnable[LanguageModelInput, BaseMessage]:
+        formatted_tools = [convert_to_openai_tool(tool) for tool in tools]
+        if tool_choice:
+            if len(formatted_tools) != 1:
+                raise ValueError(
+                    "When specifying `tool_choice`, you must provide exactly one "
+                    f"tool. Received {len(formatted_tools)} tools."
+                )
+            if isinstance(tool_choice, str):
+                if tool_choice not in ("auto", "none"):
+                    tool_choice = {
+                        "type": "function",
+                        "function": {"name": tool_choice},
+                    }
+            elif isinstance(tool_choice, bool):
+                tool_choice = formatted_tools[0]
+            elif isinstance(tool_choice, dict):
+                if (
+                    formatted_tools[0]["function"]["name"]
+                    != tool_choice["function"]["name"]
+                ):
+                    raise ValueError(
+                        f"Tool choice {tool_choice} was specified, but the only "
+                        f"provided tool was {formatted_tools[0]['function']['name']}."
+                    )
+            else:
+                raise ValueError(
+                    f"Unrecognized tool_choice type. Expected str, bool or dict. "
+                    f"Received: {tool_choice}"
+                )
+            kwargs["tool_choice"] = tool_choice
+        return super().bind(tools=formatted_tools, **kwargs)
 
 # from langchain_huggingface import ChatHuggingFace
