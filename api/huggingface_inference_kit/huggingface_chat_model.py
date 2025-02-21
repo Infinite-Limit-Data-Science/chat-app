@@ -9,8 +9,8 @@ from typing import (
     Type,
     Union,
     cast,
+    Iterator,
 )
-
 from langchain_core.callbacks.manager import (
     AsyncCallbackManagerForLLMRun,
     CallbackManagerForLLMRun,
@@ -25,15 +25,21 @@ from langchain_core.messages import (
     SystemMessage,
     ToolMessage,
 )
-from langchain_core.outputs import ChatGeneration, ChatResult, LLMResult
-from langchain_core.runnables import Runnable
+from langchain_core.outputs import (
+    ChatGeneration, 
+    ChatGenerationChunk, 
+    ChatResult, 
+    LLMResult
+)
+from langchain_core.runnables import Runnable, RunnableBinding
 from langchain_core.tools import BaseTool
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from pydantic import model_validator
 from typing_extensions import Self
 from huggingface_hub.inference._generated.types import (
     ChatCompletionOutput,
-    ChatCompletionOutputMessage
+    ChatCompletionOutputMessage,
+    ChatCompletionStreamOutput
 )
 
 from ..huggingface_inference_kit.huggingface_llm import HuggingFaceLLM
@@ -84,6 +90,17 @@ def _convert_message_to_chat_message(
     else:
         raise ValueError(f"Got unknown type {message}")
 
+def corrected_functions(fn_string: str) -> str:
+    import json, ast
+
+    try:
+        py_obj = ast.literal_eval(fn_string)
+        corrected_json = json.dumps(py_obj)
+    except Exception:
+        corrected_json = fn_string.replace("'", '"')
+
+    return corrected_json
+
 def _convert_tgi_message_to_langchain_message(
     message: ChatCompletionOutputMessage,
     token_usage: Dict[str, any]
@@ -98,8 +115,7 @@ def _convert_tgi_message_to_langchain_message(
     if tool_calls := message.tool_calls:
         if 'arguments' in tool_calls[0]['function']:
             functions_string = str(tool_calls[0]['function'].pop('arguments'))
-            corrected_functions = functions_string.replace("'", '"')
-            tool_calls[0]['function']['arguments'] = corrected_functions
+            tool_calls[0]['function']['arguments'] = corrected_functions(functions_string)
         additional_kwargs['tool_calls'] = tool_calls
     return AIMessage(content=content, additional_kwargs=additional_kwargs)
 
@@ -149,9 +165,14 @@ class HuggingFaceChatModel(BaseChatModel):
     def _invocation_params(
         self, runtime_stop: Optional[List[str]], **kwargs: Any
     ) -> Dict[str, Any]:
-        params = {**self._default_params, **kwargs}
-        params['stop'] = params['stop'] + (runtime_stop or [])
-        return params
+        if isinstance(self.llm, RunnableBinding):
+            ephemeral = self.llm.kwargs or {}
+        else:
+            ephemeral = {}
+        
+        bound_params = {**self._default_params, **ephemeral, **kwargs}
+        bound_params['stop'] = bound_params['stop'] + (runtime_stop or [])
+        return bound_params
 
     @staticmethod
     def _strip_stop_sequences(text: str, stop_sequences: List[str]) -> str:
@@ -192,15 +213,24 @@ class HuggingFaceChatModel(BaseChatModel):
                 messages=message_dicts,
                 **invocation_params 
             )
-            response_text, token_usage = postprocess_chat_completion_output(
+            _, token_usage = postprocess_chat_completion_output(
                 chat_completion_output, invocation_params
             )
-            handle_sync_run_manager(run_manager, response_text, token_usage)
 
             message: ChatCompletionOutputMessage = chat_completion_output.choices[0].message
-            message.content = self._strip_stop_sequences(response_text, invocation_params["stop"])
+            if message.content:
+                # if not message content, then it is a tool response and we don't want to strip out anything for tool responses
+                message.content = self._strip_stop_sequences(message.content, invocation_params["stop"])
 
-            return self._create_chat_result(message, token_usage)
+            chat_result = self._create_chat_result(message, token_usage)
+
+            handle_sync_run_manager(
+                run_manager, 
+                chat_result.generations[0].message.content, 
+                token_usage
+            )
+
+            return chat_result
         except Exception as e:
             if run_manager:
                 run_manager.on_llm_error(e, response=LLMResult(generations=[]))
@@ -213,11 +243,64 @@ class HuggingFaceChatModel(BaseChatModel):
         run_manager: Optional[AsyncCallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> ChatResult:
-        llm_input = self._to_chat_prompt(messages)
-        llm_result = await self.llm._agenerate(
-            prompts=[llm_input], stop=stop, run_manager=run_manager, **kwargs
-        )
-        return self._to_chat_result(llm_result)
+        invocation_params = self._invocation_params(stop, **kwargs)
+        message_dicts = self._create_message_dicts(messages, stop)
+
+        try:
+            chat_completion_output: ChatCompletionOutput = await self.llm.client.achat_completion(
+                messages=message_dicts,
+                **invocation_params 
+            )
+            _, token_usage = postprocess_chat_completion_output(
+                chat_completion_output, invocation_params
+            )
+
+            message: ChatCompletionOutputMessage = chat_completion_output.choices[0].message
+            if message.content:
+                # if not message content, then it is a tool response and we don't want to strip out anything for tool responses
+                message.content = self._strip_stop_sequences(message.content, invocation_params["stop"])
+
+            chat_result = self._create_chat_result(message, token_usage)
+
+            await handle_async_run_manager(
+                run_manager, 
+                chat_result.generations[0].message.content, 
+                token_usage
+            )
+
+            return chat_result
+        except Exception as e:
+            if run_manager:
+                await run_manager.on_llm_error(e, response=LLMResult(generations=[]))
+            raise            
+
+    def _stream(
+        self,
+        messages: List[BaseMessage],
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[CallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> Iterator[ChatGenerationChunk]:
+        invocation_params = self._invocation_params(stop, **kwargs)
+        message_dicts = self._create_message_dicts(messages, stop)
+
+        try:
+            for chat_completion_stream_output in self.llm.client.chat_completion(
+                messages=message_dicts,
+                **invocation_params,
+                stream=True
+            ):
+            chunk, found_stop = process_stream_output(
+                chat_completion_stream_output, invocation_params
+            )                      
+            """START HERE"""
+        except Exception as e:
+            if run_manager:
+                run_manager.on_llm_error(e, response=LLMResult(generations=[]))
+            raise
+
+    def _astream():
+        ...
 
     def bind_tools(
         self,
@@ -257,5 +340,3 @@ class HuggingFaceChatModel(BaseChatModel):
                 )
             kwargs["tool_choice"] = tool_choice
         return super().bind(tools=formatted_tools, **kwargs)
-
-# from langchain_huggingface import ChatHuggingFace

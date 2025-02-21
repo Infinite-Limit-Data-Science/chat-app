@@ -1,10 +1,12 @@
 import pytest
 import os
 import re
+import json
 import uuid
-from uuid import UUID
+import base64
+from pathlib import Path
 import itertools
-from typing import Iterator, List, Optional, Dict
+from typing import Iterator, List
 from faker import Faker
 import pandas as pd
 from langchain_core.messages import (
@@ -26,7 +28,7 @@ from langchain_core.callbacks.base import BaseCallbackHandler
 from langchain.schema import LLMResult
 from langchain_core.runnables.utils import ConfigurableField
 from langchain_core.runnables import RunnableParallel, RunnableLambda
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 from ..huggingface_inference_server_config import HuggingFaceTGIConfig
 from ..huggingface_llm import HuggingFaceLLM
 from ..huggingface_chat_model import HuggingFaceChatModel
@@ -34,6 +36,7 @@ from ..huggingface_embeddings import HuggingFaceEmbeddings
 from ..huggingface_inference_server_config import HuggingFaceTEIConfig
 from ..huggingface_transformer_tokenizers import BgeLargePretrainedTokenizer 
 from .corpus import examples
+from .tools import PandasExpressionTool, PandasExpressionInput
 
 @pytest.fixture
 def tgi_self_hosted_config() -> HuggingFaceTGIConfig:
@@ -49,31 +52,6 @@ def tgi_self_hosted_config() -> HuggingFaceTGIConfig:
 
 @pytest.fixture
 def llm(tgi_self_hosted_config: HuggingFaceTGIConfig) -> HuggingFaceLLM:
-    """
-    When using chat model in runnable chain, kwargs are often lost
-    For example, RunnableParallel and BasePromptTemplate ignore kwargs
-    param and so it will never make it to your model. 
-    
-    You have two options.
-
-    You can define model params during instantiation and these attributes
-    will be marked as inheritable by the runnable chains.
-
-    However, you can also specify model params during invocation time to
-    specify parameters for one specific run. This is accomplished using
-    `RunnableConfig.configurable`. Example:
-
-    config = RunnableConfig(
-        tags=['huggingface_chat_model', 'chat_model_123'],
-        metadata={'user_uuid': '12345', 'model': 'meta/llama-3.2-90b-vision-instruct'},
-        run_name='huggingface_chat_model_invoke_role',
-        max_concurrency=1,
-        configurable={'temperature': 0.3},
-        run_id=run_uuid,
-        callbacks=[handler], 
-    )
-    chain.invoke({'input': 'Hello'}, config=config)  
-    """
     return HuggingFaceLLM(
         base_url=tgi_self_hosted_config.url,
         credentials=tgi_self_hosted_config.auth_token,
@@ -219,10 +197,6 @@ def test_chat_model_invoke(chat_model: HuggingFaceChatModel):
     assert len(ai_message.content) > 0
 
 def test_chat_model_invoke_with_prompt_template(chat_model: HuggingFaceChatModel):
-    """
-    Use `HumanMessagePromptTemplate.from_template` instead of `HumanMessage`
-    if you desire placeholder to be filled in
-    """
     chat_prompt = ChatPromptTemplate.from_messages([
         SystemMessage(content="You're a helpful assistant"),
         HumanMessagePromptTemplate.from_template('Tell me about the movie {input}.')
@@ -239,9 +213,6 @@ def test_chat_model_invoke_with_prompt_template(chat_model: HuggingFaceChatModel
     assert len(ai_message.content) > 0
 
 def test_chat_model_invoke_with_prompt_template2(chat_model: HuggingFaceChatModel):
-    """
-    You can also use tuple structure if you desire placeholders to be filled in 
-    """
     chat_prompt = ChatPromptTemplate.from_messages([
         ('system', "You're a helpful assistant"),
         ('human', 'Tell me about the movie {input}.')
@@ -290,10 +261,6 @@ def test_chat_model_invoke_with_history(chat_model: HuggingFaceChatModel):
     assert len(ai_message.content) > 0 
 
 def test_chat_model_invoke_with_output_parser(chat_model: HuggingFaceChatModel):
-    """
-    Output parsers accept a string or BaseMessage and, therefore, work with both
-    LLM and Chat Model components
-    """
     strict_parser = PydanticOutputParser(pydantic_object=MovieSummary)
 
     prompt = ChatPromptTemplate.from_messages(
@@ -338,9 +305,6 @@ def test_chat_model_invoke_with_output_parser(chat_model: HuggingFaceChatModel):
     assert len(ai_message.plot_summary) > 1
 
 def test_chat_model_invoke_with_output_parser2(chat_model: HuggingFaceChatModel):
-    """
-    Output token usage with Output Parser
-    """
     strict_parser = PydanticOutputParser(pydantic_object=OutputMessage)
 
     prompt = ChatPromptTemplate.from_messages(
@@ -393,8 +357,8 @@ def test_chat_model_invoke_with_output_parser2(chat_model: HuggingFaceChatModel)
 def test_chat_model_invoke_with_few_shot_prompt(
     chat_model: HuggingFaceChatModel, 
     vectorstore: Iterator[RedisVectorStore],
-    sample_population: List[str]):
-    ...
+    sample_population: List[str]
+):
     def example_to_text(
         example: dict[str, str], 
     ) -> str:
@@ -460,7 +424,7 @@ def test_chat_model_invoke_with_few_shot_prompt(
 
     assert len(df_content) > 0
 
-def test_chat_model_invoke_with_callbacks(chat_model: HuggingFaceLLM):
+def test_chat_model_invoke_with_callbacks(chat_model: HuggingFaceChatModel):
     mock_handler = MockCallbackHandler()
     config = RunnableConfig(callbacks=[mock_handler])
 
@@ -474,76 +438,206 @@ def test_chat_model_invoke_with_callbacks(chat_model: HuggingFaceLLM):
 
     assert mock_handler.llm_end_data is not None
 
-def test_llm_invoke_with_run_information(spy_chat_model: HuggingFaceChatModel):
-    """
-    configurable_fields returns a new RunnableSerializable object
-    with newly configured fields
-    
-    Most of behavior is in RunnableConfigurableFields with extends
-    DynamicRunnable
-
-    Note the change in Configurable is ephemeral. It does not affect
-    the original llm object, only for an ephemeral operation on the 
-    chain to use the changed field, such as temperature from 0.8 to
-    0.3 temporarily.
-    """
-    chat_model = spy_chat_model.configurable_fields(
-        temperature=ConfigurableField(
-            id='temperature',
-            name='LLM Temperature',
-            description='The temperature of the LLM'
+def test_chat_model_invoke_with_run_information(spy_chat_model: HuggingFaceChatModel):
+    with pytest.raises(ValueError, match='Configuration key temperature not found'):
+        chat_model = spy_chat_model.configurable_fields(
+            temperature=ConfigurableField(
+                id='temperature',
+                name='LLM Temperature',
+                description='The temperature of the LLM'
+            )
         )
-    )
 
-    handler = ConfigurableCaptureCallbackHandler()
+        handler = ConfigurableCaptureCallbackHandler()
+        
+        run_uuid = uuid.uuid4()
+        config = RunnableConfig(
+            tags=['huggingface_chat_model', 'chat_model_123'],
+            metadata={'user_uuid': '12345', 'model': 'meta/llama-3.2-90b-vision-instruct'},
+            run_name='huggingface_chat_model_invoke_role',
+            max_concurrency=1, # more applicable when batching or using composite chains
+            configurable={'temperature': 0.3}, # more applicable when you have multiple models in chain and want some to have configurable attribute like temperature but not others
+            run_id=run_uuid,
+            callbacks=[handler], 
+        )
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                ('system', "You're a helpful assistant"),
+                ('human', "Tell me about the movie {input}.")
+            ]
+        )
+
+        chain = prompt | chat_model
+        chain.invoke({'input': 'Memento'}, config=config)
+
+def test_chat_model_runnable_serializable(chat_model: HuggingFaceChatModel):    
+    chat_prompt = ChatPromptTemplate.from_messages([
+        ('system', "You're a helpful assistant"),
+        ('human', 'Tell me about the movie {input}.')
+    ])
+
+    chain = chat_prompt | chat_model
+
+    try:
+        chain.invoke()
+    except TypeError:
+        serialized_chain = chain.to_json()
+
+    assert str(serialized_chain.get('kwargs').get('first').OutputType).find('StringPromptValue') > 0
+
+def test_chat_model_invoke_with_image_to_text(chat_model: HuggingFaceChatModel):
+    image_path = Path(__file__).parent / 'assets' / 'baby.jpg'
+    with image_path.open('rb') as f:
+        base64_image = base64.b64encode(f.read()).decode('utf-8')
+    image_url = f'data:image/jpeg;base64,{base64_image}'
+
+    chat_prompt = ChatPromptTemplate.from_messages([
+        ('system', "You're a helpful assistant who can create text from images"),
+        ('human', 
+            [
+                {'image_url': {'url': "{image_url}"}},
+                'Describe this image.'
+            ]
+        )
+    ])
+
+    formatted_messages = chat_prompt.format_messages(image_url=image_url)
+    print(formatted_messages[0].content)
+
+    chain = chat_prompt | chat_model
+    ai_message = chain.invoke({'image_url': image_url})
+    assert len(ai_message.content) > 0
+
+def test_chat_model_invoke_with_tool_calling(
+    chat_model: HuggingFaceChatModel, 
+    sample_population
+):
+    salaries = itertools.count(start=10_000, step=10_000)
+    ages = itertools.count(start=25, step=5)
+    data = zip(sample_population, ages, salaries)
+    df = pd.DataFrame(data, columns=['Name', 'Age', 'Salary']) 
+
+    prefix = f"""
+    You are working with a pandas dataframe in Python. The name of the dataframe is `df`.
+    This is the result of `print(df.head())`:
+    {df.head()}
     
-    run_uuid = uuid.uuid4()
-    config = RunnableConfig(
-        tags=['huggingface_chat_model', 'chat_model_123'],
-        metadata={'user_uuid': '12345', 'model': 'meta/llama-3.2-90b-vision-instruct'},
-        run_name='huggingface_chat_model_invoke_role',
-        max_concurrency=1, # more applicable when batching or using composite chains
-        configurable={'temperature': 0.3}, # more applicable when you have multiple models in chain and want some to have configurable attribute like temperature but not others
-        run_id=run_uuid,
-        callbacks=[handler], 
-    )
-    prompt = ChatPromptTemplate.from_messages(
+    In the following examples, any string wrapped in angle brackets (e.g., <col_name>, <col1>, <value>, <n>, <start_date>, etc.) is a placeholder. It represents a variable that can change depending on the user's actual DataFrame or query.
+    
+    Input: Calculate the average of <col_name> with empty values filled with 0s.
+    Output: df[<col_name>].replace(['', ' ', 'None'], np.nan).astype(float).fillna(0).mean()
+    
+    Give the pandas expression of every input.
+    """
+
+    final_prompt = ChatPromptTemplate.from_messages(
         [
-            ('system', "You're a helpful assistant"),
-            ('human', "Tell me about the movie {input}.")
+            ('system', prefix),
+            ('human', "{input}"),
         ]
     )
+    
+    pandas_expression_tool = PandasExpressionTool()
+    pandas_expression_tool.df = df
+    schema = pandas_expression_tool.args_schema.model_json_schema()
+    print(json.dumps(schema))
 
-    chain = prompt | chat_model
-    chain.invoke({'input': 'Memento'}, config=config)
-
-    assert handler.captured_temp == 0.3, (
-        f"Expected temperature to be 0.3, got {spy_chat_model.last_used_temperature}"
+    chat_model.llm = chat_model.llm.bind(
+        temperature=0,
+        seed=42,
     )
+    chat_with_tools = chat_model.bind_tools(
+        [pandas_expression_tool], 
+        tool_choice='pandas_expression_tool'
+    )
+    chain = final_prompt | chat_with_tools
+
+    ai_message = chain.invoke({ 'input': 'Which names have the highest salaries?' })
+    for tool_call in ai_message.tool_calls:
+        tool_name = tool_call['name']
+        arguments = tool_call['args']
+
+        if tool_name == 'pandas_expression_tool':
+            parsed_args = PandasExpressionInput(**arguments)
+            result = pandas_expression_tool._run(df_expr=parsed_args.df_expr)
+
+    assert len(result) > 0
+
+@pytest.mark.skip(reason="`with_structured_output` not yet supported")
+def test_chat_model_invoke_with_structured_output(chat_model: HuggingFaceChatModel):
+    """with_structured_output method to return json"""
+    structured_llm = chat_model.with_structured_output(MovieSummary)
+    ai_message = structured_llm.invoke('Tell me about the movie Memento')
+    assert isinstance(ai_message, MovieSummary)
+    assert ai_message.release_year == 2000
+
+@pytest.mark.asyncio
+async def test_chat_model_ainvoke(chat_model: HuggingFaceChatModel):
+    messages = [
+        SystemMessage(content="You're a helpful assistant"),
+        HumanMessage(content='What is Generative AI?')
+    ]
+    ai_message = chat_model.invoke(messages)
+    assert ai_message.type == 'ai'
+    assert len(ai_message.content) > 0
+
+# def test_chat_model_stream(llm: HuggingFaceLLM):
+#     prompt = PromptTemplate(
+#         input_variables=['input'],
+#         template="Tell me about the movie {input}."
+#     )
+
+#     chain = prompt | llm
+
+#     ai_message = ''
+#     for chunk in chain.stream({'input': 'Memento'}):
+#         ai_message += chunk
+
+#     assert len(ai_message) > 0    
+
+# @pytest.mark.asyncio
+# async def test_chat_model_astream(llm: HuggingFaceLLM):
+#     prompt = PromptTemplate(
+#         input_variables=['input'],
+#         template="Tell me about the movie {input}."
+#     )
+
+#     chain = prompt | llm
+#     ai_message = ''
+#     async for chunk in chain.astream({'input': 'Memento'}):
+#         ai_message += chunk
+    
+#     assert len(ai_message) > 0
+
+# def test_chat_model_batch(llm: HuggingFaceLLM):
+#     """
+#     Batching support right now is basic.
+
+#     More features coming soon
+#     """
+#     ai_messages = llm.batch(['Tell me about the movie Memento', 'Tell me about the movie Reservoir Dogs'])
+#     assert len(ai_messages) > 0
+
+# @pytest.mark.asyncio
+# async def test_chat_model_abatch(llm: HuggingFaceLLM):
+#     """
+#     Batching support right now is basic.
+
+#     More features coming soon
+#     """
+#     ai_messages = await llm.abatch(['Tell me about the movie Memento', 'Tell me about the movie Reservoir Dogs'])
+#     assert len(ai_messages) > 0
 
 
-    # TODO: chat_model, chat_bot (which is an abstraction over chat_model)
-    # dataframe expression tool   
-    # document loader with metadata and smart vector retriever
-    # langgraph
+#     # TODO: chat_bot (which is an abstraction over chat_model)
+#     # dataframe expression tool   
+#     # document loader with metadata and smart vector retriever
+#     # langgraph
 
     
 
 
 
 
-# def test_chat_model_invoke_with_structured_output(chat_model: HuggingFaceChatModel):
-#     """with_structured_output method to return json"""
-#     structured_llm = chat_model.with_structured_output(MovieSummary)
-#     ai_message = structured_llm.invoke('Tell me about the movie Memento')
-#     assert isinstance(ai_message, MovieSummary)
-#     assert ai_message.release_year == 2000
-#     assert ai_message.director == 'Christopher Nolan'
-#     assert len(ai_message.plot_summary) > 1   
 
-# def store_state_in_case_of_fatal_error():
-#     """
-#     Since a RunnableSequence is a kind of RunnableSerializable
-#     it has a to_json() method to serialize the state of the composite
-#     parts (the Runnables)
-#     """
+

@@ -58,7 +58,8 @@ We will want to use an ELP because when using Spot Instances, the instance will 
 
 ```shell
 # before servicing with SystemD, verify the container runs with the specified model on the system:
-model=meta-llama/Llama-3.2-90B-Vision-Instruct
+model=meta-llama/Llama-3.1-70B-Instruct
+# model=meta-llama/Llama-3.2-90B-Vision-Instruct
 # model=meta-llama/Llama-3.2-11B-Vision-Instruct
 # model=meta-llama/Llama-3.1-70B-Instruct
 token=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

@@ -160,10 +160,6 @@ class UsageCollectorWithChainID(BaseCallbackHandler):
         run_id: Optional[UUID] = None,
         **kwargs: any,
     ):
-        """
-        Load usage statistics in all runs part of
-        the composite Runnable
-        """
         usage = response.llm_output.get('token_usage')
         for run_id in self.chain_run_ids:
             self.usage_by_run_id[run_id] = usage
@@ -194,10 +190,6 @@ def test_identifying_params(llm: HuggingFaceLLM):
     assert getattr(llm, '_identifying_params') == {'endpoint_url': 'http://3.210.60.7:8080/', 'model_kwargs': {}}
 
 def test_llm_invoke(llm: HuggingFaceLLM):
-    """
-    LLMs accept strings as inputs, or objects which can be coerced to string 
-    prompts, including List[BaseMessage] and PromptValue.
-    """
     ai_message = llm.invoke('What is Generative AI?')
     assert len(ai_message) > 0
 
@@ -212,17 +204,6 @@ def test_llm_invoke_with_prompt_template(llm: HuggingFaceLLM):
     assert len(ai_message) > 0
 
 def test_llm_invoke_with_output_parser(llm: HuggingFaceLLM):
-    """
-    Output Parser generates instructions injected in prompt, prompting
-    LLM to generate json using Pydantic model schema. JSON Parser 
-    validates and fixes the JSON string into actual JSON, and Pydantic
-    Parser validates the actual JSON data against the Pydantic Schema.
-    The result of the Runnable is a valid Pydantic model.
-
-    Some LLMs are inferior to others when generating json. For the Meta
-    Llama models, I found I had to include 'Return ONLY a single valid 
-    JSON object.' in the prompt to get a single json response back.
-    """
     output_parser = PydanticOutputParser(pydantic_object=MovieSummary)
 
     prompt = PromptTemplate(
@@ -240,11 +221,10 @@ def test_llm_invoke_with_output_parser(llm: HuggingFaceLLM):
     assert len(ai_message.plot_summary) > 1
 
 def test_llm_invoke_with_few_shot_prompt(
-        llm: HuggingFaceLLM, 
-        vectorstore: Iterator[RedisVectorStore],
-        sample_population: List[str]):
-    """
-    """
+    llm: HuggingFaceLLM, 
+    vectorstore: Iterator[RedisVectorStore],
+    sample_population: List[str]
+):
     def example_to_text(
         example: dict[str, str], 
     ) -> str:
@@ -324,18 +304,6 @@ def test_llm_invoke_with_callbacks(llm: HuggingFaceLLM):
     assert mock_handler.llm_end_data is not None
 
 def test_llm_invoke_with_run_information(spy_llm: SpyHuggingFaceLLM):
-    """
-    configurable_fields returns a new RunnableSerializable object
-    with newly configured fields
-    
-    Most of behavior is in RunnableConfigurableFields with extends
-    DynamicRunnable
-
-    Note the change in Configurable is ephemeral. It does not affect
-    the original llm object, only for an ephemeral operation on the 
-    chain to use the changed field, such as temperature from 0.8 to
-    0.3 temporarily.
-    """
     llm = spy_llm.configurable_fields(
         temperature=ConfigurableField(
             id='temperature',
@@ -369,13 +337,6 @@ def test_llm_invoke_with_run_information(spy_llm: SpyHuggingFaceLLM):
     )
 
 def test_llm_invoke_with_token_usage_in_response(llm: HuggingFaceLLM):
-    """
-    run id is ephemeral. It is consumed by the first runner, RunnableSequence
-    below in the composite pattern.
-
-    Therefore, we generate a callback id in order to capture token usage
-    in callback handler.
-    """
     usage_collector = UsageCollectorWithChainID()
     run_uuid = uuid.uuid4()
     config = RunnableConfig(
