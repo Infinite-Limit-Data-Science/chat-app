@@ -10,6 +10,7 @@ from typing import (
     Union,
     cast,
     Iterator,
+    AsyncIterator,
 )
 from langchain_core.callbacks.manager import (
     AsyncCallbackManagerForLLMRun,
@@ -299,7 +300,13 @@ class HuggingFaceChatModel(BaseChatModel):
                 run_manager.on_llm_error(e, response=LLMResult(generations=[]))
             raise
 
-    def _astream():
+    def _stream(
+        self,
+        messages: List[BaseMessage],
+        stop: Optional[List[str]] = None,
+        run_manager: Optional[CallbackManagerForLLMRun] = None,
+        **kwargs: Any,
+    ) -> AsyncIterator[ChatGenerationChunk]:
         ...
 
     def bind_tools(
