@@ -20,9 +20,13 @@ from huggingface_hub.inference._generated.types import (
 from .inference_schema import HuggingFaceInferenceServerMixin
 from .huggingface_inference_client import HuggingFaceInferenceClient
 from .huggingface_inference_server_config import HuggingFaceTGIConfig
-from .chat_completion_helper import (
+from .helpers.chat_completion_helper import (
     postprocess_chat_completion_output,
-    process_stream_output,
+    postprocess_chat_completion_stream_output,
+    strip_stop_sequences,
+    truncate_at_stop_sequence,
+)
+from .helpers.run_manager_helper import (
     handle_sync_run_manager,
     handle_async_run_manager
 )
@@ -130,13 +134,6 @@ class HuggingFaceLLM(LLM, HuggingFaceInferenceServerMixin):
         params['stop'] = params['stop'] + (runtime_stop or [])
         return params
 
-    @staticmethod
-    def _strip_stop_sequences(text: str, stop_sequences: List[str]) -> str:
-        for stop_seq in stop_sequences:
-            if text.endswith(stop_seq):
-                text = text[: -len(stop_seq)]
-        return text
-
     def _call(
         self,
         prompt: str,
@@ -159,8 +156,9 @@ class HuggingFaceLLM(LLM, HuggingFaceInferenceServerMixin):
                 response_text, token_usage = postprocess_chat_completion_output(
                     chat_completion_output, invocation_params
                 )
-                handle_sync_run_manager(run_manager, response_text, token_usage)
-                return self._strip_stop_sequences(response_text, invocation_params["stop"])
+                if run_manager:
+                    handle_sync_run_manager(run_manager, response_text, token_usage)
+                return strip_stop_sequences(response_text, invocation_params["stop"])
         except Exception as e:
             if run_manager:
                 run_manager.on_llm_error(e, response=LLMResult(generations=[]))
@@ -186,11 +184,12 @@ class HuggingFaceLLM(LLM, HuggingFaceInferenceServerMixin):
                 messages=[{"role": "user", "content": prompt}],
                 **invocation_params
             )
-            response_text, token_usage = postprocess_chat_completion_output(
+            text, token_usage = postprocess_chat_completion_output(
                 chat_completion_output, invocation_params
             )
-            await handle_async_run_manager(run_manager, response_text, token_usage)
-            return self._strip_stop_sequences(response_text, invocation_params["stop"])
+            if run_manager:
+                await handle_async_run_manager(run_manager, text, token_usage)
+            return strip_stop_sequences(text, invocation_params["stop"])
         except Exception as e:
             if run_manager:
                 await run_manager.on_llm_error(e, response=LLMResult(generations=[]))
@@ -210,12 +209,24 @@ class HuggingFaceLLM(LLM, HuggingFaceInferenceServerMixin):
             **invocation_params,
             stream=True
         ):
-            chunk, found_stop = process_stream_output(
+            text_chunk, token_usage = postprocess_chat_completion_stream_output(
                 chat_completion_stream_output, invocation_params
             )
-            if chunk:
-                if run_manager:
-                    run_manager.on_llm_new_token(chunk.text, **chunk.generation_info)
+
+            text_chunk, found_stop = truncate_at_stop_sequence(
+                text_chunk,
+                invocation_params.get("stop", [])
+            )
+
+            chunk = GenerationChunk(
+                text=text_chunk,
+                generation_info=token_usage
+            )
+            
+            if run_manager:
+                run_manager.on_llm_new_token(chunk.text, chunk=chunk, **chunk.generation_info)
+
+            if text_chunk:
                 yield chunk
 
             if found_stop:
@@ -236,12 +247,24 @@ class HuggingFaceLLM(LLM, HuggingFaceInferenceServerMixin):
             stream=True
         )
         async for chat_completion_stream_output in streaming_completion:
-            chunk, found_stop = process_stream_output(
+            text_chunk, token_usage = postprocess_chat_completion_stream_output(
                 chat_completion_stream_output, invocation_params
             )
-            if chunk:
-                if run_manager:
-                    await run_manager.on_llm_new_token(chunk.text, **chunk.generation_info)
+
+            text_chunk, found_stop = truncate_at_stop_sequence(
+                text_chunk,
+                invocation_params.get("stop", [])
+            )
+
+            chunk = GenerationChunk(
+                text=text_chunk,
+                generation_info=token_usage
+            )
+            
+            if run_manager:
+                await run_manager.on_llm_new_token(chunk.text, chunk=chunk, **chunk.generation_info)
+            
+            if text_chunk:
                 yield chunk
 
             if found_stop:

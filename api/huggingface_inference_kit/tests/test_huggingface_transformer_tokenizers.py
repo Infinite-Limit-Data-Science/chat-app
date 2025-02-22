@@ -1,7 +1,7 @@
 from ..huggingface_transformer_tokenizers import (
     BgeLargePretrainedTokenizer,
     NomicPretrainedTokenizer,
-    Llama70BInstructPretrainedTokenizer,
+    MetaLlama3170BInstructPretrainedTokenizer,
     Llama90BVisionInstructPretrainedTokenizer
 )
 
@@ -14,7 +14,7 @@ def test_nomic_pretrained_tokenizer():
     assert 'tokenizer' in nomic.__dict__
 
 def test_llama_70b_instruct_pretrained_tokenizer():
-    llama_70b = Llama70BInstructPretrainedTokenizer()
+    llama_70b = MetaLlama3170BInstructPretrainedTokenizer()
     assert 'tokenizer' in llama_70b.__dict__
 
 def test_llama_90b_vision_instruct_pretrained_tokenizer():

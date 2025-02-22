@@ -9,6 +9,7 @@ import itertools
 from typing import Iterator, List
 from faker import Faker
 import pandas as pd
+from dotenv import load_dotenv
 from langchain_core.messages import (
     HumanMessage,
     SystemMessage,
@@ -38,12 +39,14 @@ from ..huggingface_transformer_tokenizers import BgeLargePretrainedTokenizer
 from .corpus import examples
 from .tools import PandasExpressionTool, PandasExpressionInput
 
+load_dotenv()
+
 @pytest.fixture
 def tgi_self_hosted_config() -> HuggingFaceTGIConfig:
     return HuggingFaceTGIConfig(
         name='meta-llama/Meta-Llama-3.1-70B-Instruct',
-        url='http://3.210.60.7:8080/',
-        auth_token='eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJhcHAiOiJzdmMtY2hhdC10ZXN0Iiwic3ViIjoibjFtNCIsIm1haWwiOiJqb2huLmRvZUBiY2JzZmwuY29tIiwic3JjIjoiam9obi5kb2VAYmNic2ZsLmNvbSIsInJvbGVzIjpbIiJdLCJpc3MiOiJQTUktVGVzdCIsImF0dHJpYnV0ZXMiOlt7ImdpdmVubmFtZSI6IkpvaG4ifSx7InNuIjoiSkRvZSJ9LHsibWFpbCI6ImpvaG4uZG9lQGJjYnNmbC5jb20ifSx7ImRpc3BsYXluYW1lIjoiSkRvZSwgSm9obiJ9LHsiYmNic2ZsLWlkbVBpY3R1cmVVUkwiOiIifV0sImF1ZCI6ImNoYXRhcHAtdHN0YS50aHJvdGwuY29tIiwiZ2l2ZW5uYW1lIjoiSm9obiIsImRpc3BsYXluYW1lIjoiRG9lLCBKb2huIiwic24iOiJKRG9lIiwiaWRtX3BpY3R1cmVfdXJsIjoiIiwiZXhwIjoxODkzNDU2MDAwLCJpYXQiOjE3MTQxNDQ4NDEsInNlc3Npb25faWQiOiIiLCJqdGkiOiIifQ.rxHyA_WeMprlMtDsTGPvqgjRbQ2qT7VkiT6Ak1aSQmTl3nOFR_v0ev2AmUogUHXJi9CmGZcw3i-Wsis86ggOJKl4e7TwuKSBqt-s81jzGePI2yIsyKInEXwieKHXpWl1JFMtSkDpkRBeaiSlM1qpJ33BJLekRRkW-mDhV-yG5VVxyOWxRZDSfXRgrQ3CoNzChvITqdC1VOCeMAMI5Vg5zvo9bNOjOqOCLEtncsHdDiD7gYmPsGWeR9eXcT0y2-KONa0LvsYBewBcXjvJE63xe3XViiQ3HQPayjA1UAxWekD83_Kq7y-LJEjrQNNphEq_XyocpzvlmK-tlf59UGJJcw',
+        url=os.environ['TEST_TGI_URL'],
+        auth_token=os.environ['TEST_AUTH_TOKEN'],
         max_input_tokens=12582,
         max_total_tokens=16777,
         max_batch_prefill_tokens=12582+50,
@@ -69,8 +72,8 @@ def chat_model(llm: HuggingFaceLLM) -> HuggingFaceChatModel:
 def tei_self_hosted_config() -> HuggingFaceTEIConfig:
     return HuggingFaceTEIConfig(
         name='BAAI/bge-large-en-v1.5',
-        url='http://100.28.34.190:8070/',
-        auth_token='eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJhcHAiOiJzdmMtY2hhdC10ZXN0Iiwic3ViIjoibjFtNCIsIm1haWwiOiJqb2huLmRvZUBiY2JzZmwuY29tIiwic3JjIjoiam9obi5kb2VAYmNic2ZsLmNvbSIsInJvbGVzIjpbIiJdLCJpc3MiOiJQTUktVGVzdCIsImF0dHJpYnV0ZXMiOlt7ImdpdmVubmFtZSI6IkpvaG4ifSx7InNuIjoiSkRvZSJ9LHsibWFpbCI6ImpvaG4uZG9lQGJjYnNmbC5jb20ifSx7ImRpc3BsYXluYW1lIjoiSkRvZSwgSm9obiJ9LHsiYmNic2ZsLWlkbVBpY3R1cmVVUkwiOiIifV0sImF1ZCI6ImNoYXRhcHAtdHN0YS50aHJvdGwuY29tIiwiZ2l2ZW5uYW1lIjoiSm9obiIsImRpc3BsYXluYW1lIjoiRG9lLCBKb2huIiwic24iOiJKRG9lIiwiaWRtX3BpY3R1cmVfdXJsIjoiIiwiZXhwIjoxODkzNDU2MDAwLCJpYXQiOjE3MTQxNDQ4NDEsInNlc3Npb25faWQiOiIiLCJqdGkiOiIifQ.rxHyA_WeMprlMtDsTGPvqgjRbQ2qT7VkiT6Ak1aSQmTl3nOFR_v0ev2AmUogUHXJi9CmGZcw3i-Wsis86ggOJKl4e7TwuKSBqt-s81jzGePI2yIsyKInEXwieKHXpWl1JFMtSkDpkRBeaiSlM1qpJ33BJLekRRkW-mDhV-yG5VVxyOWxRZDSfXRgrQ3CoNzChvITqdC1VOCeMAMI5Vg5zvo9bNOjOqOCLEtncsHdDiD7gYmPsGWeR9eXcT0y2-KONa0LvsYBewBcXjvJE63xe3XViiQ3HQPayjA1UAxWekD83_Kq7y-LJEjrQNNphEq_XyocpzvlmK-tlf59UGJJcw',        
+        url=os.environ['TEST_TEI_URL'],
+        auth_token=os.environ['TEST_AUTH_TOKEN'],        
         max_batch_tokens=32768,
         max_client_batch_size=128,
         max_batch_requests=64,
@@ -606,61 +609,52 @@ async def test_chat_model_ainvoke(chat_model: HuggingFaceChatModel):
     assert ai_message.type == 'ai'
     assert len(ai_message.content) > 0
 
-# def test_chat_model_stream(llm: HuggingFaceLLM):
-#     prompt = PromptTemplate(
-#         input_variables=['input'],
-#         template="Tell me about the movie {input}."
-#     )
+def test_chat_model_stream(chat_model: HuggingFaceChatModel):
+    chat_prompt = ChatPromptTemplate.from_messages([
+        ('system', "You're a helpful assistant"),
+        ('human', 'Tell me about the movie {input}.')
+    ])
 
-#     chain = prompt | llm
+    chain = chat_prompt | chat_model
 
-#     ai_message = ''
-#     for chunk in chain.stream({'input': 'Memento'}):
-#         ai_message += chunk
+    ai_message = ''
+    for chunk in chain.stream({'input': 'Memento'}):
+        ai_message += chunk.content
 
-#     assert len(ai_message) > 0    
+    assert len(ai_message) > 0
 
-# @pytest.mark.asyncio
-# async def test_chat_model_astream(llm: HuggingFaceLLM):
-#     prompt = PromptTemplate(
-#         input_variables=['input'],
-#         template="Tell me about the movie {input}."
-#     )
+@pytest.mark.asyncio
+async def test_chat_model_astream(chat_model: HuggingFaceChatModel):
+    chat_prompt = ChatPromptTemplate.from_messages([
+        ('system', "You're a helpful assistant"),
+        ('human', 'Tell me about the movie {input}.')
+    ])
 
-#     chain = prompt | llm
-#     ai_message = ''
-#     async for chunk in chain.astream({'input': 'Memento'}):
-#         ai_message += chunk
+    chain = chat_prompt | chat_model
+    ai_message = ''
+    async for chunk in chain.astream({'input': 'Memento'}):
+        ai_message += chunk.content
     
-#     assert len(ai_message) > 0
+    assert len(ai_message) > 0
 
-# def test_chat_model_batch(llm: HuggingFaceLLM):
-#     """
-#     Batching support right now is basic.
+def test_chat_model_batch(chat_model: HuggingFaceChatModel):
+    """
+    Batching support right now is basic.
 
-#     More features coming soon
-#     """
-#     ai_messages = llm.batch(['Tell me about the movie Memento', 'Tell me about the movie Reservoir Dogs'])
-#     assert len(ai_messages) > 0
+    More features coming soon
+    """
+    ai_messages = chat_model.batch(['Tell me about the movie Memento', 'Tell me about the movie Reservoir Dogs'])
+    assert len(ai_messages) > 0
 
-# @pytest.mark.asyncio
-# async def test_chat_model_abatch(llm: HuggingFaceLLM):
-#     """
-#     Batching support right now is basic.
+@pytest.mark.asyncio
+async def test_chat_model_abatch(chat_model: HuggingFaceChatModel):
+    """
+    Batching support right now is basic.
 
-#     More features coming soon
-#     """
-#     ai_messages = await llm.abatch(['Tell me about the movie Memento', 'Tell me about the movie Reservoir Dogs'])
-#     assert len(ai_messages) > 0
-
-
-#     # TODO: chat_bot (which is an abstraction over chat_model)
-#     # dataframe expression tool   
-#     # document loader with metadata and smart vector retriever
-#     # langgraph
-
-    
-
+    More features coming soon
+    """
+    ai_messages = await chat_model.abatch(['Tell me about the movie Memento', 'Tell me about the movie Reservoir Dogs'])
+    assert len(ai_messages) > 0
 
 
 

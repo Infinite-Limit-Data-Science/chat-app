@@ -11,6 +11,8 @@ from typing import (
     cast,
     Iterator,
     AsyncIterator,
+    TypeAlias,
+    Tuple
 )
 from langchain_core.callbacks.manager import (
     AsyncCallbackManagerForLLMRun,
@@ -20,6 +22,7 @@ from langchain_core.language_models import LanguageModelInput
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import (
     AIMessage,
+    AIMessageChunk,
     BaseMessage,
     ChatMessage,
     HumanMessage,
@@ -40,18 +43,22 @@ from typing_extensions import Self
 from huggingface_hub.inference._generated.types import (
     ChatCompletionOutput,
     ChatCompletionOutputMessage,
-    ChatCompletionStreamOutput
+    ChatCompletionStreamOutputDelta,
 )
-
 from ..huggingface_inference_kit.huggingface_llm import HuggingFaceLLM
 from ..huggingface_inference_kit.huggingface_transformer_tokenizers import get_tokenizer_class_by_prefix
-from .chat_completion_helper import postprocess_chat_completion_output
-from .chat_completion_helper import (
+from .helpers.chat_completion_helper import (
     postprocess_chat_completion_output,
-    process_stream_output,
+    postprocess_chat_completion_stream_output,
+    strip_stop_sequences,
+    truncate_at_stop_sequence,
+)
+from .helpers.run_manager_helper import (
     handle_sync_run_manager,
     handle_async_run_manager
 )
+
+ChatCompletionOutputContentLike: TypeAlias = ChatCompletionOutputMessage | ChatCompletionStreamOutputDelta
 
 DEFAULT_SYSTEM_PROMPT = """You are a helpful, respectful, and honest assistant."""
 
@@ -103,9 +110,9 @@ def corrected_functions(fn_string: str) -> str:
     return corrected_json
 
 def _convert_tgi_message_to_langchain_message(
-    message: ChatCompletionOutputMessage,
+    message: ChatCompletionOutputContentLike,
     token_usage: Dict[str, any]
-) -> BaseMessage:
+) -> Tuple[str, Dict[str, any]]:
     role = message.role
     assert role == 'assistant', f"Expected role to be 'assistant', got {role}"
     content = cast(str, message.content)
@@ -118,7 +125,28 @@ def _convert_tgi_message_to_langchain_message(
             functions_string = str(tool_calls[0]['function'].pop('arguments'))
             tool_calls[0]['function']['arguments'] = corrected_functions(functions_string)
         additional_kwargs['tool_calls'] = tool_calls
+    return content, additional_kwargs
+
+def _convert_tgi_message_to_lc_ai_message(
+    message: ChatCompletionOutputContentLike,
+    token_usage: Dict[str, any]    
+) -> AIMessage:
+    content, additional_kwargs = _convert_tgi_message_to_langchain_message(
+        message,
+        token_usage      
+    )
     return AIMessage(content=content, additional_kwargs=additional_kwargs)
+
+def _convert_tgi_message_to_lc_ai_message_chunk(
+    message: ChatCompletionOutputContentLike,
+    token_usage: Dict[str, any]    
+) -> AIMessageChunk:
+    content, additional_kwargs = _convert_tgi_message_to_langchain_message(
+        message,
+        token_usage  
+    )
+    additional_kwargs['token_usage'] = { 'chunks': [additional_kwargs['token_usage']] }
+    return AIMessageChunk(content=content, additional_kwargs=additional_kwargs)    
 
 class HuggingFaceChatModel(BaseChatModel):
     llm: HuggingFaceLLM
@@ -175,13 +203,6 @@ class HuggingFaceChatModel(BaseChatModel):
         bound_params['stop'] = bound_params['stop'] + (runtime_stop or [])
         return bound_params
 
-    @staticmethod
-    def _strip_stop_sequences(text: str, stop_sequences: List[str]) -> str:
-        for stop_seq in stop_sequences:
-            if text.endswith(stop_seq):
-                text = text[: -len(stop_seq)]
-        return text
-
     def _create_message_dicts(
         self, messages: List[BaseMessage], stop: Optional[List[str]]
     ) -> List[Dict[Any, Any]]:
@@ -191,7 +212,7 @@ class HuggingFaceChatModel(BaseChatModel):
     def _create_chat_result(self, message: ChatCompletionOutputMessage, token_usage: Dict[str, any]) -> ChatResult:
         generations = []
         gen = ChatGeneration(
-            message=_convert_tgi_message_to_langchain_message(message, token_usage),
+            message=_convert_tgi_message_to_lc_ai_message(message, token_usage),
             generation_info=token_usage,
         )
         generations.append(gen)
@@ -221,7 +242,7 @@ class HuggingFaceChatModel(BaseChatModel):
             message: ChatCompletionOutputMessage = chat_completion_output.choices[0].message
             if message.content:
                 # if not message content, then it is a tool response and we don't want to strip out anything for tool responses
-                message.content = self._strip_stop_sequences(message.content, invocation_params["stop"])
+                message.content = strip_stop_sequences(message.content, invocation_params["stop"])
 
             chat_result = self._create_chat_result(message, token_usage)
 
@@ -259,7 +280,7 @@ class HuggingFaceChatModel(BaseChatModel):
             message: ChatCompletionOutputMessage = chat_completion_output.choices[0].message
             if message.content:
                 # if not message content, then it is a tool response and we don't want to strip out anything for tool responses
-                message.content = self._strip_stop_sequences(message.content, invocation_params["stop"])
+                message.content = strip_stop_sequences(message.content, invocation_params["stop"])
 
             chat_result = self._create_chat_result(message, token_usage)
 
@@ -291,23 +312,96 @@ class HuggingFaceChatModel(BaseChatModel):
                 **invocation_params,
                 stream=True
             ):
-            chunk, found_stop = process_stream_output(
-                chat_completion_stream_output, invocation_params
-            )                      
-            """START HERE"""
+                text_chunk, token_usage = postprocess_chat_completion_stream_output(
+                    chat_completion_stream_output, invocation_params
+                )                    
+
+                text_chunk, found_stop = truncate_at_stop_sequence(
+                    text_chunk,
+                    invocation_params.get('stop', [])
+                )
+                
+                lc_message = _convert_tgi_message_to_lc_ai_message_chunk(
+                    chat_completion_stream_output.choices[0].delta,
+                    token_usage
+                )
+                lc_message.content = text_chunk
+
+                chat_chunk = ChatGenerationChunk(
+                    message=lc_message,
+                    generation_info={ 'chunks': [token_usage] }
+                )
+                
+                if run_manager:
+                    run_manager.on_llm_new_token(
+                        chat_chunk.text, 
+                        chat_chunk, 
+                        **chat_chunk.generation_info
+                    )
+                
+                if text_chunk:
+                    yield chat_chunk
+
+                if found_stop:
+                    break
         except Exception as e:
             if run_manager:
                 run_manager.on_llm_error(e, response=LLMResult(generations=[]))
             raise
 
-    def _stream(
+    async def _astream(
         self,
         messages: List[BaseMessage],
         stop: Optional[List[str]] = None,
-        run_manager: Optional[CallbackManagerForLLMRun] = None,
+        run_manager: Optional[AsyncCallbackManagerForLLMRun] = None,
         **kwargs: Any,
     ) -> AsyncIterator[ChatGenerationChunk]:
-        ...
+        invocation_params = self._invocation_params(stop, **kwargs)
+        message_dicts = self._create_message_dicts(messages, stop)
+  
+        try:
+            streaming_completion = await self.llm.client.achat_completion(
+                messages=message_dicts,
+                **invocation_params,
+                stream=True
+            )
+            async for chat_completion_stream_output in streaming_completion:
+                text_chunk, token_usage = postprocess_chat_completion_stream_output(
+                    chat_completion_stream_output, invocation_params
+                )
+
+                text_chunk, found_stop = truncate_at_stop_sequence(
+                    text_chunk,
+                    invocation_params.get('stop', [])
+                )
+
+                lc_message = _convert_tgi_message_to_lc_ai_message_chunk(
+                    chat_completion_stream_output.choices[0].delta,
+                    token_usage
+                )
+                lc_message.content = text_chunk
+
+                chat_chunk = ChatGenerationChunk(
+                    message=lc_message,
+                    generation_info={ 'chunks': [token_usage] }
+                )
+
+                if run_manager:
+                    run_manager.on_llm_new_token(
+                        chat_chunk.text, 
+                        chat_chunk, 
+                        **chat_chunk.generation_info
+                    )
+                
+                if text_chunk:
+                    yield chat_chunk
+
+                if found_stop:
+                    break
+        except Exception as e:
+            if run_manager:
+                await run_manager.on_llm_error(e, response=LLMResult(generations=[]))
+            raise            
 
     def bind_tools(
         self,
@@ -326,15 +420,15 @@ class HuggingFaceChatModel(BaseChatModel):
             if isinstance(tool_choice, str):
                 if tool_choice not in ("auto", "none"):
                     tool_choice = {
-                        "type": "function",
-                        "function": {"name": tool_choice},
+                        'type': 'function',
+                        'function': {'name': tool_choice},
                     }
             elif isinstance(tool_choice, bool):
                 tool_choice = formatted_tools[0]
             elif isinstance(tool_choice, dict):
                 if (
-                    formatted_tools[0]["function"]["name"]
-                    != tool_choice["function"]["name"]
+                    formatted_tools[0]['function']['name']
+                    != tool_choice['function']['name']
                 ):
                     raise ValueError(
                         f"Tool choice {tool_choice} was specified, but the only "
@@ -345,5 +439,5 @@ class HuggingFaceChatModel(BaseChatModel):
                     f"Unrecognized tool_choice type. Expected str, bool or dict. "
                     f"Received: {tool_choice}"
                 )
-            kwargs["tool_choice"] = tool_choice
+            kwargs['tool_choice'] = tool_choice
         return super().bind(tools=formatted_tools, **kwargs)
