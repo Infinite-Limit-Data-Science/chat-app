@@ -24,15 +24,17 @@ class HuggingFaceBaseEmbeddings(HuggingFaceInferenceServerMixin, Embeddings):
         return value
 
 class HuggingFaceEmbeddings(HuggingFaceBaseEmbeddings):
-    """
-    This is a drop-in replacement of the langchain_huggingface `HuggingFaceEndpointEmbeddings` class
-    which is broken, due to the fact that it relies on a deprecated method `post` of the inference client
-
-    Drop-in replacement to:
-    from langchain_huggingface import HuggingFaceEndpointEmbeddings
-    """
     @model_validator(mode="after")
     def validate_environment(self) -> Self:
+        HuggingFaceTEIConfig(
+            name='BAAI/bge-large-en-v1.5',
+            url=os.environ['TEST_TEI_URL'],
+            auth_token=os.environ['TEST_AUTH_TOKEN'],        
+            max_batch_tokens=32768,
+            max_client_batch_size=128,
+            max_batch_requests=64,
+            auto_truncate=True
+        )
         client = HuggingFaceInferenceClient(
             base_url=self.base_url,
             credentials=self.credentials,

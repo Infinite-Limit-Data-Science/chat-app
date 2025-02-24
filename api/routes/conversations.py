@@ -11,9 +11,11 @@ from ..logger import logger
 from ..auth.bearer_authentication import get_current_user
 from .chats import chat
 from .configs import (
-    get_current_models, get_current_embedding_models, 
-    get_prompt_template, get_current_guardrails,
-    DEFAULT_PREPROMPT)
+    active_chat_bot_config,
+    ChatBotConfig,
+    DEFAULT_PREPROMPT
+)
+
 from .uploads import ingest_files
 from ..repositories.conversation_mongo_repository import ( 
     ConversationMongoRepository as ConversationRepo)
@@ -73,43 +75,35 @@ async def create_conversation(
     request: Request,
     content: str = Form(...),
     upload_files: Optional[List[UploadFile]] = File(None),
-    models: List[LLM] = Depends(get_current_models),
-    embedding_models: List[BaseEmbedding] = Depends(get_current_embedding_models),
-    guardrails: Optional[List[LLM]] = Depends(get_current_guardrails),
-    prompt_template: str = Depends(get_prompt_template),
+    chat_bot_config: ChatBotConfig = Depends(active_chat_bot_config),
 ):
-    """Insert new conversation record and message record in configured database, returning AI Response"""
+    """
+    Initiate Chat Bot conversation with human message
+
+    chat bot configs loaded for each request to sync changes between
+    user and system configs on the fly
+    """
     logger.info(f'invoking conversation endpoint with content `{content}`')
 
     conversation_schema = CreateConversationSchema(
         uuid=request.state.uuid, 
-        model_name=models[0].name, 
-        prompt_used=prompt_template)
-    retrievers = []
-    
+        modell_name=chat_bot_config.llm.name, 
+        prompt_used=chat_bot_config.human_prompt,
+    )
+
     if (
         created_conversation_id := await ConversationRepo.create(conversation_schema=conversation_schema)
     ) is not None:
-        data = { 'uuid': conversation_schema.uuid, 'conversation_id': created_conversation_id }
+        chat_bot_config.metadata = { 'uuid': conversation_schema.uuid, 'conversation_id': created_conversation_id }
         if upload_files:
-            retrievers, filenames = await ingest_files(embedding_models, upload_files, data)
+            filenames = await ingest_files(upload_files, chat_bot_config)
             await ConversationRepo.update_one(created_conversation_id, _set={ 'filenames': filenames })
+            chat_bot_config.metadata['filenames'] = filenames
 
-        message_schema = MessageSchema(
-            type='human', 
-            content=content, 
-            conversation_id=created_conversation_id) 
-        prompt = prompt_template or DEFAULT_PREPROMPT
+        chat_bot_config.human_prompt = chat_bot_config.human_prompt or DEFAULT_PREPROMPT
 
         try:    
-            llm_stream = await chat(
-                prompt,
-                models, 
-                guardrails, 
-                embedding_models, 
-                data, 
-                retrievers, 
-                message_schema) 
+            llm_stream = await chat(chat_bot_config) 
             return StreamingResponse(llm_stream(), media_type='text/event-stream')
         except HfHubHTTPError as e:
             error_info = {

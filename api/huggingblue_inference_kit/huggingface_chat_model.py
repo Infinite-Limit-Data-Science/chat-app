@@ -45,8 +45,8 @@ from huggingface_hub.inference._generated.types import (
     ChatCompletionOutputMessage,
     ChatCompletionStreamOutputDelta,
 )
-from ..huggingface_inference_kit.huggingface_llm import HuggingFaceLLM
-from ..huggingface_inference_kit.huggingface_transformer_tokenizers import get_tokenizer_class_by_prefix
+from .huggingface_llm import HuggingFaceLLM
+from .huggingface_transformer_tokenizers import get_tokenizer_class_by_prefix
 from .helpers.chat_completion_helper import (
     postprocess_chat_completion_output,
     postprocess_chat_completion_stream_output,

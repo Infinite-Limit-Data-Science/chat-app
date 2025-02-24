@@ -1,26 +1,31 @@
 import os
 import time
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 from fastapi import UploadFile
 from langchain_core.vectorstores import VectorStoreRetriever
 from ..langchain_doc import ingest, BaseEmbedding
 from ..logger import logger
+from .configs import ChatBotConfig
 
 async def ingest_files(
-    embedding_models: List[BaseEmbedding], 
     upload_files: List[UploadFile], 
-    data: dict,
-) -> Tuple[List[VectorStoreRetriever], List[str]]:
+    chat_bot_config: ChatBotConfig,
+) -> List[str]:
     if not (vector_store := os.getenv('VECTOR_STORE')):
         raise ValueError('Expected `VECTOR_STORE` to be defined')
     
-    data = {
-        **data,
-        'conversation_id': str(data['conversation_id']),
+    chat_bot_config.metadata = {
+        **chat_bot_config.metadata,
+        'conversation_id': str(chat_bot_config.metadata['conversation_id']),
     }
     start_time = time.time()
-    retrievers, filenames = await ingest(vector_store, upload_files, embedding_models, data)
+    filenames = await ingest(
+        vector_store, 
+        upload_files, 
+        chat_bot_config.embeddings,
+        chat_bot_config.metadata,
+    )
     duration = time.time() - start_time
     logger.info(f'Ingestion time for {filenames}: {duration:.2f} seconds')
 
-    return retrievers, filenames
+    return filenames

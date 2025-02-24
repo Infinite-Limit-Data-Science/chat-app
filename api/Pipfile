@@ -26,6 +26,8 @@ sentencepiece = "*"
 nltk = "*"
 cryptography = "*"
 pandas = "*"
+langgraph = "*"
+langsmith = "*"
 
 [dev-packages]
 pytest = "*"

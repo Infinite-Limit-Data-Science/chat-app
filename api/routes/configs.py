@@ -1,9 +1,7 @@
 import os
 import json
-from typing import List, Dict, Optional
+from typing import Dict, Optional, Any
 from fastapi import Request, Depends, HTTPException
-from ..langchain_chat import LLM, FACTORIES as LLM_FACTORIES
-from ..langchain_doc import FACTORIES as EMBEDDING_FACTORIES, BaseEmbedding
 from ..logger import logger
 from ..models.system_model_config import SystemModelConfigSchema
 from ..models.setting import Setting, SettingSchema
@@ -13,6 +11,14 @@ from ..models.system_embedding_config import SystemEmbeddingConfigSchema
 from ..models.model_observer import ModelSubject, ModelObserver
 from ..models.classification import get_strategy_for_classification
 from ..repositories.base_mongo_repository import base_mongo_factory as factory
+from ..clients.mongo_strategy import mongo_instance as database_instance
+from ..huggingblue_chat_bot.chat_bot_config import (
+    ChatBotConfig,
+    LLMConfig,
+    EmbeddingConfig,
+    GuardrailsConfig,
+    VectorStoreConfig,
+)
 
 DEFAULT_PREPROMPT='You are an assistant for question-answering tasks. Answer the questions to the best of your ability.'
 
@@ -132,36 +138,21 @@ async def refresh_model_configs(
 
     return await get_active_model_config(setting_schema.id, system_model_configs, active_model_name)
 
-async def get_current_models(
+async def llm_model_config(
     request: Request,
     system_model_config: SystemModelConfigSchema = Depends(refresh_model_configs)
-) -> List[LLM]:
-    """Return the active model(s) of settings for current user"""
-    logger.info(
-        f'using Bearer {request.state.authorization} for '
-        f'model config {system_model_config.name}'
-    )
-    models = [
-        LLM_FACTORIES[endpoint['type']](**{
-            'name': system_model_config.name,
-            'description': system_model_config.description,
-            'preprompt': system_model_config.preprompt,
-            'classification': system_model_config.classification,
-            'stream': system_model_config.stream,
-            'parameters': dict(system_model_config.parameters),
-            'server_kwargs': { 
-                'headers': {'Authorization': f'Bearer {request.state.authorization}' }
-            },
-            'endpoint': endpoint,
-        })
-        for endpoint in system_model_config.endpoints
-    ]
-    return models
+) -> Dict[str, any]:
+    return {
+        'name': system_model_config.name,
+        'endpoint': system_model_config.endpoints[0],
+        'token': request.state.authorization,
+        'parameters': dict(system_model_config.parameters),
+    }
 
-async def get_current_guardrails(
+async def guardrails_model_config(
     request: Request, 
     system_model_configs: Dict[str, SystemModelConfigSchema] = Depends(load_system_model_config)
-) -> List[LLM]:
+) -> Optional[Dict[str, any]]:
     """Return optional LLM (if no guardrails LLM found, then guardrails is disabled)"""
     for _, system_model_config in system_model_configs.items():
         classification = system_model_config.classification
@@ -171,11 +162,11 @@ async def get_current_guardrails(
             continue
         
         if system_model_config.active:
-            return await get_current_models(request, system_model_config)
+            return await llm_model_config(request, system_model_config)
     
     return []
 
-async def get_current_embedding_models(request: Request) -> List[BaseEmbedding]:
+async def embeddings_model_config(request: Request) -> Dict[str, any]:
     model_dict = json.loads(os.environ['EMBEDDING_MODELS'])
     model_configs = [SystemEmbeddingConfigSchema(**config) for config in model_dict]
     active_model_config = next((config for config in model_configs if config.active), None)
@@ -185,23 +176,12 @@ async def get_current_embedding_models(request: Request) -> List[BaseEmbedding]:
     )
     if not active_model_config:
         HTTPException(status_code=404, detail='Expected Embedding Model, got None')
-    models = [
-        EMBEDDING_FACTORIES[endpoint['type']](**{
-            'name': active_model_config.name,
-            'description': active_model_config.description,
-            'task': active_model_config.task,
-            'endpoint': endpoint,
-            'dimensions': active_model_config.dimensions,
-            'max_batch_tokens': active_model_config.max_batch_tokens,
-            'max_client_batch_size': active_model_config.max_client_batch_size,
-            'max_batch_requests': active_model_config.max_batch_requests,
-            'num_workers': active_model_config.num_workers,
-            'auto_truncate': active_model_config.auto_truncate,
-            'token': request.state.authorization,
-        })
-        for endpoint in active_model_config.endpoints
-    ]
-    return models
+    return {
+        'name': active_model_config.name,
+        'endpoint': active_model_config.endpoints[0],
+        'token': request.state.authorization,
+        'parameters': {}
+    }
 
 async def get_prompt_template(
     setting_schema: SettingSchema = Depends(get_user_settings),
@@ -219,3 +199,31 @@ async def get_prompt_template(
     
     logger.info(f'using prompt template {system_config_schema.preprompt or 'None'}')
     return system_config_schema.preprompt
+
+def vector_store_config() -> Dict[str, any]:
+    return {
+        'url': database_instance.connection_string,
+        'name': database_instance.name,
+        'collection_name': database_instance.message_history_collection,
+        'session_id_key': database_instance.message_history_key,
+    }  
+
+async def active_chat_bot_config(
+    llm_model_config: Dict[str, Any] = Depends(llm_model_config),
+    embeddings_config: Dict[str, Any] = Depends(embeddings_model_config),
+    guardrails_config: Optional[Dict[str, Any]] = Depends(guardrails_model_config),
+    vector_store_config: Dict[str, Any] = Depends(vector_store_config),
+    human_prompt: str = Depends(get_prompt_template),
+) -> ChatBotConfig:
+    llm = LLMConfig(**llm_model_config)
+    embeddings = EmbeddingConfig(**embeddings_config)
+    guardrails = GuardrailsConfig(**guardrails_config) if guardrails_config else None
+    vectorstore = VectorStoreConfig(**vector_store_config)
+
+    return ChatBotConfig(
+        llm=llm,
+        embeddings=embeddings,
+        guardrails=guardrails,
+        vectorstore=vectorstore,
+        human_prompt=human_prompt,
+    )
