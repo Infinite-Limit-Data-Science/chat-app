@@ -1,23 +1,17 @@
 from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field
 
-class LLMConfig(BaseModel):
+class ModelConfig(BaseModel):
     name: str
-    endpoint: Dict[str, Any]
+    endpoint: str
     token: str
+    server: str
+
+class LLMConfig(ModelConfig):
     parameters: Dict[str, Any] = Field(default_factory=dict)
 
-class EmbeddingConfig(BaseModel):
-    name: str
-    endpoint: Dict[str, Any]
-    token: str
-    parameters: Dict[str, Any] = Field(default_factory=dict)
-
-class GuardrailsConfig(BaseModel):
-    name: str
-    endpoint: Dict[str, Any]
-    token: str
-    parameters: Dict[str, Any] = Field(default_factory=dict)
+class EmbeddingsConfig(ModelConfig):
+    ...
 
 class VectorStoreConfig(BaseModel):
     name: str
@@ -31,8 +25,7 @@ class ChatBotConfig(BaseModel):
         description='Secondary LLM for second-opinion tasks', 
         default=None
     )
-    embeddings: EmbeddingConfig
-    guardrails: Optional[GuardrailsConfig] = None
-    human_prompt: str
+    embeddings: EmbeddingsConfig
+    guardrails: Optional[LLMConfig] = None
     vectorstore: VectorStoreConfig
-    metadata: Optional[Dict[any, str]] = Field(..., default_factory={})
+    metadata: Optional[Dict[Any, str]] = None

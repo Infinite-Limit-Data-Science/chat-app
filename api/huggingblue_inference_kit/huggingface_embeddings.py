@@ -1,9 +1,11 @@
+import os
 from typing import Optional, List
 from urllib.parse import urlparse
 from langchain_core.embeddings import Embeddings
 from pydantic import ConfigDict, Field, field_validator, model_validator
 from typing_extensions import Self
 from .inference_schema import HuggingFaceInferenceServerMixin
+from .huggingface_inference_server_config import HuggingFaceTEIConfig
 from .huggingface_inference_client import HuggingFaceInferenceLike, HuggingFaceInferenceClient
 
 class HuggingFaceBaseEmbeddings(HuggingFaceInferenceServerMixin, Embeddings):

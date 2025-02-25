@@ -4,6 +4,7 @@ verify_ssl = true
 name = "pypi"
 
 [packages]
+gwblue_huggingface = { path = "../../gwblue_huggingface", editable = true }
 uvicorn = "*"
 motor = "*"
 python-dotenv = "*"
