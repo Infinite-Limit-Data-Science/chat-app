@@ -6,6 +6,7 @@ from ..chat_bot_config import (
     LLMConfig,
     EmbeddingsConfig,
     VectorStoreConfig,
+    UserConfig,
     ChatBotConfig
 ) 
 from ..chat_bot import ChatBot
@@ -47,11 +48,19 @@ def chat_bot_config() -> ChatBotConfig:
         'session_id_key': 'conversation_id',
     })
 
+    user_config = UserConfig(**{
+        'uuid': '1',
+        'session_id': 1,
+        'session_id_str': '1',
+        'vectorstore_docs': []
+    })
+
     return ChatBotConfig(
         llm=llm_config,
         embeddings=embeddings_config,
         guardrails=guardrails_config,
         vectorstore=vectorstore_config,
+        user_config=user_config,
     )
 
 def test_guardrails_node(chat_bot_config: ChatBotConfig):
@@ -63,8 +72,8 @@ def test_guardrails_node(chat_bot_config: ChatBotConfig):
     )
     chat_bot = ChatBot(config=chat_bot_config)
     chain = chat_prompt | chat_bot
-    ai_message = chain.invoke({'input': 'Memento'})
-    assert len(ai_message.content) > 0
+    conversation = chain.invoke({'input': 'Memento'})
+    assert conversation['messages'][-1].content.strip('\n') == 'safe'
 
     # for event in graph.stream(initial_state):
     #     for value in event.values():

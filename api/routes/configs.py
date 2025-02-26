@@ -15,9 +15,9 @@ from ..clients.mongo_strategy import mongo_instance as database_instance
 from ..huggingblue_chat_bot.chat_bot_config import (
     ChatBotConfig,
     LLMConfig,
-    EmbeddingConfig,
-    GuardrailsConfig,
-    VectorStoreConfig,
+    EmbeddingsConfig,
+    RedisVectorStoreConfig,
+    MongoMessageHistoryConfig,
 )
 
 DEFAULT_PREPROMPT='You are an assistant for question-answering tasks. Answer the questions to the best of your ability.'
@@ -200,30 +200,39 @@ async def get_prompt_template(
     logger.info(f'using prompt template {system_config_schema.preprompt or 'None'}')
     return system_config_schema.preprompt
 
-def vector_store_config() -> Dict[str, any]:
+def vector_store_config(request: Request) -> Dict[str, Any]:
+    return {
+        'url': os.environ['REDIS_URL'],
+        'uuid': request.state.uuid,
+        'session_id_key': database_instance.message_history_key
+    }
+
+def message_history_config() -> Dict[str, Any]:
     return {
         'url': database_instance.connection_string,
         'name': database_instance.name,
         'collection_name': database_instance.message_history_collection,
         'session_id_key': database_instance.message_history_key,
-    }  
+    }    
 
 async def active_chat_bot_config(
+    request: Request,
     llm_model_config: Dict[str, Any] = Depends(llm_model_config),
     embeddings_config: Dict[str, Any] = Depends(embeddings_model_config),
     guardrails_config: Optional[Dict[str, Any]] = Depends(guardrails_model_config),
     vector_store_config: Dict[str, Any] = Depends(vector_store_config),
-    human_prompt: str = Depends(get_prompt_template),
+    message_history_config: Dict[str, Any] = Depends(message_history_config),
 ) -> ChatBotConfig:
     llm = LLMConfig(**llm_model_config)
-    embeddings = EmbeddingConfig(**embeddings_config)
-    guardrails = GuardrailsConfig(**guardrails_config) if guardrails_config else None
-    vectorstore = VectorStoreConfig(**vector_store_config)
+    embeddings = EmbeddingsConfig(**embeddings_config)
+    guardrails = LLMConfig(**guardrails_config) if guardrails_config else None
+    vectorstore = RedisVectorStoreConfig(**vector_store_config)
+    message_history = MongoMessageHistoryConfig(**message_history_config)
 
     return ChatBotConfig(
         llm=llm,
         embeddings=embeddings,
         guardrails=guardrails,
         vectorstore=vectorstore,
-        human_prompt=human_prompt,
+        message_history=message_history
     )

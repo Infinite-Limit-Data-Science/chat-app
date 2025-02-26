@@ -12,10 +12,10 @@ from ..auth.bearer_authentication import get_current_user
 from .chats import chat
 from .configs import (
     active_chat_bot_config,
-    ChatBotConfig,
+    get_prompt_template,
     DEFAULT_PREPROMPT
 )
-
+from ..huggingblue_chat_bot.chat_bot_config import ChatBotConfig, UserConfig
 from .uploads import ingest_files
 from ..repositories.conversation_mongo_repository import ( 
     ConversationMongoRepository as ConversationRepo)
@@ -76,6 +76,7 @@ async def create_conversation(
     content: str = Form(...),
     upload_files: Optional[List[UploadFile]] = File(None),
     chat_bot_config: ChatBotConfig = Depends(active_chat_bot_config),
+    system_prompt: str = Depends(get_prompt_template),
 ):
     """
     Initiate Chat Bot conversation with human message
@@ -88,22 +89,32 @@ async def create_conversation(
     conversation_schema = CreateConversationSchema(
         uuid=request.state.uuid, 
         modell_name=chat_bot_config.llm.name, 
-        prompt_used=chat_bot_config.human_prompt,
+        prompt_used=content,
     )
 
     if (
         created_conversation_id := await ConversationRepo.create(conversation_schema=conversation_schema)
     ) is not None:
-        chat_bot_config.metadata = { 'uuid': conversation_schema.uuid, 'conversation_id': created_conversation_id }
+        chat_bot_config.user_config = UserConfig(**{ 
+            'uuid': conversation_schema.uuid,
+            'session_id_key': 'conversation_id',
+            'session_id': created_conversation_id,
+        })
+        chat_bot_config.vectorstore.session_id = created_conversation_id
+        chat_bot_config.message_history = created_conversation_id
+
         if upload_files:
-            filenames = await ingest_files(upload_files, chat_bot_config)
-            await ConversationRepo.update_one(created_conversation_id, _set={ 'filenames': filenames })
-            chat_bot_config.metadata['filenames'] = filenames
-
-        chat_bot_config.human_prompt = chat_bot_config.human_prompt or DEFAULT_PREPROMPT
-
-        try:    
-            llm_stream = await chat(chat_bot_config) 
+            docs = await ingest_files(upload_files, chat_bot_config)
+            await ConversationRepo.update_one(created_conversation_id, _set={ 'filenames': docs })
+        try:
+            system_prompt = system_prompt or DEFAULT_PREPROMPT,
+            user_prompt = content
+            llm_stream = await chat(
+                system_prompt, 
+                user_prompt,
+                docs,
+                chat_bot_config
+            ) 
             return StreamingResponse(llm_stream(), media_type='text/event-stream')
         except HfHubHTTPError as e:
             error_info = {

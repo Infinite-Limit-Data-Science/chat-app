@@ -1,14 +1,24 @@
-from typing import Callable, AsyncGenerator
+from typing import Callable, AsyncGenerator, Optional, List
+from langchain_core.prompts.chat import ChatPromptTemplate
 from huggingblue_chat_bot.chat_bot import ChatBot
 from ..huggingblue_chat_bot.chat_bot_config import ChatBotConfig
 
 async def chat(
+    system: str,
+    input: str,
+    docs: Optional[List[str]],
     chat_bot_config: ChatBotConfig,
 ) -> Callable[[], AsyncGenerator[str, None]]:
-    """Invoke chat bot"""
-    chat_bot = ChatBot(chat_bot_config)
-    chain = chat_bot_config.human_prompt | chat_bot
-    return await chain.astream(chat_bot_config.human_prompt)
+    chat_prompt = ChatPromptTemplate.from_messsages([
+        ('system', system),
+        ('human', '{input}')
+    ])
+    chat_bot = ChatBot(config=chat_bot_config)
+
+    chain = chat_prompt | chat_bot 
+
+    return await chain.astream({'input': input}, docs=docs)
+
 
     # Chat bot should be invoked with dictionary:
     # chain = {

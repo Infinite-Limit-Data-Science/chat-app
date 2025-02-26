@@ -1,5 +1,6 @@
 from typing import Dict, Any, Optional
 from pydantic import BaseModel, Field
+from bson import ObjectId
 
 class ModelConfig(BaseModel):
     name: str
@@ -13,19 +14,34 @@ class LLMConfig(ModelConfig):
 class EmbeddingsConfig(ModelConfig):
     ...
 
-class VectorStoreConfig(BaseModel):
+class RedisVectorStoreConfig(BaseModel):
+    url: str
+    uuid: str
+    session_id_key: str
+    session_id: Optional[str] = None
+    source: Optional[str] = None
+    extra_metadata: Optional[Dict[str, Any]] = None
+    
+class MongoMessageHistoryConfig(BaseModel):
     name: str
     url: str
     collection_name: str
     session_id_key: str
+    session_id: Optional[ObjectId] = None
 
+class UserConfig(BaseModel):
+    uuid: Optional[str] = None
+    session_id_key: Optional[str] = None
+    session_id: Optional[ObjectId] = None
+    
 class ChatBotConfig(BaseModel):
     llm: LLMConfig
-    retry_llm: LLMConfig = Field(
+    retry_llm: Optional[LLMConfig] = Field(
         description='Secondary LLM for second-opinion tasks', 
         default=None
     )
     embeddings: EmbeddingsConfig
     guardrails: Optional[LLMConfig] = None
-    vectorstore: VectorStoreConfig
-    metadata: Optional[Dict[Any, str]] = None
+    vectorstore: RedisVectorStoreConfig
+    message_history: MongoMessageHistoryConfig
+    user_config: Optional[UserConfig] = None

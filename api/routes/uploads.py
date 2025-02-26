@@ -14,16 +14,16 @@ async def ingest_files(
     if not (vector_store := os.getenv('VECTOR_STORE')):
         raise ValueError('Expected `VECTOR_STORE` to be defined')
     
-    chat_bot_config.metadata = {
-        **chat_bot_config.metadata,
-        'conversation_id': str(chat_bot_config.metadata['conversation_id']),
+    metadata = {
+        'uuid': chat_bot_config.user_config.uuid,
+        'conversation_id': str(chat_bot_config.user_config.session_id)
     }
     start_time = time.time()
     filenames = await ingest(
         vector_store, 
         upload_files, 
         chat_bot_config.embeddings,
-        chat_bot_config.metadata,
+        metadata,
     )
     duration = time.time() - start_time
     logger.info(f'Ingestion time for {filenames}: {duration:.2f} seconds')

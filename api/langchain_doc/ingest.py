@@ -11,6 +11,7 @@ import asyncio
 from ..huggingblue_inference_kit.huggingface_embeddings import (
     HuggingFaceEmbeddings
 )
+from ..huggingblue_chat_bot.chat_bot_config import EmbeddingsConfig
 
 from langchain_core.vectorstores import VectorStoreRetriever
 
@@ -31,11 +32,11 @@ class FileLike(Protocol):
     def file(self) -> Annotated[BinaryIO, Doc('Binary object')]:
         ...
 
-def load_embeddings(embeddings_config: Dict[str, any]):
+def load_embeddings(embeddings_config: EmbeddingsConfig):
     return HuggingFaceEmbeddings(
         name=embeddings_config.name,
-        url=embeddings_config.url,
-        auth_token=embeddings_config.auth_token,
+        url=embeddings_config.endpoint,
+        auth_token=embeddings_config.token,
     )
 
 def generate_path(fields: Dict[str, str], filename: str) -> Path:
@@ -61,8 +62,8 @@ def generate_retrievers(
 async def ingest(
     store: str,
     files: List[FileLike], 
-    embeddings_model_config: Dict[str, any], 
-    input_data: List[dict]
+    embeddings_model_config: EmbeddingsConfig, 
+    metadata: List[dict]
 ) -> List[str]:
     if not (vector_store_schema_str := os.getenv('VECTOR_STORE_SCHEMA')):
         raise ValueError('Expected `VECTOR_STORE_SCHEMA` to be defined')
@@ -83,14 +84,14 @@ async def ingest(
 
     try:
         for file in files:
-            path = generate_path(input_data, file.filename)
+            path = generate_path(metadata, file.filename)
             path.parent.mkdir(parents=True, exist_ok=True)
             with path.open('wb') as f:
                 shutil.copyfileobj(file.file, f)
             paths.append(path)
             filenames.append(file.filename)
 
-            metadata = { **input_data, 'source': file.filename }
+            metadata = { **metadata, 'source': file.filename }
             metadatas.append(metadata)
             filters.append(create_filter_expression(
                 vector_store_schema, metadata))
