@@ -1,6 +1,6 @@
-from typing import Dict, Any, Optional
-from pydantic import BaseModel, Field
-from bson import ObjectId
+from typing import Dict, Any, Optional, TypedDict, List
+from pydantic import BaseModel, Field, ConfigDict
+from redis.client import Redis
 
 class ModelConfig(BaseModel):
     name: str
@@ -12,28 +12,27 @@ class LLMConfig(ModelConfig):
     parameters: Dict[str, Any] = Field(default_factory=dict)
 
 class EmbeddingsConfig(ModelConfig):
-    ...
+    dimensions: int
+
+class MetadataSchema(TypedDict):
+    name: str 
+    type: str 
 
 class RedisVectorStoreConfig(BaseModel):
-    url: str
-    uuid: str
-    session_id_key: str
-    session_id: Optional[str] = None
-    source: Optional[str] = None
-    extra_metadata: Optional[Dict[str, Any]] = None
+    client: Optional[Redis] = None
+    url: Optional[str] = None
+    metadata_schema: List[MetadataSchema]
+
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+    )
     
 class MongoMessageHistoryConfig(BaseModel):
     name: str
     url: str
     collection_name: str
     session_id_key: str
-    session_id: Optional[ObjectId] = None
 
-class UserConfig(BaseModel):
-    uuid: Optional[str] = None
-    session_id_key: Optional[str] = None
-    session_id: Optional[ObjectId] = None
-    
 class ChatBotConfig(BaseModel):
     llm: LLMConfig
     retry_llm: Optional[LLMConfig] = Field(
@@ -44,4 +43,3 @@ class ChatBotConfig(BaseModel):
     guardrails: Optional[LLMConfig] = None
     vectorstore: RedisVectorStoreConfig
     message_history: MongoMessageHistoryConfig
-    user_config: Optional[UserConfig] = None

@@ -11,7 +11,7 @@ class HuggingFaceInference(BaseModel):
     
     @model_validator(mode='after')
     def validate_environment(self) -> Self:
-        from ...huggingblue_inference_kit import (
+        from ...gwblue_huggingface import (
             HuggingFaceTGIConfig,
             HuggingFaceTEIConfig,
             HuggingFaceLLM,

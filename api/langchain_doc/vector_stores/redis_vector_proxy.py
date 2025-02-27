@@ -3,7 +3,6 @@ import os
 import asyncio
 from typing import List, Any, Iterator, Dict, Optional
 from redis.client import Redis
-from redis.connection import ConnectionPool
 
 from langchain_core.documents import Document
 from langchain_redis import RedisConfig as Config
@@ -16,10 +15,6 @@ from .abstract_vector_store import (
     FilterExpression,
 )
 from ..logger import logger
-
-_MAX_CONNECTIONS = 50
-
-_SOCKET_TIMEOUT = 30.0
 
 _VECTOR_TTL_30_DAYS = 3600 * 24 * 30
 
@@ -208,14 +203,10 @@ class RedisVectorProxy(AbstractVectorStore):
 if not os.environ['REDIS_URL']:
     raise Exception('Missing `REDIS_URL` in environment, therefore, not trying to connect')
 
-_redis_client = Redis.from_pool(ConnectionPool.from_url(
-    os.environ['REDIS_URL'], 
-    max_connections=_MAX_CONNECTIONS,
-    socket_timeout=_SOCKET_TIMEOUT))
-
 _redis_vector_instance: Optional[RedisVectorProxy] = None
 
 def create_redis_vector_proxy(
+    redis_client: Redis,
     vector_store_schema: List[Dict[str, Any]],
     embeddings: BaseEmbedding,
 ) -> RedisVectorProxy:
@@ -223,7 +214,7 @@ def create_redis_vector_proxy(
 
     if _redis_vector_instance is None:
         _redis_vector_instance = RedisVectorProxy(
-            client=_redis_client,
+            client=redis_client,
             embeddings=embeddings,
             schema=vector_store_schema,
         )

@@ -6,47 +6,70 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pathlib import Path
-from .clients.mongo_strategy import mongo_instance as database_instance
+from .clients.mongo_strategy import mongo_instance as history_store
 from .routes.home import router as home_router
 from .routes.conversations import router as conversations_router
 from .routes.messages import router as messages_router
 from .routes.settings import router as settings_router
 from .routes.default import router as default_router
 from .middleware import (
-    MultiAuthorizationMiddleware, AddAuthorizationHeaderMiddleware)
+    MultiAuthorizationMiddleware, 
+    AddAuthorizationHeaderMiddleware
+)
+from redis.client import Redis
+from redis.connection import ConnectionPool
+from pymongo import ASCENDING, DESCENDING
 
 load_dotenv()
 
-@asynccontextmanager
-async def lifespan(_: FastAPI):
-    try:
-        from pymongo import ASCENDING, DESCENDING
-        await database_instance.connect()
-        db = database_instance.get_database()
- 
-        await db.collection.create_index(
-            [
-                ('type', ASCENDING),
-                ('content', ASCENDING),
-                ('conversation_id', ASCENDING),
-            ],
-            name='type_content_conversation_id_index'
-        )
+_REDIS_MAX_CONNECTIONS = 50
+_REDIS_SOCKET_TIMEOUT = 30.0
 
-        await db.collection.create_index(
-            [
-                ('type', ASCENDING),
-                ('conversation_id', ASCENDING),
-                ('createdAt', DESCENDING),
-            ],
-            name='type_conversation_id_createdAt_index'
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        # TODO: put this in a wrapper so we can swap
+        # vector stores in the future
+        redis_client = Redis.from_pool(
+            ConnectionPool.from_url(
+                os.environ['REDIS_URL'], 
+                max_connections=_REDIS_MAX_CONNECTIONS,
+                socket_timeout=_REDIS_SOCKET_TIMEOUT
+            )
         )
+        app.state.redis_client = redis_client
+
+        await history_store.connect()
+        db = history_store.get_database()
+ 
+        existing_indexes = await db['messages'].list_indexes()
+        existing_index_names = [ix['name'] for ix in existing_indexes]
+        if 'type_content_conversation_id_index' not in existing_index_names:
+            await db['messages'].create_index(
+                [
+                    ('type', ASCENDING),
+                    ('content', ASCENDING),
+                    ('conversation_id', ASCENDING),
+                ],
+                name='type_content_conversation_id_index'
+            )
+
+        if 'type_conversation_id_createdAt_index' not in existing_index_names:
+            await db['messages'].create_index(
+                [
+                    ('type', ASCENDING),
+                    ('conversation_id', ASCENDING),
+                    ('createdAt', DESCENDING),
+                ],
+                name='type_conversation_id_createdAt_index'
+            )
         
     except Exception as e:
-        raise RuntimeError(f'Database connection error {e}')
+        raise RuntimeError(f'Client connection error {e}')
 
     yield
-    await database_instance.close()
+    redis_client.close()
+    await history_store.close()
 
 app = FastAPI(lifespan=lifespan)
 

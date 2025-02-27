@@ -12,7 +12,7 @@ from ..models.model_observer import ModelSubject, ModelObserver
 from ..models.classification import get_strategy_for_classification
 from ..repositories.base_mongo_repository import base_mongo_factory as factory
 from ..clients.mongo_strategy import mongo_instance as database_instance
-from ..huggingblue_chat_bot.chat_bot_config import (
+from ..gwblue_chat_bot.chat_bot_config import (
     ChatBotConfig,
     LLMConfig,
     EmbeddingsConfig,
@@ -147,6 +147,7 @@ async def llm_model_config(
         'endpoint': system_model_config.endpoints[0],
         'token': request.state.authorization,
         'parameters': dict(system_model_config.parameters),
+        'server': 'tgi'
     }
 
 async def guardrails_model_config(
@@ -180,7 +181,8 @@ async def embeddings_model_config(request: Request) -> Dict[str, any]:
         'name': active_model_config.name,
         'endpoint': active_model_config.endpoints[0],
         'token': request.state.authorization,
-        'parameters': {}
+        'dimensions': active_model_config.dimensions,
+        'server': 'tei'
     }
 
 async def get_prompt_template(
@@ -201,10 +203,15 @@ async def get_prompt_template(
     return system_config_schema.preprompt
 
 def vector_store_config(request: Request) -> Dict[str, Any]:
+    if not (vector_store_schema_str := os.getenv('VECTOR_STORE_SCHEMA')):
+        raise ValueError('Expected `VECTOR_STORE_SCHEMA` to be defined')
+    
+    vector_store_schema = json.loads(vector_store_schema_str)
+
     return {
-        'url': os.environ['REDIS_URL'],
-        'uuid': request.state.uuid,
-        'session_id_key': database_instance.message_history_key
+        'client': request.state.redis_client,
+        # 'url': os.environ['REDIS_URL'],
+        'metadata_schema': vector_store_schema,
     }
 
 def message_history_config() -> Dict[str, Any]:
@@ -218,8 +225,8 @@ def message_history_config() -> Dict[str, Any]:
 async def active_chat_bot_config(
     request: Request,
     llm_model_config: Dict[str, Any] = Depends(llm_model_config),
-    embeddings_config: Dict[str, Any] = Depends(embeddings_model_config),
     guardrails_config: Optional[Dict[str, Any]] = Depends(guardrails_model_config),
+    embeddings_config: Dict[str, Any] = Depends(embeddings_model_config),
     vector_store_config: Dict[str, Any] = Depends(vector_store_config),
     message_history_config: Dict[str, Any] = Depends(message_history_config),
 ) -> ChatBotConfig:

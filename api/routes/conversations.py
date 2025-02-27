@@ -15,7 +15,7 @@ from .configs import (
     get_prompt_template,
     DEFAULT_PREPROMPT
 )
-from ..huggingblue_chat_bot.chat_bot_config import ChatBotConfig, UserConfig
+from ..gwblue_chat_bot.chat_bot_config import ChatBotConfig, UserConfig
 from .uploads import ingest_files
 from ..repositories.conversation_mongo_repository import ( 
     ConversationMongoRepository as ConversationRepo)
@@ -95,25 +95,24 @@ async def create_conversation(
     if (
         created_conversation_id := await ConversationRepo.create(conversation_schema=conversation_schema)
     ) is not None:
-        chat_bot_config.user_config = UserConfig(**{ 
-            'uuid': conversation_schema.uuid,
-            'session_id_key': 'conversation_id',
-            'session_id': created_conversation_id,
-        })
-        chat_bot_config.vectorstore.session_id = created_conversation_id
-        chat_bot_config.message_history = created_conversation_id
-
         if upload_files:
-            docs = await ingest_files(upload_files, chat_bot_config)
-            await ConversationRepo.update_one(created_conversation_id, _set={ 'filenames': docs })
+            vectorstore_metadata, filenames = await ingest_files(
+                files=upload_files, 
+                config=chat_bot_config, 
+                metadata={ 
+                    'uuid': request.state.uuid,
+                    'conversation_id': str(created_conversation_id) 
+                }
+            )
+            await ConversationRepo.update_one(created_conversation_id, _set={ 'filenames': filenames })
         try:
             system_prompt = system_prompt or DEFAULT_PREPROMPT,
             user_prompt = content
             llm_stream = await chat(
-                system_prompt, 
-                user_prompt,
-                docs,
-                chat_bot_config
+                system=system_prompt, 
+                input=user_prompt,
+                config=chat_bot_config,
+                metadata=vectorstore_metadata
             ) 
             return StreamingResponse(llm_stream(), media_type='text/event-stream')
         except HfHubHTTPError as e:

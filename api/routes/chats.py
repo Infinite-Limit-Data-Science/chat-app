@@ -1,23 +1,26 @@
-from typing import Callable, AsyncGenerator, Optional, List
+from typing import Callable, AsyncGenerator, Dict, Any
 from langchain_core.prompts.chat import ChatPromptTemplate
-from huggingblue_chat_bot.chat_bot import ChatBot
-from ..huggingblue_chat_bot.chat_bot_config import ChatBotConfig
+from ..gwblue_chat_bot.chat_bot import ChatBot
+from ..gwblue_chat_bot.chat_bot_config import ChatBotConfig
 
 async def chat(
+    *,
     system: str,
     input: str,
-    docs: Optional[List[str]],
-    chat_bot_config: ChatBotConfig,
+    config: ChatBotConfig,
+    metadata: Dict[str, Any],
 ) -> Callable[[], AsyncGenerator[str, None]]:
     chat_prompt = ChatPromptTemplate.from_messsages([
         ('system', system),
         ('human', '{input}')
     ])
-    chat_bot = ChatBot(config=chat_bot_config)
+    chat_bot = ChatBot(config=config)
 
     chain = chat_prompt | chat_bot 
 
-    return await chain.astream({'input': input}, docs=docs)
+    # I NEED TO DO A RUNNABLE_PARALLEL AND PASS retrieval_mode mmr for one and retrieval_mode similarity_search_with_threshold for the other !!!!
+    # THIS SHOULD ONLY BE DONE WITH DOCUMENT UPLOADS. IF NO DOCUMENT UPLOAD, THEN ONLY SEND BACK A SINGLE RESPONSE.
+    return await chain.astream({'input': input}, metadata=metadata, retrieval_mode='mmr')
 
 
     # Chat bot should be invoked with dictionary:

@@ -3,23 +3,21 @@ import os
 import json
 from pathlib import Path
 import shutil
-from typing import List, Dict, Tuple, BinaryIO, Protocol, Annotated
+from typing import List, Dict, Tuple, BinaryIO, Protocol, Annotated, Any
 from typing_extensions import Doc
-from redisvl.query.filter import FilterExpression
+# from redisvl.query.filter import FilterExpression
 from functools import partial
 import asyncio
-from ..huggingblue_inference_kit.huggingface_embeddings import (
-    HuggingFaceEmbeddings
+from ..gwblue_huggingface import HuggingFaceEmbeddings
+from ..gwblue_chat_bot.chat_bot_config import (
+    EmbeddingsConfig, 
+    RedisVectorStoreConfig
 )
-from ..huggingblue_chat_bot.chat_bot_config import EmbeddingsConfig
-
-from langchain_core.vectorstores import VectorStoreRetriever
-
 from .vector_stores import ( 
     AbstractVectorStore, 
-    create_filter_expression,
+    # create_filter_expression,
 )
-from .embedding_models import BaseEmbedding, ModelProxy
+# from .embedding_models import BaseEmbedding, ModelProxy
 from .ingestors import FACTORIES as I_FACTORIES
 from .vector_stores.factories import STORE_FACTORIES, RETRIEVER_FACTORIES
 
@@ -43,28 +41,29 @@ def generate_path(fields: Dict[str, str], filename: str) -> Path:
     path_components = [f"{key}/{value}" for key, value in fields.items()]
     return Path('files').joinpath(*path_components, filename)
 
-def generate_retrievers(
-    store: str,
-    vector_store_proxy: AbstractVectorStore, 
-    filters: List[FilterExpression], 
-    metadatas: List[dict]
-) -> List[VectorStoreRetriever]:
-    retrievers = []
-    for filter, metadata in zip(filters, metadatas):
-        retrievers.append(RETRIEVER_FACTORIES[store](
-            filter=filter,
-            vector_store_proxy=vector_store_proxy,
-            metadata=metadata,
-        ))
+# def generate_retrievers(
+#     store: str,
+#     vector_store_proxy: AbstractVectorStore, 
+#     filters: List[FilterExpression], 
+#     metadatas: List[dict]
+# ) -> List[VectorStoreRetriever]:
+#     retrievers = []
+#     for filter, metadata in zip(filters, metadatas):
+#         retrievers.append(RETRIEVER_FACTORIES[store](
+#             filter=filter,
+#             vector_store_proxy=vector_store_proxy,
+#             metadata=metadata,
+#         ))
     
-    return retrievers
+#     return retrievers
 
 async def ingest(
     store: str,
     files: List[FileLike], 
     embeddings_model_config: EmbeddingsConfig, 
+    vector_store_config: RedisVectorStoreConfig,
     metadata: List[dict]
-) -> List[str]:
+) -> List[Dict[str, Any]]:
     if not (vector_store_schema_str := os.getenv('VECTOR_STORE_SCHEMA')):
         raise ValueError('Expected `VECTOR_STORE_SCHEMA` to be defined')
     
@@ -74,11 +73,15 @@ async def ingest(
     # note the above ModelProxy produced something with update_token method
     embeddings = load_embeddings(embeddings_model_config)
 
-    vector_store_proxy: AbstractVectorStore = STORE_FACTORIES[store](vector_store_schema, embeddings)
+    vector_store_proxy: AbstractVectorStore = STORE_FACTORIES[store](
+        vector_store_config.client, 
+        vector_store_schema, 
+        embeddings
+    )
 
     filenames = []
     paths = []
-    filters = []
+    # filters = []
     ingestors = []
     metadatas = []
 
@@ -93,8 +96,8 @@ async def ingest(
 
             metadata = { **metadata, 'source': file.filename }
             metadatas.append(metadata)
-            filters.append(create_filter_expression(
-                vector_store_schema, metadata))
+            # filters.append(create_filter_expression(
+            #     vector_store_schema, metadata))
             ingestor = partial(
                 I_FACTORIES[os.path.splitext(file.filename)[1][1:]], 
                 path, vector_store_proxy, metadata
@@ -109,7 +112,7 @@ async def ingest(
 
         # i would like to generate the retrievers in chat bot instead
         # return generate_retrievers(store, vector_store_proxy, filters, metadatas), filenames
-        return filenames
+        return metadatas
     finally:
         for path in paths:
             try:
