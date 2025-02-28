@@ -21,6 +21,11 @@ from .vector_stores import (
 from .ingestors import FACTORIES as I_FACTORIES
 from .vector_stores.factories import STORE_FACTORIES, RETRIEVER_FACTORIES
 
+#
+# This entire module is deprecated
+#
+#
+
 class FileLike(Protocol):
     @property
     def filename(self) -> Annotated[str, Doc('Name of binary object')]:
@@ -32,9 +37,8 @@ class FileLike(Protocol):
 
 def load_embeddings(embeddings_config: EmbeddingsConfig):
     return HuggingFaceEmbeddings(
-        name=embeddings_config.name,
-        url=embeddings_config.endpoint,
-        auth_token=embeddings_config.token,
+        base_url=embeddings_config.endpoint,
+        credentials=embeddings_config.token,
     )
 
 def generate_path(fields: Dict[str, str], filename: str) -> Path:
@@ -74,8 +78,9 @@ async def ingest(
     embeddings = load_embeddings(embeddings_model_config)
 
     vector_store_proxy: AbstractVectorStore = STORE_FACTORIES[store](
-        vector_store_config.client, 
-        vector_store_schema, 
+        vector_store_config,
+        vector_store_schema,
+        embeddings_model_config,
         embeddings
     )
 
@@ -94,7 +99,7 @@ async def ingest(
             paths.append(path)
             filenames.append(file.filename)
 
-            metadata = { **metadata, 'source': file.filename }
+            metadata = { **metadata, 'conversation_id': str(metadata['conversation_id']), 'source': file.filename }
             metadatas.append(metadata)
             # filters.append(create_filter_expression(
             #     vector_store_schema, metadata))

@@ -31,7 +31,7 @@ class DocumentIngestor(ABC):
         chunk_size: int = 1000, 
         chunk_overlap: int = 150) -> Iterator[Document]:
         if self.smart_chunking:
-            chunkinator = Chunkinator.Base(docs, self._vector_store_bridge.embeddings)
+            chunkinator = Chunkinator.Base(docs, self._vector_store_bridge)
             chunks = chunkinator.chunk()                
         else:
             text_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)

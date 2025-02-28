@@ -108,6 +108,7 @@ async def create_conversation(
         try:
             system_prompt = system_prompt or DEFAULT_PREPROMPT,
             user_prompt = content
+            chat_bot_config.message_history.session_id = created_conversation_id
             llm_stream = await chat(
                 system=system_prompt, 
                 input=user_prompt,

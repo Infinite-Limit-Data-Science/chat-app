@@ -1,6 +1,7 @@
 from typing import Dict, Any, Optional, TypedDict, List
 from pydantic import BaseModel, Field, ConfigDict
 from redis.client import Redis
+from bson import ObjectId
 
 class ModelConfig(BaseModel):
     name: str
@@ -32,6 +33,12 @@ class MongoMessageHistoryConfig(BaseModel):
     url: str
     collection_name: str
     session_id_key: str
+    session_id: Optional[ObjectId] = None
+
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+    )
+
 
 class ChatBotConfig(BaseModel):
     llm: LLMConfig

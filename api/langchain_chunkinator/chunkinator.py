@@ -10,9 +10,14 @@ from functools import lru_cache
 from transformers import PreTrainedTokenizerBase
 from langchain.text_splitter import RecursiveCharacterTextSplitter as Splitter
 from langchain_core.documents import Document
+from ..langchain_doc.vector_stores import AbstractVectorStore
 from .embedding_like import EmbeddingLike
 
 _tokenizer_dir = 'local_tokenizer'
+
+_MAX_BATCH_TOKENS = 32768
+
+_MAX_BATCH_REQUESTS = 64
 
 @lru_cache(maxsize=1)
 def _tokenizer(embedding_name: str):
@@ -27,60 +32,14 @@ def _tokenizer(embedding_name: str):
 class Chunkinator:
     Expo = namedtuple('Expo', ['x0', 'x1', 'x2', 'x3'])
 
-    class BinPack:
-        def __init__(self, documents: List[Document], embedding: EmbeddingLike):
-            self.documents = documents
-            self.embedding = embedding
-            self.embedding_name = self.embedding.name.split('/')[1]
-            self.tokenizer = _tokenizer(self.embedding_name)            
-
-        def chunk(self, documents: List[Document], max_tokens: int) -> List[List[List[str]]]:
-            sorted_documents = sorted(documents, 
-                key=lambda doc: len(doc.page_content), reverse=True)
-            batches = []
-            current_batch = []
-            current_batch_tokens = 0
-
-            for document in sorted_documents:
-                token_content = self.tokenizer.encode(document.page_content)
-                token_len = len(document.page_content)
-
-                if current_batch_tokens + token_len <= max_tokens:
-                    current_batch.append(token_content)
-                    current_batch_tokens += token_len
-                
-                elif token_len > max_tokens:
-                    start = 0
-                    while start < token_len:
-                        remaining_space = max_tokens - current_batch_tokens
-
-                        if remaining_space > 0:
-                            token_slice = token_content[start:start+remaining_space]
-                            current_batch.append(token_slice)
-                            current_batch_tokens += len(token_slice)
-                            start += len(token_slice)
-                        else:
-                            batches.append(current_batch)
-                            current_batch = []
-                            current_batch_tokens = 0
-                else:
-                    batches.append(current_batch)
-                    current_batch = [token_content]
-                    current_batch_tokens = token_len
-
-            if current_batch:
-                batches.append(current_batch)
-
-            return batches
-
     class Base:
-        def __init__(self, documents: List[Document], embedding: EmbeddingLike):
+        def __init__(self, documents: List[Document], vector_store: AbstractVectorStore):
             self.documents = documents
-            self.embedding = embedding
-            self.embedding_name = self.embedding.name.split('/')[1]
+            self.embedding = vector_store.embeddings
+            self.embedding_name = vector_store.embeddings_model_config.name.split('/')[1]
             self.tokenizer = _tokenizer(self.embedding_name)
             self.len_func = lambda text: len(self.tokenizer.encode(text))
-            self.request_tokens = int(self.embedding.max_batch_tokens / self.embedding.max_batch_requests)
+            self.request_tokens = int(_MAX_BATCH_TOKENS / _MAX_BATCH_REQUESTS)
             self.expo = Chunkinator.Expo(*tuple(map(pow, it.repeat(4,times=4), it.count())))
 
         def chunk(self) -> List[str]:

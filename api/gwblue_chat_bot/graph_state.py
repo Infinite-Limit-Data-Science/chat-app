@@ -9,7 +9,7 @@ from langgraph.graph.message import add_messages
 
 class Metadata(TypedDict):
     uuid: str
-    conversation_id: ObjectId # TODO: change to session_id to make generic
+    conversation_id: str # TODO: change to session_id to make generic
     source: str
 
 class State(TypedDict):

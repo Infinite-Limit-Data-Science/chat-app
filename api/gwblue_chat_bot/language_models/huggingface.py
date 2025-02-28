@@ -1,9 +1,26 @@
-import os
 from typing import Self, Dict, Any, Optional
 from pydantic import BaseModel, Field, model_validator
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.embeddings import Embeddings
 from ..chat_bot_config import ChatBotConfig
+
+# TODO: there should be an api call to get these parameters
+# rather than having to rely on app definition in configmap
+_DEFAULT_TEMPERATURE = 0.8
+
+_MAX_INPUT_TOKENS = 12582
+
+_MAX_TOTAL_TOKENS = 16777
+
+_MAX_BATCH_PREFILL_OPERATION_TOKENS = 12582+50
+
+_PAYLOAD_LIMIT = 5_000_000
+
+_EMBEDDINGS_MAX_BATCH_TOKENS = 32768
+
+_EMBEDDINGS_MAX_CLIENT_BATCH_SIZE = 128
+
+_EMBEDDINGS_MAX_BATCH_REQUESTS = 64
 
 class HuggingFaceInference(BaseModel):
     config: ChatBotConfig
@@ -24,10 +41,10 @@ class HuggingFaceInference(BaseModel):
                 name=self.config.llm.name,
                 url=self.config.llm.endpoint,
                 auth_token=self.config.llm.token,
-                max_input_tokens=12582,
-                max_total_tokens=16777,
-                max_batch_prefill_tokens=12582+50,
-                payload_limit=5_000_000
+                max_input_tokens=_MAX_INPUT_TOKENS,
+                max_total_tokens=_MAX_TOTAL_TOKENS,
+                max_batch_prefill_tokens=_MAX_BATCH_PREFILL_OPERATION_TOKENS,
+                payload_limit=_PAYLOAD_LIMIT
             )
         
             llm = HuggingFaceLLM(
@@ -35,7 +52,7 @@ class HuggingFaceInference(BaseModel):
                 credentials=tgi_self_hosted_config.auth_token,
                 tgi_config=tgi_self_hosted_config,
                 max_tokens=tgi_self_hosted_config.available_generated_tokens,
-                temperature=0.8,
+                temperature=self.config.llm.parameters['temperature'] or _DEFAULT_TEMPERATURE,
                 logprobs=True
             )
 
@@ -46,10 +63,10 @@ class HuggingFaceInference(BaseModel):
                 name=self.config.guardrails.name,
                 url=self.config.guardrails.endpoint,
                 auth_token=self.config.guardrails.token,
-                max_input_tokens=12582,
-                max_total_tokens=16777,
-                max_batch_prefill_tokens=12582+50,
-                payload_limit=5_000_000
+                max_input_tokens=_MAX_INPUT_TOKENS,
+                max_total_tokens=_MAX_TOTAL_TOKENS,
+                max_batch_prefill_tokens=_MAX_BATCH_PREFILL_OPERATION_TOKENS,
+                payload_limit=_PAYLOAD_LIMIT
             )
 
             llm = HuggingFaceLLM(
@@ -67,9 +84,9 @@ class HuggingFaceInference(BaseModel):
                 name=self.config.embeddings.name,
                 url=self.config.embeddings.endpoint,
                 auth_token=self.config.embeddings.token,
-                max_batch_tokens=32768,
-                max_client_batch_size=128,
-                max_batch_requests=64,
+                max_batch_tokens=_EMBEDDINGS_MAX_BATCH_TOKENS,
+                max_client_batch_size=_EMBEDDINGS_MAX_CLIENT_BATCH_SIZE,
+                max_batch_requests=_EMBEDDINGS_MAX_BATCH_REQUESTS,
                 auto_truncate=True
             )
 

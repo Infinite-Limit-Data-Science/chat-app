@@ -9,12 +9,23 @@ from langchain_redis import RedisConfig as Config
 from langchain_redis.config import Redis
 from langchain_redis import RedisVectorStore
 
-from ..embedding_models.embedding import BaseEmbedding
+# from ..embedding_models.embedding import BaseEmbedding
+from langchain_core.embeddings import Embeddings
 from .abstract_vector_store import (
     AbstractVectorStore, 
     FilterExpression,
 )
 from ..logger import logger
+
+from ...gwblue_chat_bot.chat_bot_config import (
+    EmbeddingsConfig, 
+    RedisVectorStoreConfig
+)
+
+#
+#   This entire module is deprecated and being deleted in next release
+#   It is replaced with gwblue_vectoretriever
+#
 
 _VECTOR_TTL_30_DAYS = 3600 * 24 * 30
 
@@ -31,6 +42,8 @@ _STORAGE_TYPE = 'hash'
 _CONTENT_FIELD_NAME = 'text'
 
 _EMBEDDING_VECTOR_FIELD_NAME = 'embedding'
+
+_EMBEDDINGS_MAX_BATCH_TOKENS = 32768
 
 class RedisVectorProxy(AbstractVectorStore):
     """
@@ -79,10 +92,18 @@ class RedisVectorProxy(AbstractVectorStore):
 
             return batch_ids
 
-    def __init__(self, client: Redis, embeddings: BaseEmbedding, schema: List[Dict[str, Any]]):
+    def __init__(
+        self,
+        *,
+        client: Redis, 
+        schema: List[Dict[str, Any]],
+        embeddings_model_config: EmbeddingsConfig,
+        embeddings: Embeddings, 
+    ):
         self._client = client
         self.embeddings = embeddings
         self._schema = schema
+        self.embeddings_model_config = embeddings_model_config
         self.config = Config(
             index_name=_INDEX_NAME,
             redis_client=self._client,
@@ -93,10 +114,10 @@ class RedisVectorProxy(AbstractVectorStore):
             storage_type=_STORAGE_TYPE,
             content_field=_CONTENT_FIELD_NAME,
             embedding_field=_EMBEDDING_VECTOR_FIELD_NAME,
-            embedding_dimensions=self.embeddings.dimensions,
+            embedding_dimensions=self.embeddings_model_config.dimensions,
         )
         self.vector_store = RedisVectorProxy.MyRedisVectorStore(
-            self.embeddings.endpoint_object, config=self.config)
+            self.embeddings, config=self.config)
 
     @property
     def content_field_name(self) -> str:
@@ -113,14 +134,14 @@ class RedisVectorProxy(AbstractVectorStore):
         """Embedding Dimension count"""
         return self.config.embedding_dimensions
 
-    def update_embedding_token(self, new_token: str) -> None:
-        self.embeddings.update_token(new_token)
-        self.vector_store = RedisVectorProxy.MyRedisVectorStore(
-                self.embeddings.endpoint_object, config=self.config)
+    # def update_embedding_token(self, new_token: str) -> None:
+    #     self.embeddings.update_token(new_token)
+    #     self.vector_store = RedisVectorProxy.MyRedisVectorStore(
+    #             self.embeddings.endpoint_object, config=self.config)
 
     async def aadd(self, documents: Iterator[Document]) -> List[str]:
         """Add documents to the vector store asynchronously, expecting metadata per document"""
-        return await self.vector_store.aadd_documents_with_ttl(documents, _VECTOR_TTL_30_DAYS, self.embeddings.max_batch_requests)
+        return await self.vector_store.aadd_documents_with_ttl(documents, _VECTOR_TTL_30_DAYS, _EMBEDDINGS_MAX_BATCH_TOKENS)
     
     async def asimilarity_search(
         self, 
@@ -150,7 +171,7 @@ class RedisVectorProxy(AbstractVectorStore):
         filter: FilterExpression = None,
     ) -> str:
         from tabulate2 import tabulate
-        query_vector = await self.embeddings.endpoint_object.aembed_query(query)
+        query_vector = await self.embeddings.aembed_query(query)
         results = await self.vector_store.asimilarity_search_by_vector(
             embedding=query_vector,
             k=k,
@@ -203,22 +224,15 @@ class RedisVectorProxy(AbstractVectorStore):
 if not os.environ['REDIS_URL']:
     raise Exception('Missing `REDIS_URL` in environment, therefore, not trying to connect')
 
-_redis_vector_instance: Optional[RedisVectorProxy] = None
-
 def create_redis_vector_proxy(
-    redis_client: Redis,
+    vector_store_config: RedisVectorStoreConfig,
     vector_store_schema: List[Dict[str, Any]],
-    embeddings: BaseEmbedding,
+    embeddings_model_config: EmbeddingsConfig,
+    embeddings: Embeddings,
 ) -> RedisVectorProxy:
-    global _redis_vector_instance
-
-    if _redis_vector_instance is None:
-        _redis_vector_instance = RedisVectorProxy(
-            client=redis_client,
-            embeddings=embeddings,
-            schema=vector_store_schema,
-        )
-    else:
-        _redis_vector_instance.update_embedding_token(embeddings.token)
-    
-    return _redis_vector_instance
+    return RedisVectorProxy(
+        client=vector_store_config.client,
+        schema=vector_store_schema,
+        embeddings_model_config=embeddings_model_config,
+        embeddings=embeddings,
+    )

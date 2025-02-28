@@ -1,6 +1,8 @@
 import os
 import json
 import pytest
+from pathlib import Path
+from typing import Dict, Any, List, Generator
 from redis.client import Redis
 from redis.connection import ConnectionPool
 from langchain_core.prompts.chat import ChatPromptTemplate
@@ -13,6 +15,15 @@ from ..chat_bot_config import (
     ChatBotConfig
 ) 
 from ..chat_bot import ChatBot
+
+import io
+from fastapi import UploadFile
+from ...langchain_doc import ingest
+
+from bson import ObjectId
+from uuid import uuid4
+from pymongo import MongoClient
+from pymongo.database import Database
 
 @pytest.fixture
 def redis_client() -> Redis:
@@ -34,7 +45,7 @@ def chat_bot_config(redis_client: Redis) -> ChatBotConfig:
         'name': chat_model['name'],
         'endpoint': chat_model['endpoints'][0]['url'],
         'token': os.environ['TEST_AUTH_TOKEN'],
-        'parameters': {},
+        'parameters': { 'temperature': 0.8 },
         'server': 'tgi',
     })
 
@@ -53,15 +64,17 @@ def chat_bot_config(redis_client: Redis) -> ChatBotConfig:
         'name': embeddings_model['name'],
         'endpoint': embeddings_model['endpoints'][0]['url'],
         'token': os.environ['TEST_AUTH_TOKEN'],
-        'server': 'tei',        
+        'dimensions': embeddings_model['dimensions'],
+        'server': 'tei',
     })
 
+    metadata_schema = json.loads(os.environ['VECTOR_STORE_SCHEMA'])
     vectorstore_config = RedisVectorStoreConfig(**{
         'client': redis_client,
-        'metadata_schema': os.environ['VECTOR_STORE_SCHEMA']
+        'metadata_schema': metadata_schema,
     })
 
-    MongoMessageHistoryConfig(
+    message_history_config = MongoMessageHistoryConfig(
         url=os.environ['MONGODB_URL'],
         name=os.environ['DATABASE_NAME'],
         collection_name='messages',
@@ -73,9 +86,95 @@ def chat_bot_config(redis_client: Redis) -> ChatBotConfig:
         embeddings=embeddings_config,
         guardrails=guardrails_config,
         vectorstore=vectorstore_config,
+        message_history=message_history_config,
     )
 
-def test_single_doc_prompt(chat_bot_config: ChatBotConfig):
+@pytest.fixture
+def pdf_documents() -> List[UploadFile]:
+    from starlette.datastructures import Headers
+
+    current_dir = Path(__file__).parent
+    pdf_path = current_dir / 'assets' / 'NVIDIAAn.pdf'
+
+    with pdf_path.open('rb') as f:
+        file_data = f.read()
+    
+    upload = UploadFile(
+        file=io.BytesIO(file_data),
+        filename='NVIDIAAn.pdf',
+        headers=Headers({'content-type': 'application/pdf'}),
+    )
+    return [upload]
+
+@pytest.fixture
+def large_pdf_documents() -> List[UploadFile]:
+    from starlette.datastructures import Headers
+
+    current_dir = Path(__file__).parent
+    pdf_path = current_dir / 'assets' / 'Calculus.pdf'
+
+    with pdf_path.open('rb') as f:
+        file_data = f.read()
+    
+    upload = UploadFile(
+        file=io.BytesIO(file_data),
+        filename='Calculus.pdf',
+        headers=Headers({'content-type': 'application/pdf'}),
+    )
+    return [upload]
+
+@pytest.fixture
+def messages_db(chat_bot_config: ChatBotConfig) -> Database:
+    url = chat_bot_config.message_history.url
+    database = chat_bot_config.message_history.name
+
+    client = MongoClient(url)
+    db = client[database]
+    return db
+
+@pytest.fixture
+def conversation_doc(messages_db: Database) -> Generator[Dict[str, Any], None, None]:
+    conversations = messages_db['conversations']
+
+    attributes = {
+        'uuid': str(uuid4()),
+        'conversation_id': ObjectId(),
+    }
+
+    doc = conversations.insert_one(attributes)
+    attributes['_id'] = doc.inserted_id
+
+    yield attributes
+
+    conversations.delete_one({'_id': attributes['_id']})
+
+@pytest.fixture
+def vector_metadata(
+    conversation_doc: Dict[str, Any]
+) -> Dict[str, Any]:
+    return {
+        'uuid': conversation_doc['uuid'],
+        'conversation_id': conversation_doc['conversation_id'],
+        # 'filename': pdf_documents[0].filename,
+    }
+
+@pytest.mark.asyncio
+async def test_single_doc_prompt(
+    chat_bot_config: ChatBotConfig,
+    vector_metadata: Dict[str, Any],
+    conversation_doc: Dict[str, Any],
+    pdf_documents: List[UploadFile],
+):
+    chat_bot_config.message_history.session_id = conversation_doc['conversation_id']
+    vector_store = os.environ['VECTOR_STORE']
+    metadatas = await ingest(
+        vector_store, 
+        pdf_documents, 
+        chat_bot_config.embeddings,
+        chat_bot_config.vectorstore,
+        vector_metadata,
+    )    
+
     chat_prompt = ChatPromptTemplate.from_messages(
         [
             ('system', "You're a helpful assistant"),
@@ -86,16 +185,13 @@ def test_single_doc_prompt(chat_bot_config: ChatBotConfig):
     chain = chat_prompt | chat_bot
 
     config = RunnableConfig(
-        tags=['chat_bot_run_test', 'uuid_1', 'conversation_id_1'],
-        metadata={ 'vector_metadata': {'uuid': '1', 'conversation_id': '1', 'source': 'test.pdf'} },
+        tags=['chat_bot_run_test', f'uuid_${vector_metadata['uuid']}', f'conversation_id_${vector_metadata['uuid']}'],
+        metadata={ 'vector_metadata': metadatas },
+        configurable={ 'retrieval_mode': 'mmr' }
     )
-    conversation = chain.invoke(
-        input='Summarize the document', 
-        config=config,
-        metadata=[
-            {'uuid': '1', 'conversation_id': '1', 'source': 'test.pdf'}
-        ], 
-        retrieval_mode='mmr',
+    conversation = await chain.ainvoke(
+        {'input': 'Summarize the document'},
+        config=config
     )
     # I NEED TO DO A RUNNABLE_PARALLEL AND PASS retrieval_mode mmr for one and retrieval_mode similarity_search_with_threshold for the other !!!!
     # THIS SHOULD ONLY BE DONE WITH DOCUMENT UPLOADS. IF NO DOCUMENT UPLOAD, THEN ONLY SEND BACK A SINGLE RESPONSE.
