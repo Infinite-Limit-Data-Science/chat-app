@@ -6,3 +6,5 @@ routes/tests.py
 /api/etc
 .pytest_cache
 __pycache__
+.vscode/
+assets

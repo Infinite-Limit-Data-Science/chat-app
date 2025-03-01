@@ -14,7 +14,7 @@ from ..chat_bot_config import (
     MongoMessageHistoryConfig,
     ChatBotConfig
 ) 
-from ..chat_bot import ChatBot
+from ..chat_bot import ChatBot, StreamingResponse
 
 import io
 from fastapi import UploadFile
@@ -137,8 +137,8 @@ def conversation_doc(messages_db: Database) -> Generator[Dict[str, Any], None, N
     conversations = messages_db['conversations']
 
     attributes = {
-        'uuid': str(uuid4()),
-        'conversation_id': ObjectId(),
+        '_id': ObjectId(),
+        'sessionId': str(uuid4()),
     }
 
     doc = conversations.insert_one(attributes)
@@ -153,8 +153,8 @@ def vector_metadata(
     conversation_doc: Dict[str, Any]
 ) -> Dict[str, Any]:
     return {
-        'uuid': conversation_doc['uuid'],
-        'conversation_id': conversation_doc['conversation_id'],
+        'uuid': conversation_doc['sessionId'],
+        'conversation_id': conversation_doc['_id'],
         # 'filename': pdf_documents[0].filename,
     }
 
@@ -165,7 +165,7 @@ async def test_single_doc_prompt(
     conversation_doc: Dict[str, Any],
     pdf_documents: List[UploadFile],
 ):
-    chat_bot_config.message_history.session_id = conversation_doc['conversation_id']
+    chat_bot_config.message_history.session_id = conversation_doc['_id']
     vector_store = os.environ['VECTOR_STORE']
     metadatas = await ingest(
         vector_store, 
@@ -189,14 +189,28 @@ async def test_single_doc_prompt(
         metadata={ 'vector_metadata': metadatas },
         configurable={ 'retrieval_mode': 'mmr' }
     )
-    conversation = await chain.ainvoke(
+
+    ai_content = ''
+    streaming_resp = []
+    async for chunk in chain.astream(
         {'input': 'Summarize the document'},
         config=config
-    )
-    # I NEED TO DO A RUNNABLE_PARALLEL AND PASS retrieval_mode mmr for one and retrieval_mode similarity_search_with_threshold for the other !!!!
-    # THIS SHOULD ONLY BE DONE WITH DOCUMENT UPLOADS. IF NO DOCUMENT UPLOAD, THEN ONLY SEND BACK A SINGLE RESPONSE.
-    assert conversation['messages'][-1].content.strip('\n') == 'safe'
+    ):
+        print(f'Custom event ${chunk.content}')
+        ai_content += chunk.content
+        streaming_resp.append(chunk)
+    
+    assert len(ai_content) > 0
+    assert streaming_resp[-1].token_usage
+    
+@pytest.mark.asyncio
+async def test_multi_doc_prompt(
+    chat_bot_config: ChatBotConfig,
+    vector_metadata: Dict[str, Any],
+    conversation_doc: Dict[str, Any],
+    pdf_documents: List[UploadFile],
+):
+    ...
 
-    # for event in graph.stream(initial_state):
-    #     for value in event.values():
-    #         assert value['messages'].strip('\n') == 'safe'
+        # I NEED TO DO A RUNNABLE_PARALLEL AND PASS retrieval_mode mmr for one and retrieval_mode similarity_search_with_threshold for the other !!!!
+        # THIS SHOULD ONLY BE DONE WITH DOCUMENT UPLOADS. IF NO DOCUMENT UPLOAD, THEN ONLY SEND BACK A SINGLE RESPONSE.

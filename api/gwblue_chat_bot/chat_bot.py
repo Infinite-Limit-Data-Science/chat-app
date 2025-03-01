@@ -8,6 +8,7 @@ from typing import (
     Union,
     Iterator,
     AsyncIterator,
+    AsyncGenerator,
     Sequence,
     TypeAlias,
     override,
@@ -19,6 +20,7 @@ import os
 import json
 from bson import ObjectId
 from collections import defaultdict
+from collections import deque
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.state import CompiledStateGraph
 from langchain_core.runnables import (
@@ -40,6 +42,13 @@ from langchain.chains.combine_documents.base import (
 from langchain_core.prompts import format_document
 from langchain.chains.retrieval import create_retrieval_chain
 from langchain_core.documents import Document
+from langchain_core.messages import (
+    SystemMessage, 
+    HumanMessage, 
+    AIMessage, 
+    BaseMessage,    
+    AIMessageChunk,
+)
 from langchain_core.messages import AIMessage, MessageLikeRepresentation
 from langchain_core.messages.utils import AnyMessage
 from langchain.chat_models.base import BaseChatModel
@@ -49,12 +58,15 @@ from langchain_core.outputs import (
     ChatGenerationChunk
 )
 from langchain_core.runnables.config import RunnableConfig
+from langchain_core.runnables.history import RunnableWithMessageHistory
 from pydantic import (
+    BaseModel,
     Field, 
     model_validator,
     ConfigDict
 )
 from langchain_core.retrievers import RetrieverLike
+from pymongo import DESCENDING
 
 from .graph_state import State
 from .language_models.huggingface import HuggingFaceInference
@@ -70,20 +82,7 @@ from .prompts import registry
 from .message_history import (
     MongoMessageHistorySchema, 
     MongoMessageHistory, 
-    SystemMessage, 
-    HumanMessage, 
-    AIMessage, 
-    BaseMessage, 
 )
-
-NLP_HARMONY = os.getenv('NLP_HARMONY', 'false').lower() == 'true'
-if NLP_HARMONY:
-    try:
-        from ..langchain_harmony import LexicalSoup
-    except ImportError:
-        raise ImportError(
-            '`NLP_HARMONY` is set to true, but the `langchain_harmony` package is not installed'
-        )
 
 ChatGenerationLike: TypeAlias = ChatGeneration | Iterator[ChatGeneration] | AsyncIterator[ChatGenerationChunk]
 
@@ -91,6 +90,14 @@ I = TypeVar('I', bound=Union[PromptValue, str, Sequence[MessageLikeRepresentatio
 O = TypeVar('O', bound=ChatGenerationLike)
 C = TypeVar('C', bound=BaseChatModel)
 S = TypeVar('S', bound=BaseChatModel)
+
+class StreamingResponse(BaseModel):
+    type: str
+    content: str
+    token_usage: Dict[str, Any]
+    tool_calls: List[Dict[str, Any]]
+    vector_metadata: List[Dict[str, Any]]
+    session_id: str
 
 class ChatBot(RunnableSerializable[I, O]):
     config: ChatBotConfig
@@ -168,18 +175,39 @@ class ChatBot(RunnableSerializable[I, O]):
         stop: Optional[list[str]] = None,
         **kwargs: Any,
     ) -> O:
-        return await self.graph.invoke({
-            'messages': input,
-        }, config)
+        """Implementation soon"""
+        ...
 
     async def ainvoke(
+        self,
+        input: I,
+        config: Optional[RunnableConfig] = None,
+        *,
+        stop: Optional[list[str]] = None,
+        **kwargs: Any,
+    ) -> O:
+        """Implementation soon"""
+        ...
+
+    async def stream(
+        self,
+        input: I,
+        config: Optional[RunnableConfig] = None,
+        *,
+        stop: Optional[list[str]] = None,
+        **kwargs: Any,
+    ) -> O:
+        """Implementation soon"""
+        ...
+
+    async def astream(
         self,
         input: I,
         config: Optional[Dict[str, Any]] = None,
         *,
         stop: Optional[list[str]] = None,
         **kwargs: Any,
-    ) -> O:
+    ) -> AsyncGenerator[StreamingResponse, None]:
         if isinstance(input, ChatPromptValue):
             input = input.to_messages()
     
@@ -189,10 +217,23 @@ class ChatBot(RunnableSerializable[I, O]):
             'retrieval_mode': config['configurable'].get('retrieval_mode', 'similarity'),
         }        
 
-        return await self.graph.ainvoke(state, config)
+        async for event in self.graph.astream(state, config, stream_mode='messages'):
+            ai_message_chunk, state_args = event
+            if not isinstance(ai_message_chunk, AIMessageChunk):
+                continue
+
+            # send back message id too
+            yield StreamingResponse(**{
+                'type': ai_message_chunk.__class__.__name__,
+                'content': ai_message_chunk.content,
+                'token_usage': ai_message_chunk.additional_kwargs['token_usage'],
+                'tool_calls': ai_message_chunk.additional_kwargs.get('tool_calls', []),
+                'vector_metadata': state_args.get('vector_metadata', []),
+                'session_id': str(self.config.message_history.session_id),
+            })
 
     @staticmethod
-    def preprompt_filter(state: State) -> RunnableLambda:
+    def preprompt_filter(state: State, metadata: Dict[str, Any]) -> RunnableLambda:
         def create_preprompt_filter(input_data: Dict[str, Any]) -> Dict[str, Any]:
             return {
                 **input_data,
@@ -204,7 +245,7 @@ class ChatBot(RunnableSerializable[I, O]):
         
         return RunnableLambda(create_preprompt_filter).with_config(
             run_name=f'filter_preprompt_chain_{state['route']}',
-            metadata=state['metadata']
+            metadata=metadata
         )
     
     @staticmethod
@@ -266,7 +307,7 @@ class ChatBot(RunnableSerializable[I, O]):
 
     def create_context_aware_chain(self, state: State) -> Runnable:
         metadata = state['metadata'][0]
-        system_prompt = state['messages'][0].content # get current system prompt
+        system_prompt = state['messages'][0].content
 
         filter_expression = self.create_filter_expression(metadata)
         search_kwargs = {
@@ -287,12 +328,12 @@ class ChatBot(RunnableSerializable[I, O]):
         history_aware_retriever = self.create_history_aware_retriever(
             retriever,
             registry['contextualized_template'](),
-            preprompt_filter=self.preprompt_filter(state),
+            preprompt_filter=self.preprompt_filter(state, metadata),
         )
 
         question_answer_chain = self.create_stuff_documents_chain(
             registry['qa_template'](system_prompt),
-            preprompt_filter=self.preprompt_filter()
+            preprompt_filter=self.preprompt_filter(state, metadata)
         )
         
         return create_retrieval_chain(history_aware_retriever, question_answer_chain)
@@ -360,43 +401,6 @@ class ChatBot(RunnableSerializable[I, O]):
 
         return multicontext_aware_chain
 
-    async def generate_llm_astream(
-        self,
-        chain_with_history: RunnableWithMessageHistory,
-        message: str,
-        config: dict,
-    ) -> AsyncGenerator[str, None]:
-        maxlen = 50
-        token_buff = deque(maxlen=maxlen)
-        tokens_checked = False
-
-        async for s in chain_with_history.astream({'input': message}, config=config):
-            if isinstance(s, dict) and ('input' in s or 'context' in s):
-                continue
-    
-            if 'answer' in s:
-                s_content = s['answer']
-            elif hasattr(s, 'content'):
-                s_content = s.content
-            else:
-                # logger.warning(f'Intermediate run async generated: {s}')
-                continue
-
-            token_buff.append(s_content)
-
-            if NLP_HARMONY and not tokens_checked:
-                if len(token_buff) == maxlen:
-                    corpus = ''.join(token_buff)
-                    soup = LexicalSoup(corpus=corpus, temperature=0.3)
-                    if soup.is_natural and soup.is_high_frequency:
-                        # logger.warning(f'Low P(A) natural language score, got {corpus}')
-                        yield '<|model_error|>'
-                        return
-                    
-                tokens_checked = len(token_buff) >= maxlen
-
-            yield s_content
-
     async def _aenter_chat_chain(self, run: Run, config: RunnableConfig, system_prompt: str) -> Optional[SystemMessage]:
         """On start runnable listener"""
         collection = self.message_history.chat_message_history.collection
@@ -423,40 +427,56 @@ class ChatBot(RunnableSerializable[I, O]):
             ai_message := collection.find_one(
                 {
                     'type': { '$in': ['ai', 'AIMessageChunk'] }, 
-                    self.message_part.message_schema.session_id_key: config['configurable']['session_id'],
+                    self.config.message_history.session_id_key: self.config.message_history.session_id,
                 }, 
                 sort=[("createdAt", DESCENDING)])
         ) is not None:
-            chain = registry['summarization_template']() | self.llm_part.llm.summary_object
+            chain = registry['summarization_template']() | self.chat_model
             summary = await chain.ainvoke({'input': ai_message['content']})
             self.message_history.chat_message_history.add_summary(summary.content)    
 
-    async def generate_with_history(self, state: State, chain):
+    async def generate_with_history(
+        self, 
+        state: State, 
+        chain: Runnable,
+        config: Optional[RunnableConfig] = None,
+    ) -> dict:
         system_prompt = state['messages'][0].content
+        human_prompt = state['messages'][-2].content
 
         async def on_start(run: Run, config: RunnableConfig):
             await self._aenter_chat_chain(run, config, system_prompt)
 
         async def on_end(run: Run, config: RunnableConfig):
-            await self._aexit_chat_chain(run, config, system_prompt)
+            await self._aexit_chat_chain(run, config)
                                      
-        chain_with_history = self.message_history.get(chain, True)
-        chain_with_history = chain_with_history.with_alisteners(
-            on_start=self.on_start,
-            on_end=self.on_end
+        chain_with_history = self.message_history.get(chain, True).with_alisteners(
+            on_start=on_start,
+            on_end=on_end
         )
-        # config = self.message_part.runnable_config
 
-        async def llm_astream():
-            async for token in self.generate_llm_astream(chain_with_history, message, config):
-                yield token
-
-        return llm_astream
+        if (
+            not config
+            or 'configurable' not in config.configurable
+            or 'session_id' not in config.configurable['configurable']
+        ):
+            config = RunnableConfig(
+                configurable={
+                    'configurable': { 'session_id': self.config.message_history.session_id } # TODO: generalize to session_id
+                }
+            )
+        chain_values = await chain_with_history.ainvoke({'input': human_prompt}, config=config['configurable'])        
+        return { 'messages': [AIMessage(content=chain_values['answer'])] }
     
     def _compile(self, graph: StateGraph):
-        async def guardrails(state: State) -> Dict[str, any]:
+        async def guardrails(state: State) -> State:
             ai_message = await self.safety_model.ainvoke([state['messages'][1]])
-            return { **state, 'messages': [ai_message] }
+
+            guardrails_message = AIMessage(
+                content=ai_message.content,
+                additional_kwargs={'guardrails': True},
+            )
+            return {**state, "messages": [guardrails_message]}
 
         def guardrails_condition(state: State) -> str:
             last_msg: AIMessage = state["messages"][-1]
@@ -466,7 +486,7 @@ class ChatBot(RunnableSerializable[I, O]):
             else:
                 return 'not_safe'
 
-        def not_safe(state: State):
+        def not_safe(_: State):
             return {
                 "messages": [
                     {
@@ -475,7 +495,7 @@ class ChatBot(RunnableSerializable[I, O]):
                     }
                 ]
             }          
-        def route_query(state: State):
+        async def route_query(state: State):
             """
             Account for scenarios:
             - 'Explain this document' (where this is not specified and refers to upload)
@@ -497,7 +517,7 @@ class ChatBot(RunnableSerializable[I, O]):
             relevant_docs_with_score = self.vector_store.similarity_search_with_score(
                 query=human_prompt,
                 k=50,
-                filter=Tag(self.config.message_history.session_id_key) == str(session_id),
+                filter=Tag(self.config.message_history.session_id_key) == str(self.config.message_history.session_id),
             )
             file_to_best_chunk = defaultdict(lambda: (None, float('inf')))
             for doc, dist in relevant_docs_with_score:
@@ -524,19 +544,20 @@ class ChatBot(RunnableSerializable[I, O]):
         def route_query_condition(state: State) -> str:
             return state['route']
         
-        def single_doc_prompt(state: State) -> Dict[str, Any]:
+        async def single_doc_prompt(state: State) -> dict:
             """
             Generate prompt for single document
             """
             chain = self.create_context_aware_chain(state)
-            self.generate_with_history(chain)
+            messages = await self.generate_with_history(state, chain)
+            return messages
 
-        def multi_doc_prompt(state: State) -> Dict[str, Any]:
+        async def multi_doc_prompt(state: State) -> Dict[str, Any]:
             """
             Generate prompt for multiple documents
             """
             chain = self.create_multicontext_aware_chain(state)
-            self.generate_with_history(chain)
+            return self.generate_with_history(state, chain)
 
         def pretrained_corpus_prompt(state: State) -> Dict[str, Any]:
             """
