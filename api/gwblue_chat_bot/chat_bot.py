@@ -15,6 +15,7 @@ from typing import (
     Self,
     Any,
     List,
+    Tuple,
 )
 import os
 import json
@@ -98,6 +99,7 @@ class StreamingResponse(BaseModel):
     tool_calls: List[Dict[str, Any]]
     vector_metadata: List[Dict[str, Any]]
     session_id: str
+    message_id: str
 
 class ChatBot(RunnableSerializable[I, O]):
     config: ChatBotConfig
@@ -222,7 +224,6 @@ class ChatBot(RunnableSerializable[I, O]):
             if not isinstance(ai_message_chunk, AIMessageChunk):
                 continue
 
-            # send back message id too
             yield StreamingResponse(**{
                 'type': ai_message_chunk.__class__.__name__,
                 'content': ai_message_chunk.content,
@@ -230,6 +231,7 @@ class ChatBot(RunnableSerializable[I, O]):
                 'tool_calls': ai_message_chunk.additional_kwargs.get('tool_calls', []),
                 'vector_metadata': state_args.get('vector_metadata', []),
                 'session_id': str(self.config.message_history.session_id),
+                'message_id': ai_message_chunk.additional_kwargs.get('uuid', ''),
             })
 
     @staticmethod
@@ -268,8 +270,6 @@ class ChatBot(RunnableSerializable[I, O]):
     ) -> Runnable:
         """Custom implementation to handle preprompt messages"""
         def validate_history(input_data: Dict[str, Any]) -> bool:
-            # TGI is really slow to respond to streaming; temporarily disabling this with explicit True
-            # return True
             return not input_data.get('chat_history')
             
         retrieve_documents = (preprompt_filter or RunnablePassthrough()) | RunnableBranch(
@@ -338,9 +338,16 @@ class ChatBot(RunnableSerializable[I, O]):
         
         return create_retrieval_chain(history_aware_retriever, question_answer_chain)
 
-    def create_multi_retriever_chain(self, source_retrievers: List[Any]) -> Runnable:
+    def create_multi_retriever_chain(
+        self, 
+        retrievers: Tuple[List[Runnable], Dict[str, Any]],
+        state: State
+    ) -> Runnable:
         context_prompt = registry['contextualized_template']()
-        retriever_map = {f'Source {source_retriever.source}': source_retriever.retriever for source_retriever in source_retrievers}
+        retriever_map = {
+            f'Source {metadata['source']}': retriever
+            for retriever, metadata in retrievers
+        }
         parallel_retrieval = RunnableParallel(retriever_map)
 
         def combine_contexts(retrieved_results: dict, separator=DEFAULT_DOCUMENT_SEPARATOR) -> list:
@@ -359,39 +366,55 @@ class ChatBot(RunnableSerializable[I, O]):
         retrieve_documents = self.create_history_aware_retriever(
             parallel_retrieval,
             context_prompt,
-            preprompt_filter=self.preprompt_filter())
-
+            preprompt_filter=self.preprompt_filter(state, {})
+        )
+        
         return retrieve_documents | combine_contexts_runnable
     
-    def create_multi_stuff_chain(self) -> Runnable:
-        qa_template = registry['qa_template'](self.prompt_part.user_prompt)
+    def create_multi_stuff_chain(self, state: State, system_prompt: str) -> Runnable:
+        qa_template = registry['qa_template'](system_prompt)
 
         return self.create_stuff_documents_chain(
             qa_template,
-            preprompt_filter=self.preprompt_filter())    
-
-    def create_multicontext_aware_chain(self, state: State) -> Runnable:
-        metadata = state['metadata'][0]
-        system_prompt = state['messages'][0].content
-
-        filter_expression = self.create_filter_expression(metadata)
-        search_kwargs = {
-            'k': 6,
-            'filter': filter_expression,
-        }
-        if state['retrieval_mode'] == 'similarity_score_threshold':
-            search_kwargs['score_threshold'] = 0.8
-
-        retriever = self.vector_store.as_retriever(
-            search_type=state['retrieval_mode'],
-            search_kwargs=search_kwargs
-        ).with_config(
-            tags=[f'create_context_aware_chain_{state['route']}'],
-            metadata=metadata,           
+            preprompt_filter=self.preprompt_filter(state, {})
         )
 
-        multi_retriever_chain = self.create_multi_retriever_chain(retriever)
-        stuffing_chain = self.create_multi_stuff_chain()
+    # def create_multicontext_aware_chain(self, llm: BaseChatModel, source_retrievers: List[AbstractVectorRetriever]):
+    #     multi_retriever_chain = self.create_multi_retriever_chain(llm, source_retrievers)
+    #     stuffing_chain = self.create_multi_stuff_chain(llm)
+        
+    #     multicontext_aware_chain = (
+    #         RunnablePassthrough.assign(
+    #             context=multi_retriever_chain.with_config(run_name='retrieval_chain'),
+    #         ).assign(answer=stuffing_chain)
+    #     ).with_config(run_name='multicontext_aware_chain')
+
+    #     return multicontext_aware_chain
+
+    def create_multicontext_aware_chain(self, state: State) -> Runnable:
+        system_prompt = state['messages'][0].content
+        retrievers = []
+        
+        for index, metadata in enumerate(state['metadata']):
+            filter_expression = self.create_filter_expression(metadata)
+            search_kwargs = {
+                'k': 6,
+                'filter': filter_expression,
+            }
+            if state['retrieval_mode'] == 'similarity_score_threshold':
+                search_kwargs['score_threshold'] = 0.8
+
+            retriever = self.vector_store.as_retriever(
+                search_type=state['retrieval_mode'],
+                search_kwargs=search_kwargs
+            ).with_config(
+                tags=[f'create_context_aware_chain_{index}_{state['route']}'],
+                metadata=metadata,           
+            )
+            retrievers.append((retriever, metadata))
+
+        multi_retriever_chain = self.create_multi_retriever_chain(retrievers, state)
+        stuffing_chain = self.create_multi_stuff_chain(state, system_prompt)
         
         multicontext_aware_chain = (
             RunnablePassthrough.assign(
@@ -557,7 +580,8 @@ class ChatBot(RunnableSerializable[I, O]):
             Generate prompt for multiple documents
             """
             chain = self.create_multicontext_aware_chain(state)
-            return self.generate_with_history(state, chain)
+            messages = await self.generate_with_history(state, chain)
+            return messages
 
         def pretrained_corpus_prompt(state: State) -> Dict[str, Any]:
             """

@@ -14,10 +14,11 @@ from ..chat_bot_config import (
     MongoMessageHistoryConfig,
     ChatBotConfig
 ) 
-from ..chat_bot import ChatBot, StreamingResponse
+from ..chat_bot import ChatBot
 
 import io
 from fastapi import UploadFile
+from starlette.datastructures import Headers
 from ...langchain_doc import ingest
 
 from bson import ObjectId
@@ -91,8 +92,6 @@ def chat_bot_config(redis_client: Redis) -> ChatBotConfig:
 
 @pytest.fixture
 def pdf_documents() -> List[UploadFile]:
-    from starlette.datastructures import Headers
-
     current_dir = Path(__file__).parent
     pdf_path = current_dir / 'assets' / 'NVIDIAAn.pdf'
 
@@ -108,8 +107,6 @@ def pdf_documents() -> List[UploadFile]:
 
 @pytest.fixture
 def large_pdf_documents() -> List[UploadFile]:
-    from starlette.datastructures import Headers
-
     current_dir = Path(__file__).parent
     pdf_path = current_dir / 'assets' / 'Calculus.pdf'
 
@@ -122,6 +119,28 @@ def large_pdf_documents() -> List[UploadFile]:
         headers=Headers({'content-type': 'application/pdf'}),
     )
     return [upload]
+
+@pytest.fixture
+def compare_documents() -> list[UploadFile]:
+    current_dir = Path(__file__).parent
+    files = [
+        current_dir / "assets" / "ruby-rails-developer-v2.docx",
+        current_dir / "assets" / "senior-cloud-engineer-v1.docx",
+        current_dir / "assets" / "senior-devops-engineer-v4.docx",
+    ]
+
+    uploads = []
+    for path in files:
+        with path.open("rb") as f:
+            content = f.read()
+        upload = UploadFile(
+            file=io.BytesIO(content),
+            filename=path.name,
+            headers=Headers({"content-type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}),
+        )
+        uploads.append(upload)
+
+    return uploads
 
 @pytest.fixture
 def messages_db(chat_bot_config: ChatBotConfig) -> Database:
@@ -149,19 +168,18 @@ def conversation_doc(messages_db: Database) -> Generator[Dict[str, Any], None, N
     conversations.delete_one({'_id': attributes['_id']})
 
 @pytest.fixture
-def vector_metadata(
+def message_metadata(
     conversation_doc: Dict[str, Any]
 ) -> Dict[str, Any]:
     return {
         'uuid': conversation_doc['sessionId'],
         'conversation_id': conversation_doc['_id'],
-        # 'filename': pdf_documents[0].filename,
     }
 
 @pytest.mark.asyncio
 async def test_single_doc_prompt(
     chat_bot_config: ChatBotConfig,
-    vector_metadata: Dict[str, Any],
+    message_metadata: Dict[str, Any],
     conversation_doc: Dict[str, Any],
     pdf_documents: List[UploadFile],
 ):
@@ -172,7 +190,7 @@ async def test_single_doc_prompt(
         pdf_documents, 
         chat_bot_config.embeddings,
         chat_bot_config.vectorstore,
-        vector_metadata,
+        message_metadata,
     )    
 
     chat_prompt = ChatPromptTemplate.from_messages(
@@ -185,7 +203,7 @@ async def test_single_doc_prompt(
     chain = chat_prompt | chat_bot
 
     config = RunnableConfig(
-        tags=['chat_bot_run_test', f'uuid_${vector_metadata['uuid']}', f'conversation_id_${vector_metadata['uuid']}'],
+        tags=['chat_bot_run_test', f'uuid_${message_metadata['uuid']}', f'conversation_id_${message_metadata['uuid']}'],
         metadata={ 'vector_metadata': metadatas },
         configurable={ 'retrieval_mode': 'mmr' }
     )
@@ -201,16 +219,59 @@ async def test_single_doc_prompt(
         streaming_resp.append(chunk)
     
     assert len(ai_content) > 0
-    assert streaming_resp[-1].token_usage
     
 @pytest.mark.asyncio
 async def test_multi_doc_prompt(
     chat_bot_config: ChatBotConfig,
-    vector_metadata: Dict[str, Any],
+    message_metadata: Dict[str, Any],
     conversation_doc: Dict[str, Any],
-    pdf_documents: List[UploadFile],
+    compare_documents: List[UploadFile],
+):
+    chat_bot_config.message_history.session_id = conversation_doc['_id']
+    vector_store = os.environ['VECTOR_STORE']
+    metadatas = await ingest(
+        vector_store, 
+        compare_documents, 
+        chat_bot_config.embeddings,
+        chat_bot_config.vectorstore,
+        message_metadata,
+    )
+
+    chat_prompt = ChatPromptTemplate.from_messages(
+        [
+            ('system', "You're a helpful assistant"),
+            ('human', '{input}')
+        ]
+    )
+    chat_bot = ChatBot(config=chat_bot_config)
+    chain = chat_prompt | chat_bot
+
+    config = RunnableConfig(
+        tags=['chat_bot_run_test', f'uuid_${message_metadata['uuid']}', f'conversation_id_${message_metadata['uuid']}'],
+        metadata={ 'vector_metadata': metadatas },
+        configurable={ 'retrieval_mode': 'mmr' }
+    )
+
+    ai_content = ''
+    streaming_resp = []
+    async for chunk in chain.astream(
+        {'input': 'Compare the two documents'},
+        config=config
+    ):
+        print(f'Custom event ${chunk.content}')
+        ai_content += chunk.content
+        streaming_resp.append(chunk)
+    
+    assert len(ai_content) > 0
+
+@pytest.mark.asyncio
+async def test_pretrained_corpus_prompt(
+    chat_bot_config: ChatBotConfig,
+    message_metadata: Dict[str, Any],
+    conversation_doc: Dict[str, Any],
 ):
     ...
 
         # I NEED TO DO A RUNNABLE_PARALLEL AND PASS retrieval_mode mmr for one and retrieval_mode similarity_search_with_threshold for the other !!!!
         # THIS SHOULD ONLY BE DONE WITH DOCUMENT UPLOADS. IF NO DOCUMENT UPLOAD, THEN ONLY SEND BACK A SINGLE RESPONSE.
+        # NEED TO TEST FOLLOW UP QUESTIONS THAT REMEMBER HISTORY

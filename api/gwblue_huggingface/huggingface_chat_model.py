@@ -14,6 +14,7 @@ from typing import (
     TypeAlias,
     Tuple
 )
+import uuid
 from langchain_core.callbacks.manager import (
     AsyncCallbackManagerForLLMRun,
     CallbackManagerForLLMRun,
@@ -305,6 +306,7 @@ class HuggingFaceChatModel(BaseChatModel):
     ) -> Iterator[ChatGenerationChunk]:
         invocation_params = self._invocation_params(stop, **kwargs)
         message_dicts = self._create_message_dicts(messages, stop)
+        completion_id = str(uuid.uuid4())
 
         try:
             for chat_completion_stream_output in self.llm.client.chat_completion(
@@ -326,6 +328,7 @@ class HuggingFaceChatModel(BaseChatModel):
                     token_usage
                 )
                 lc_message.content = text_chunk
+                lc_message.additional_kwargs['uuid'] = completion_id
 
                 chat_chunk = ChatGenerationChunk(
                     message=lc_message,
@@ -358,7 +361,8 @@ class HuggingFaceChatModel(BaseChatModel):
     ) -> AsyncIterator[ChatGenerationChunk]:
         invocation_params = self._invocation_params(stop, **kwargs)
         message_dicts = self._create_message_dicts(messages, stop)
-  
+        completion_id = str(uuid.uuid4())
+
         try:
             streaming_completion = await self.llm.client.achat_completion(
                 messages=message_dicts,
@@ -380,6 +384,7 @@ class HuggingFaceChatModel(BaseChatModel):
                     token_usage
                 )
                 lc_message.content = text_chunk
+                lc_message.additional_kwargs['uuid'] = completion_id
 
                 chat_chunk = ChatGenerationChunk(
                     message=lc_message,
