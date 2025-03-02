@@ -270,8 +270,44 @@ async def test_pretrained_corpus_prompt(
     message_metadata: Dict[str, Any],
     conversation_doc: Dict[str, Any],
 ):
-    ...
+    chat_bot_config.message_history.session_id = conversation_doc['_id']
+    chat_prompt = ChatPromptTemplate.from_messages(
+        [
+            ('system', "You're a helpful assistant"),
+            ('human', '{input}')
+        ]
+    )
+    chat_bot = ChatBot(config=chat_bot_config)
+    chain = chat_prompt | chat_bot
 
+    config = RunnableConfig(
+        tags=['chat_bot_run_test', f'uuid_${message_metadata['uuid']}', f'conversation_id_${message_metadata['uuid']}'],
+        metadata={ 'vector_metadata': [message_metadata] },
+        configurable={ 'retrieval_mode': 'mmr' }
+    )
+
+    ai_content = ''
+    streaming_resp = []
+    async for chunk in chain.astream(
+        {'input': 'Tell me about the movie Memento.'},
+        config=config
+    ):
+        print(f'Custom event ${chunk.content}')
+        ai_content += chunk.content
+        streaming_resp.append(chunk)
+    
+    # its not working, its not saving the ai message!
+    assert len(ai_content) > 0    
+
+
+# async def test_multimodal_image
+
+# async def test_multiple_candidate_completions
         # I NEED TO DO A RUNNABLE_PARALLEL AND PASS retrieval_mode mmr for one and retrieval_mode similarity_search_with_threshold for the other !!!!
         # THIS SHOULD ONLY BE DONE WITH DOCUMENT UPLOADS. IF NO DOCUMENT UPLOAD, THEN ONLY SEND BACK A SINGLE RESPONSE.
         # NEED TO TEST FOLLOW UP QUESTIONS THAT REMEMBER HISTORY
+# async def test_message_history
+
+# async def test_vector_history
+
+# async def test_unsafe_content

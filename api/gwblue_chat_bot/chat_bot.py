@@ -262,6 +262,10 @@ class ChatBot(RunnableSerializable[I, O]):
         filter_expression = reduce(operator.and_, tag_expressions)
         return filter_expression
 
+    def create_generic_chain(self, state: State, system_prompt: str) -> Runnable:
+        chain = registry['chat_preprompt_template'](system_prompt) | self.chat_model
+        return chain.with_config(run_name=f'generic_chat_model_chain_{state['route']}')
+
     def create_history_aware_retriever(
         self,
         retriever: RetrieverLike,
@@ -379,18 +383,6 @@ class ChatBot(RunnableSerializable[I, O]):
             preprompt_filter=self.preprompt_filter(state, {})
         )
 
-    # def create_multicontext_aware_chain(self, llm: BaseChatModel, source_retrievers: List[AbstractVectorRetriever]):
-    #     multi_retriever_chain = self.create_multi_retriever_chain(llm, source_retrievers)
-    #     stuffing_chain = self.create_multi_stuff_chain(llm)
-        
-    #     multicontext_aware_chain = (
-    #         RunnablePassthrough.assign(
-    #             context=multi_retriever_chain.with_config(run_name='retrieval_chain'),
-    #         ).assign(answer=stuffing_chain)
-    #     ).with_config(run_name='multicontext_aware_chain')
-
-    #     return multicontext_aware_chain
-
     def create_multicontext_aware_chain(self, state: State) -> Runnable:
         system_prompt = state['messages'][0].content
         retrievers = []
@@ -485,11 +477,12 @@ class ChatBot(RunnableSerializable[I, O]):
         ):
             config = RunnableConfig(
                 configurable={
-                    'configurable': { 'session_id': self.config.message_history.session_id } # TODO: generalize to session_id
+                    'configurable': { 'session_id': self.config.message_history.session_id }
                 }
             )
-        chain_values = await chain_with_history.ainvoke({'input': human_prompt}, config=config['configurable'])        
-        return { 'messages': [AIMessage(content=chain_values['answer'])] }
+        chain_values = await chain_with_history.ainvoke({'input': human_prompt}, config=config['configurable'])
+        ai_message = AIMessage(content=chain_values['answer']) if 'answer' in chain_values else chain_values     
+        return { 'messages': [ai_message] }
     
     def _compile(self, graph: StateGraph):
         async def guardrails(state: State) -> State:
@@ -511,13 +504,13 @@ class ChatBot(RunnableSerializable[I, O]):
 
         def not_safe(_: State):
             return {
-                "messages": [
-                    {
-                        "role": "ai",
-                        "content": "Your request cannot be processed. (Content flagged as not safe.)"
-                    }
+                'messages': [
+                    AIMessage(
+                        content='Your request cannot be processed. (Content flagged as not safe.)'
+                    )
                 ]
-            }          
+            }   
+               
         async def route_query(state: State):
             """
             Account for scenarios:
@@ -530,22 +523,27 @@ class ChatBot(RunnableSerializable[I, O]):
             metadata = state['metadata']
 
             if len(metadata) > 1:
-                return {'route': 'multi_doc_prompt', 'metadata': metadata}
+                return {'route': 'multi_doc_prompt', **state}
             
-            if len(metadata) == 1:
+            if len(metadata) == 1 and 'source' in metadata[0]:
                 return {"route": 'single_doc_prompt', **state}
         
-            human_prompt = state['messages'][-1].content
+            human_prompt = state['messages'][-2].content
+            vector_filter = metadata[0]
 
-            relevant_docs_with_score = self.vector_store.similarity_search_with_score(
+            filter_expression = (
+                (Tag(self.config.message_history.session_id_key) == str(self.config.message_history.session_id)) 
+                & (Tag('uuid') == vector_filter['uuid'])
+            )
+            relevant_docs_with_score = await self.vector_store.asimilarity_search_with_score(
                 query=human_prompt,
-                k=50,
-                filter=Tag(self.config.message_history.session_id_key) == str(self.config.message_history.session_id),
+                k=20,
+                filter=filter_expression,
             )
             file_to_best_chunk = defaultdict(lambda: (None, float('inf')))
             for doc, dist in relevant_docs_with_score:
                 fname = doc.metadata.get('source', '')                
-                if dist < file_to_best_chunk:
+                if dist < file_to_best_chunk[fname][1]:
                     file_to_best_chunk[fname] = (doc, dist)
 
             best_metadata = [doc.metadata for (doc, _) in file_to_best_chunk.values() if doc is not None]
@@ -559,10 +557,10 @@ class ChatBot(RunnableSerializable[I, O]):
                 route = 'pretrained_corpus_prompt'
             
             return {
+                **state,
                 'route': route,
-                'messages': state['messages'],
-                'best_docs': best_metadata,
-            }  
+                'metadata': best_metadata,
+            }
 
         def route_query_condition(state: State) -> str:
             return state['route']
@@ -582,13 +580,16 @@ class ChatBot(RunnableSerializable[I, O]):
             chain = self.create_multicontext_aware_chain(state)
             messages = await self.generate_with_history(state, chain)
             return messages
-
-        def pretrained_corpus_prompt(state: State) -> Dict[str, Any]:
+    
+        async def pretrained_corpus_prompt(state: State) -> Dict[str, Any]:
             """
             Generate prompt for pretrained corpus
             """
-            ...
-
+            system_prompt = state['messages'][0].content
+            chain = self.create_generic_chain(state, system_prompt)
+            messages = await self.generate_with_history(state, chain)
+            return messages
+        
         graph.add_node('guardrails', guardrails)
         graph.add_node('not_safe', not_safe)
         graph.add_node('route_query', route_query)
