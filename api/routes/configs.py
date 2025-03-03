@@ -91,7 +91,6 @@ async def refresh_model_configs(
         else:
             new_user_model_config = UserModelConfigSchema(
                 name=system_model_name,
-                description=system_config.description,
                 preprompt=system_config.preprompt,
                 parameters=system_config.parameters,
                 classification=system_config.classification,
@@ -145,7 +144,7 @@ async def llm_model_config(
 ) -> Dict[str, any]:
     return {
         'name': system_model_config.name,
-        'endpoint': system_model_config.endpoints[0],
+        'endpoint': system_model_config.endpoints[0]['url'],
         'token': request.state.authorization,
         'parameters': dict(system_model_config.parameters),
         'server': 'tgi'
@@ -180,7 +179,7 @@ async def embeddings_model_config(request: Request) -> Dict[str, any]:
         HTTPException(status_code=404, detail='Expected Embedding Model, got None')
     return {
         'name': active_model_config.name,
-        'endpoint': active_model_config.endpoints[0],
+        'endpoint': active_model_config.endpoints[0]['url'],
         'token': request.state.authorization,
         'dimensions': active_model_config.dimensions,
         'server': 'tei'
@@ -210,7 +209,7 @@ def vector_store_config(request: Request) -> Dict[str, Any]:
     vector_store_schema = json.loads(vector_store_schema_str)
 
     return {
-        'client': request.state.redis_client,
+        'client': request.app.state.redis_client,
         # 'url': os.environ['REDIS_URL'],
         'metadata_schema': vector_store_schema,
     }

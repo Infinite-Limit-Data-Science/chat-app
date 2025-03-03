@@ -479,22 +479,22 @@ async def test_unsafe_content(
     assert len(ai_content) > 0 
 
 # ask question on multiple docs stored previously in vector database
-# async def test_vector_history_with_multiple_docs
+# async def test_vector_history_from_multiple_docs
 
 # async def test_usage_tokens_with_callback
 
 # async def test_images_embedded_in_docs
 
-# actually system openai standard is human, ai, human, ai
-# when i create multiple candidate completions, it will have
-# to use the same human prompt twice!
+# openai requires cycles of human, ai, human, ai, so multiple
+# candidate completions must account for that
+# may require storing the same human prompt twice
 
-# the only way to do this is to preserve the template,
-# but change out the context based on new retriever strategy 
-# such as similarity instead of mmr and then pass the newly
-# generated template to new node in langgraph and then invoke the
-# model again and store the aimessage in the return of the graph
-# so it is also streamed, and you must make sure history preserved
+# Must change out the `context` block in prompt template based 
+# on new retriever strategy such as similarity instead of mmr 
+# and then pass the newly generated template to new node in 
+# langgraph and then invoke the model again and store the 
+# aimessage in  the return of the graph so it is also streamed, 
+# and you must make sure history preserved
 # and self.chat_model.bind(new temperature)
 # @pytest.mark.asyncio
 # async def test_multiple_candidate_completions(

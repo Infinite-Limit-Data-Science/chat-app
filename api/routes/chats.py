@@ -7,9 +7,9 @@ from ..gwblue_chat_bot.chat_bot_config import ChatBotConfig
 async def chat(
     *,
     system: str,
-    input: Union[str, List[Any]],
+    input: List[Any],
     config: ChatBotConfig,
-    metadata: Dict[str, Any],
+    vector_metadata: List[Dict[str, Any]],
 ) -> Callable[[], AsyncGenerator[str, None]]:
     """
     Return a streaming generator of LLM response chunks.
@@ -17,20 +17,24 @@ async def chat(
       - A string (no images)
       - A list (possibly with image dicts, e.g. [{'image_url': {...}}, 'some text'])
     """
+    message_metadata = {k: vector_metadata[0][k] for k in ('uuid', 'conversation_id')}
 
-    if isinstance(input, str):
+    if isinstance(input, list) and len(input) == 1:
         chat_prompt = ChatPromptTemplate.from_messages([
             ('system', system),
-            ('human', '{user_input}')
+            ('human', '{input}')
         ])
-        chain_input = {'user_input': input}
+        chain_input = {'input': input}
 
     else:
         chat_prompt = ChatPromptTemplate.from_messages([
             ('system', system),
-            ('human', input)
+            ('human', [
+                {'image_url': {'url': "{image_url}"}},
+                '{input}'
+            ])
         ])
-        chain_input = {}
+        chain_input = {'input': input[0], 'image_url': input[1]['image_url']['url']}
 
     chat_bot = ChatBot(config=config)
     chain = chat_prompt | chat_bot
@@ -38,11 +42,11 @@ async def chat(
     run_config = RunnableConfig(
         tags=[
             "chat_bot_run_test",
-            f"uuid_{metadata.get('uuid', 'unknown')}",
-            f"conversation_id_{metadata.get('conversation_id', 'unknown')}"
+            f"uuid_{message_metadata['uuid']}",
+            f"conversation_id_{message_metadata['conversation_id']}"
         ],
         metadata={
-            'vector_metadata': [metadata]
+            'vector_metadata': vector_metadata
         },
         configurable={
             'retrieval_mode': 'mmr'
@@ -51,7 +55,8 @@ async def chat(
 
     async def stream_response():
         async for chunk in chain.astream(chain_input, config=run_config):
-            yield chunk
+            data_str = chunk.model_dump_json(indent=2)
+            yield data_str
 
     return stream_response
 

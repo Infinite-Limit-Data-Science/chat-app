@@ -42,7 +42,8 @@ async def lifespan(app: FastAPI):
         await history_store.connect()
         db = history_store.get_database()
  
-        existing_indexes = await db['messages'].list_indexes()
+        cursor = db['messages'].list_indexes()
+        existing_indexes = await cursor.to_list(length=None)
         existing_index_names = [ix['name'] for ix in existing_indexes]
         if 'type_content_conversation_id_index' not in existing_index_names:
             await db['messages'].create_index(

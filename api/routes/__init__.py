@@ -5,8 +5,9 @@ from .settings import router as settings_router
 from .default import router as default_router
 from .chats import chat
 from .configs import (
-    refresh_model_configs, get_current_models, get_current_guardrails, 
-    get_current_embedding_models, get_prompt_template)
+    refresh_model_configs, 
+    get_prompt_template,
+)
 from .uploads import ingest_files
 
 __all__ = [
@@ -17,9 +18,6 @@ __all__ = [
     'default_router',
     'chat',
     'refresh_model_configs',
-    'get_current_models',
-    'get_current_guardrails',
-    'get_current_embedding_models',
     'get_prompt_template',
     'ingest_files',
 ]

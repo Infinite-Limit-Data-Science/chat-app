@@ -94,7 +94,7 @@ class MetaLlama3170BInstructPretrainedTokenizer:
     def extract_dimensions(config: dict) -> int:
         return config.get('hidden_size')
     
-class Llama90BVisionInstructPretrainedTokenizer:
+class Llama3290BVisionInstructPretrainedTokenizer:
     _tokenizer_name = TokenizerDescriptor()
 
     def __init__(self, name: Optional[str] = None):
@@ -104,6 +104,16 @@ class Llama90BVisionInstructPretrainedTokenizer:
     def extract_dimensions(config: dict) -> int:
         return config.get('text_config').get('hidden_size')
 
+class Llama3211BVisionInstructPretrainedTokenizer:
+    _tokenizer_name = TokenizerDescriptor()
+
+    def __init__(self, name: Optional[str] = None):
+        self._tokenizer_name = name or 'meta_llama_3_2_11B_Vision_Instruct'
+    
+    @staticmethod
+    def extract_dimensions(config: dict) -> int:
+        return config.get('text_config').get('hidden_size')
+    
 class LlamaGuard38BPretrainedTokenizer:
     _tokenizer_name = TokenizerDescriptor()
 

@@ -125,7 +125,7 @@ async def create_conversation(
             else:
                 logger.warning(f'Unrecognized file type {f.filename} with content_type {f.content_type}')
     
-    vectorstore_metadata = {}
+    vectorstore_metadata = []
     filenames = []
     if ingestible_files:
         vectorstore_metadata, filenames = await ingest_files(
@@ -133,13 +133,20 @@ async def create_conversation(
             config=chat_bot_config,
             metadata={
                 'uuid': request.state.uuid,
-                'conversation_id': str(created_conversation_id)
+                'conversation_id': str(created_conversation_id),
             },
         )
         await ConversationRepo.update_one(
             created_conversation_id, 
             _set={'filenames': filenames}
         )
+    else:
+        vectorstore_metadata = [
+            {
+                'uuid': request.state.uuid,
+                'conversation_id': str(created_conversation_id),
+            }            
+        ]
 
     image_prompts = []
     for img_file in image_files:
@@ -167,7 +174,7 @@ async def create_conversation(
             system=system_prompt,
             input=user_prompt_parts,
             config=chat_bot_config,
-            metadata=vectorstore_metadata,
+            vector_metadata=vectorstore_metadata,
         )
 
         return StreamingResponse(llm_stream(), media_type='text/event-stream')        
