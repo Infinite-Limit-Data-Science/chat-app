@@ -505,4 +505,6 @@ async def test_unsafe_content(
 # ):
 #     ...
 
+# async def test_tool_calling_with_dataframe_tool
+
 
