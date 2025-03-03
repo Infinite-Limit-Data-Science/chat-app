@@ -31,6 +31,7 @@ from langchain_core.runnables import (
     RunnablePassthrough,
     RunnableParallel,
     RunnableBranch,
+    RunnableBinding,
 )
 from langchain_core.tracers.schemas import Run
 from langchain_core.prompts import BasePromptTemplate
@@ -92,6 +93,29 @@ O = TypeVar('O', bound=ChatGenerationLike)
 C = TypeVar('C', bound=BaseChatModel)
 S = TypeVar('S', bound=BaseChatModel)
 
+def _clamp_temperature(temp: float) -> float:
+    if temp < 1.0:
+        return 1.0
+    elif temp >= 5.0:
+        return 0.0
+    else:
+        return max(0.0, min(1.0, temp))    
+
+def _textualize_model_input(content: Any) -> str:
+    if isinstance(content, str):
+        return content
+
+    elif isinstance(content, list):
+        text_chunks = []
+        for item in content:
+            if isinstance(item, dict) and item.get('type') == 'text':
+                text_value = item.get('text', '')
+                text_chunks.append(text_value)
+        return " ".join(text_chunks)
+
+    else:
+        return ""
+        
 class StreamingResponse(BaseModel):
     type: str
     content: str
@@ -111,6 +135,8 @@ class ChatBot(RunnableSerializable[I, O]):
     vector_store: RedisVectorStoreTTL = Field(default=None, exclude=True)
     message_history: MongoMessageHistory = Field(default=None, exclude=True)
 
+    alt: Optional[bool] = False
+
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
     )
@@ -129,6 +155,12 @@ class ChatBot(RunnableSerializable[I, O]):
         self.chat_model = inference_engine[self.config.llm.server]('chat_model')
         self.safety_model = inference_engine[self.config.guardrails.server]('guardrails')
         self.embeddings = inference_engine[self.config.embeddings.server]('embeddings')
+
+        if self.alt:
+            self.chat_model.llm = self.chat_model.llm.bind(
+                temperature=_clamp_temperature(self.config.llm.parameters['temperature']),
+                seed=42,
+            )
 
         config = RedisConfig(**{
             'redis_client': self.config.vectorstore.client,
@@ -233,7 +265,7 @@ class ChatBot(RunnableSerializable[I, O]):
                 'session_id': str(self.config.message_history.session_id),
                 'message_id': ai_message_chunk.additional_kwargs.get('uuid', ''),
             })
-
+    
     @staticmethod
     def preprompt_filter(state: State, metadata: Dict[str, Any]) -> RunnableLambda:
         def create_preprompt_filter(input_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -271,8 +303,13 @@ class ChatBot(RunnableSerializable[I, O]):
         `AIMessage` means that any metadata associated with that AIMessage is lost,
         scuh as token_usage or logprobs
         """
+        human_prompt = state['messages'][-2]
         answer_parser = RunnableLambda(lambda ai_message: {'answer': ai_message.content } )
-        chain = registry['chat_preprompt_template'](system_prompt) | self.chat_model | answer_parser
+        if isinstance(human_prompt.content, str):
+            chain = registry['chat_prompt_with_history'](system_prompt) | self.chat_model | answer_parser
+        else:
+            chain = registry['multimodal_prompt_with_history'](system_prompt) | self.chat_model | answer_parser
+        
         return chain.with_config(run_name=f'generic_chat_model_chain_{state['route']}')    
 
     def create_history_aware_retriever(
@@ -392,18 +429,6 @@ class ChatBot(RunnableSerializable[I, O]):
             preprompt_filter=self.preprompt_filter(state, {})
         )
 
-    # def create_multicontext_aware_chain(self, llm: BaseChatModel, source_retrievers: List[AbstractVectorRetriever]):
-    #     multi_retriever_chain = self.create_multi_retriever_chain(llm, source_retrievers)
-    #     stuffing_chain = self.create_multi_stuff_chain(llm)
-        
-    #     multicontext_aware_chain = (
-    #         RunnablePassthrough.assign(
-    #             context=multi_retriever_chain.with_config(run_name='retrieval_chain'),
-    #         ).assign(answer=stuffing_chain)
-    #     ).with_config(run_name='multicontext_aware_chain')
-
-    #     return multicontext_aware_chain
-
     def create_multicontext_aware_chain(self, state: State) -> Runnable:
         system_prompt = state['messages'][0].content
         retrievers = []
@@ -479,7 +504,18 @@ class ChatBot(RunnableSerializable[I, O]):
         config: Optional[RunnableConfig] = None,
     ) -> dict:
         system_prompt = state['messages'][0].content
-        human_prompt = state['messages'][-2].content
+        human_message = state['messages'][-2]
+
+        if isinstance(state['messages'][-2].content, str):
+            input_dict = {'input': state['messages'][-2].content}
+        elif isinstance(human_message.content, list):
+            input_dict = {'input': '', 'image_url': ''}
+            for item in human_message.content:
+                if isinstance(item, dict):
+                    if item.get('type') == 'image_url':
+                        input_dict['image_url'] = item['image_url']['url']
+                    elif item.get('type') == 'text':
+                        input_dict['input'] = item['text']
 
         async def on_start(run: Run, config: RunnableConfig):
             await self._aenter_chat_chain(run, config, system_prompt)
@@ -502,18 +538,20 @@ class ChatBot(RunnableSerializable[I, O]):
                     'configurable': { 'session_id': self.config.message_history.session_id } # TODO: generalize to session_id
                 }
             )
-        chain_values = await chain_with_history.ainvoke({'input': human_prompt}, config=config['configurable'])        
+        chain_values = await chain_with_history.ainvoke(input_dict, config=config['configurable'])        
         return { 'messages': [AIMessage(content=chain_values['answer'])] }
     
     def _compile(self, graph: StateGraph):
         async def guardrails(state: State) -> State:
-            ai_message = await self.safety_model.ainvoke([state['messages'][1]])
+            user_content = state['messages'][1].content
+            sanitized_text = _textualize_model_input(user_content)
+            ai_message = await self.safety_model.ainvoke([sanitized_text])
 
             guardrails_message = AIMessage(
                 content=ai_message.content,
                 additional_kwargs={'guardrails': True},
             )
-            return {**state, "messages": [guardrails_message]}
+            return {**state, 'messages': [guardrails_message]}
 
         def guardrails_condition(state: State) -> str:
             last_msg: AIMessage = state["messages"][-1]
@@ -548,7 +586,7 @@ class ChatBot(RunnableSerializable[I, O]):
             if len(metadata) == 1 and 'source' in metadata[0]:
                 return {"route": 'single_doc_prompt', **state}
         
-            human_prompt = state['messages'][-2].content
+            human_prompt = _textualize_model_input(state['messages'][-2].content)
             vector_filter = metadata[0]
 
             filter_expression = (

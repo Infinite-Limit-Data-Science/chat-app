@@ -1,26 +1,59 @@
-from typing import Callable, AsyncGenerator, Dict, Any
+from typing import Callable, AsyncGenerator, Dict, Any, Union, List
 from langchain_core.prompts.chat import ChatPromptTemplate
+from langchain_core.runnables.config import RunnableConfig
 from ..gwblue_chat_bot.chat_bot import ChatBot
 from ..gwblue_chat_bot.chat_bot_config import ChatBotConfig
 
 async def chat(
     *,
     system: str,
-    input: str,
+    input: Union[str, List[Any]],
     config: ChatBotConfig,
     metadata: Dict[str, Any],
 ) -> Callable[[], AsyncGenerator[str, None]]:
-    chat_prompt = ChatPromptTemplate.from_messsages([
-        ('system', system),
-        ('human', '{input}')
-    ])
+    """
+    Return a streaming generator of LLM response chunks.
+    The `input` can be:
+      - A string (no images)
+      - A list (possibly with image dicts, e.g. [{'image_url': {...}}, 'some text'])
+    """
+
+    if isinstance(input, str):
+        chat_prompt = ChatPromptTemplate.from_messages([
+            ('system', system),
+            ('human', '{user_input}')
+        ])
+        chain_input = {'user_input': input}
+
+    else:
+        chat_prompt = ChatPromptTemplate.from_messages([
+            ('system', system),
+            ('human', input)
+        ])
+        chain_input = {}
+
     chat_bot = ChatBot(config=config)
+    chain = chat_prompt | chat_bot
 
-    chain = chat_prompt | chat_bot 
+    run_config = RunnableConfig(
+        tags=[
+            "chat_bot_run_test",
+            f"uuid_{metadata.get('uuid', 'unknown')}",
+            f"conversation_id_{metadata.get('conversation_id', 'unknown')}"
+        ],
+        metadata={
+            'vector_metadata': [metadata]
+        },
+        configurable={
+            'retrieval_mode': 'mmr'
+        }
+    )
 
-    # I NEED TO DO A RUNNABLE_PARALLEL AND PASS retrieval_mode mmr for one and retrieval_mode similarity_search_with_threshold for the other !!!!
-    # THIS SHOULD ONLY BE DONE WITH DOCUMENT UPLOADS. IF NO DOCUMENT UPLOAD, THEN ONLY SEND BACK A SINGLE RESPONSE.
-    return await chain.astream({'input': input}, metadata=metadata, retrieval_mode='mmr')
+    async def stream_response():
+        async for chunk in chain.astream(chain_input, config=run_config):
+            yield chunk
+
+    return stream_response
 
 
     # Chat bot should be invoked with dictionary:

@@ -1,28 +1,40 @@
 from typing import Optional, List, Union
+import base64
 from bson import ObjectId
 from fastapi import (
-    APIRouter, status, Request, Form, 
-    Depends, File, UploadFile)
+    APIRouter, 
+    status, 
+    Request, 
+    Form, 
+    Depends, 
+    File, 
+    UploadFile,
+)
+from fastapi.exceptions import HTTPException
 from fastapi.responses import StreamingResponse
-from ..langchain_chat import LLM
-from ..langchain_doc import BaseEmbedding
+from huggingface_hub.errors import HfHubHTTPError
 from ..logger import logger
 from ..models.mongo_schema import ObjectId
 from ..auth.bearer_authentication import get_current_user
 from .chats import chat
 from .configs import (
-    get_current_models, get_current_embedding_models, 
-    get_prompt_template, get_current_guardrails,
-    DEFAULT_PREPROMPT)
+    active_chat_bot_config,
+    get_prompt_template,
+    DEFAULT_PREPROMPT,
+    DEFAULT_IMAGE_PROMPT,
+)
 from .uploads import ingest_files
 from ..models.message import (
     Message,
     MessageSchema,
 )
 from ..repositories.base_mongo_repository import (
-    base_mongo_factory as factory)
+    base_mongo_factory as factory
+)
 from ..repositories.conversation_mongo_repository import (
-    ConversationMongoRepository as ConversationRepo)
+    ConversationMongoRepository as ConversationRepo
+)
+from ..gwblue_chat_bot.chat_bot_config import ChatBotConfig
 
 # TODO: extract to env var
 _DATABASE_STRATEGY = 'mongodb'
@@ -46,33 +58,89 @@ async def create_message(
     conversation_id: str,
     content: str = Form(...),
     upload_files: Optional[List[UploadFile]] = File(None),
-    models: List[LLM] = Depends(get_current_models),
-    embedding_models: List[BaseEmbedding]  = Depends(get_current_embedding_models),
-    guardrails: List[LLM] = Depends(get_current_guardrails),
-    prompt_template: str = Depends(get_prompt_template)):
-    """Insert new message record in configured database, returning AI Response"""
+    chat_bot_config: ChatBotConfig = Depends(active_chat_bot_config),
+    system_prompt: str = Depends(get_prompt_template),
+):
     logger.info(f'invoking message endpoint with content `{content}`')
 
-    retrievers = []
     if _DATABASE_STRATEGY == 'mongodb':
         conversation_id = ObjectId(conversation_id)
-    data = { 'uuid': request.state.uuid, 'conversation_id': conversation_id }
-    if upload_files:
-        retrievers, filenames = await ingest_files(embedding_models, upload_files, data)
-        await ConversationRepo.update_one(conversation_id, _set={ 'filenames': filenames })
-    message_schema = MessageSchema(type='human', content=content, conversation_id=conversation_id)
-    prompt = prompt_template or DEFAULT_PREPROMPT
 
-    llm_stream = await chat(
-        prompt, 
-        models, 
-        guardrails, 
-        embedding_models, 
-        data, 
-        retrievers, 
-        message_schema)
-    
-    return StreamingResponse(llm_stream(), media_type='text/event-stream', headers={'X-Accel-Buffering': 'no'})
+    ingestible_files = []
+    image_files = []
+    if upload_files:
+        for f in upload_files:
+            if f.content_type in [
+                'application/pdf',
+                'application/msword',
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                'text/plain',
+            ]:
+                ingestible_files.append(f)
+            elif f.content_type.startswith('image/'):
+                image_files.append(f)
+            else:
+                logger.warning(f'Unrecognized file type {f.filename} with content_type {f.content_type}')
+
+    vectorstore_metadata = {}
+    filenames = []
+    if ingestible_files:
+        vectorstore_metadata, filenames = await ingest_files(
+            files=ingestible_files,
+            config=chat_bot_config,
+            metadata={
+                'uuid': request.state.uuid,
+                'conversation_id': str(conversation_id)
+            },
+        )
+        await ConversationRepo.update_one(
+            conversation_id,
+            _set={'filenames': filenames}
+        )
+    else:
+        vectorstore_metadata = {}
+
+    image_prompts = []
+    for img_file in image_files:
+        raw_bytes = await img_file.read()
+        encoded = base64.b64encode(raw_bytes).decode('utf-8')
+        subtype = img_file.content_type.split('/')[-1]
+        image_url = f'data:image/{subtype};base64,{encoded}'
+        image_prompts.append({'image_url': {'url': image_url}})
+
+    base_system_prompt = DEFAULT_IMAGE_PROMPT if len(image_prompts) > 0 else DEFAULT_PREPROMPT
+    system_prompt = system_prompt or base_system_prompt
+
+    user_prompt_parts = [content]
+    for img_obj in image_prompts:
+        user_prompt_parts.append(img_obj)
+    if image_prompts:
+        user_prompt_parts.append('Please describe the image(s).')
+
+    chat_bot_config.message_history.session_id = conversation_id
+
+    try:
+        llm_stream = await chat(
+            system=system_prompt,
+            input=user_prompt_parts,
+            config=chat_bot_config,
+            metadata=vectorstore_metadata,
+        )
+        return StreamingResponse(
+            llm_stream(),
+            media_type='text/event-stream',
+            headers={'X-Accel-Buffering': 'no'}
+        )
+    except HfHubHTTPError as e:
+        error_info = {
+            'url': e.response.url,
+            'status_code': e.response.status_code,
+            'error_message': e.response.text,
+            'error_type': type(e).__name__,
+        }
+        logger.warning(f'Request failed error_info {error_info}')
+        raise HTTPException(status_code=e.response.status_code, detail=error_info)
 
 @router.get(
     '/{conversation_id}/message/{id}',

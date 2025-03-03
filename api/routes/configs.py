@@ -21,6 +21,7 @@ from ..gwblue_chat_bot.chat_bot_config import (
 )
 
 DEFAULT_PREPROMPT='You are an assistant for question-answering tasks. Answer the questions to the best of your ability.'
+DEFAULT_IMAGE_PROMPT="You're a helpful assistant who can create text from images"
 
 SettingRepo = factory(Setting)
 

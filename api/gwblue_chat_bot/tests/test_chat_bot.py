@@ -1,12 +1,13 @@
 import os
 import json
 import pytest
+import base64
 from pathlib import Path
 from typing import Dict, Any, List, Generator
 from redis.client import Redis
 from redis.connection import ConnectionPool
 from langchain_core.prompts.chat import ChatPromptTemplate
-from langchain_core.runnables import RunnableConfig
+from langchain_core.runnables import RunnableConfig, RunnableParallel
 from ..chat_bot_config import (
     LLMConfig,
     EmbeddingsConfig,
@@ -35,7 +36,6 @@ def redis_client() -> Redis:
             socket_timeout=30.0
         )
     )
-
     return redis_client
 
 @pytest.fixture
@@ -203,7 +203,11 @@ async def test_single_doc_prompt(
     chain = chat_prompt | chat_bot
 
     config = RunnableConfig(
-        tags=['chat_bot_run_test', f'uuid_${message_metadata['uuid']}', f'conversation_id_${message_metadata['uuid']}'],
+        tags=[
+            'chat_bot_run_test', 
+            f'uuid_${message_metadata['uuid']}', 
+            f'conversation_id_${message_metadata['uuid']}'
+        ],
         metadata={ 'vector_metadata': metadatas },
         configurable={ 'retrieval_mode': 'mmr' }
     )
@@ -247,7 +251,11 @@ async def test_multi_doc_prompt(
     chain = chat_prompt | chat_bot
 
     config = RunnableConfig(
-        tags=['chat_bot_run_test', f'uuid_${message_metadata['uuid']}', f'conversation_id_${message_metadata['uuid']}'],
+        tags=[
+            'chat_bot_run_test', 
+            f'uuid_${message_metadata['uuid']}', 
+            f'conversation_id_${message_metadata['uuid']}'
+        ],
         metadata={ 'vector_metadata': metadatas },
         configurable={ 'retrieval_mode': 'mmr' }
     )
@@ -281,7 +289,11 @@ async def test_pretrained_corpus_prompt(
     chain = chat_prompt | chat_bot
 
     config = RunnableConfig(
-        tags=['chat_bot_run_test', f'uuid_${message_metadata['uuid']}', f'conversation_id_${message_metadata['uuid']}'],
+        tags=[
+            'chat_bot_run_test', 
+            f'uuid_${message_metadata['uuid']}', 
+            f'conversation_id_${message_metadata['uuid']}'
+        ],
         metadata={ 'vector_metadata': [message_metadata] },
         configurable={ 'retrieval_mode': 'mmr' }
     )
@@ -298,16 +310,84 @@ async def test_pretrained_corpus_prompt(
     
     assert len(ai_content) > 0    
 
+@pytest.mark.asyncio
+async def test_multimodal_image(
+    chat_bot_config: ChatBotConfig,
+    message_metadata: Dict[str, Any],
+    conversation_doc: Dict[str, Any],
+):
+    chat_bot_config.message_history.session_id = conversation_doc['_id']
 
-# async def test_multiple_candidate_completions
-        # I NEED TO DO A RUNNABLE_PARALLEL AND PASS retrieval_mode mmr for one and retrieval_mode similarity_search_with_threshold for the other !!!!
-        # THIS SHOULD ONLY BE DONE WITH DOCUMENT UPLOADS. IF NO DOCUMENT UPLOAD, THEN ONLY SEND BACK A SINGLE RESPONSE.
-        # NEED TO TEST FOLLOW UP QUESTIONS THAT REMEMBER HISTORY
+    image_path = Path(__file__).parent / 'assets' / 'baby.jpg'
+    with image_path.open('rb') as f:
+        base64_image = base64.b64encode(f.read()).decode('utf-8')
+    image_url = f'data:image/jpeg;base64,{base64_image}'
 
-# async def test_multimodal_image
+    chat_prompt = ChatPromptTemplate.from_messages([
+        ('system', "You're a helpful assistant who can create text from images"),
+        ('human', 
+            [
+                {'image_url': {'url': "{image_url}"}},
+                '{input}'
+            ]
+        )
+    ])
+    
+    chat_bot = ChatBot(config=chat_bot_config)
+    chain = chat_prompt | chat_bot
+
+    config = RunnableConfig(
+        tags=[
+            'chat_bot_run_test', 
+            f'uuid_${message_metadata['uuid']}', 
+            f'conversation_id_${message_metadata['uuid']}'
+        ],
+        metadata={ 'vector_metadata': [message_metadata] },
+        configurable={ 'retrieval_mode': 'mmr' }
+    )
+
+
+    ai_content = ''
+    streaming_resp = []
+    async for chunk in chain.astream(
+        {
+            'input': 'Describe the image.',
+            'image_url': image_url,
+        },
+        config=config
+    ):
+        print(f'Custom event ${chunk.content}')
+        ai_content += chunk.content
+        streaming_resp.append(chunk)
+
+    assert len(ai_content) > 0
 
 # async def test_message_history
 
 # async def test_vector_history
 
 # async def test_unsafe_content
+
+# async def test_usage_tokens_with_callback
+
+# actually system openai standard is human, ai, human, ai
+# when i create multiple candidate completions, it will have
+# to use the same human prompt twice!
+
+# the only way to do this is to preserve the template,
+# but change out the context based on new retriever strategy 
+# such as similarity instead of mmr and then pass the newly
+# generated template to new node in langgraph and then invoke the
+# model again and store the aimessage in the return of the graph
+# so it is also streamed, and you must make sure history preserved
+# and self.chat_model.bind(new temperature)
+# @pytest.mark.asyncio
+# async def test_multiple_candidate_completions(
+#     chat_bot_config: ChatBotConfig,
+#     message_metadata: Dict[str, Any],
+#     conversation_doc: Dict[str, Any],
+#     compare_documents: List[UploadFile],    
+# ):
+#     ...
+
+

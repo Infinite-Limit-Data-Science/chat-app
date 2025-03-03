@@ -5,6 +5,7 @@ from langchain_core.prompts import (
     MessagesPlaceholder, 
     PromptTemplate,
 )
+from langchain_core.messages import HumanMessage
 
 registry = {}
 
@@ -39,7 +40,6 @@ CONTEXTUALIZED_TEMPLATE = """
 """
 @register('contextualized_template')
 def contextualized_template():
-    """Returns runnable"""
     return ChatPromptTemplate.from_messages([
         ('system', CONTEXTUALIZED_TEMPLATE),
         MessagesPlaceholder('chat_history'),
@@ -51,7 +51,6 @@ You are an assistant for question-answering tasks.
 """
 @register('qa_template')
 def qa_template(preprompt: Optional[str] = None) -> ChatPromptTemplate:
-    """Returns runnable with a dynamic preprompt."""
     preprompt_text = preprompt or MY_CHAT_TEMPLATE
     
     system_template = f"""
@@ -69,15 +68,28 @@ def qa_template(preprompt: Optional[str] = None) -> ChatPromptTemplate:
         ('human', "{input}"),
     ])
 
-@register('chat_preprompt_template')
-def chat_preprompt_template(preprompt: Optional[str] = None) -> ChatPromptTemplate:
-    """Returns runnable"""
-    system_template = preprompt or MY_CHAT_TEMPLATE
+@register('chat_prompt_with_history')
+def chat_prompt_with_history(system_prompt: Optional[str] = None) -> ChatPromptTemplate:
+    system_prompt = system_prompt or MY_CHAT_TEMPLATE
     return ChatPromptTemplate.from_messages([
-        ("system",system_template),
+        ("system",system_prompt),
         MessagesPlaceholder('chat_history'),
         ('human', "{input}"),
     ])
+
+@register('multimodal_prompt_with_history')
+def multimodal_prompt_with_history(system_prompt: Optional[str] = None) -> ChatPromptTemplate:
+    system_prompt = system_prompt or MY_CHAT_TEMPLATE
+    return ChatPromptTemplate.from_messages([
+        ("system",system_prompt),
+        MessagesPlaceholder('chat_history'),
+        ('human', 
+            [
+                {'image_url': {'url': "{image_url}"}},
+                '{input}'
+            ]
+        ),
+    ])    
 
 SUMMARIZATION_TEMPLATE = """Provide a concise summary in a few words, and prefix the summary with an emoji that reflects the tone of the summary:
 
@@ -102,7 +114,6 @@ Please compare and analyze the information from different documents.
 """
 @register('history_compare_template')
 def history_compare_template():
-    """Returns runnable"""
     return ChatPromptTemplate.from_messages([
         ("system",HISTORY_COMPARE_TEMPLATE),
         MessagesPlaceholder('chat_history'),
@@ -143,7 +154,6 @@ Provide your safety assessment for ONLY THE LAST user message in the above conve
 """
 @register('guardrails_template')
 def guardrails_template():
-    """Returns runnable"""
     return PromptTemplate(
         input_variables=['input', 'agent_type'],
         template=CONTENT_SAFETY_TEMPLATE
