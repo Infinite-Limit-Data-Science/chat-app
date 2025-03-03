@@ -259,7 +259,7 @@ class ChatBot(RunnableSerializable[I, O]):
             yield StreamingResponse(**{
                 'type': ai_message_chunk.__class__.__name__,
                 'content': ai_message_chunk.content,
-                'token_usage': ai_message_chunk.additional_kwargs['token_usage'],
+                'token_usage': ai_message_chunk.additional_kwargs.get('token_usage', {}),
                 'tool_calls': ai_message_chunk.additional_kwargs.get('tool_calls', []),
                 'vector_metadata': state_args.get('vector_metadata', []),
                 'session_id': str(self.config.message_history.session_id),
@@ -538,7 +538,7 @@ class ChatBot(RunnableSerializable[I, O]):
                     'configurable': { 'session_id': self.config.message_history.session_id } # TODO: generalize to session_id
                 }
             )
-        chain_values = await chain_with_history.ainvoke(input_dict, config=config['configurable'])        
+        chain_values = await chain_with_history.ainvoke(input_dict, config=config['configurable'])
         return { 'messages': [AIMessage(content=chain_values['answer'])] }
     
     def _compile(self, graph: StateGraph):
@@ -556,7 +556,9 @@ class ChatBot(RunnableSerializable[I, O]):
         def guardrails_condition(state: State) -> str:
             last_msg: AIMessage = state["messages"][-1]
             text = last_msg.content.lower().strip('\n')
-            if 'safe' in text:
+            if 'unsafe' in text:
+                return 'not_safe'
+            elif 'safe' in text:
                 return 'route_query'
             else:
                 return 'not_safe'
@@ -564,11 +566,12 @@ class ChatBot(RunnableSerializable[I, O]):
         def not_safe(_: State):
             return {
                 "messages": [
-                    AIMessage(
-                        content='Your request cannot be processed. (Content flagged as not safe.)'
+                    AIMessageChunk(
+                        content="Your request cannot be processed. (Content flagged as not safe.)"
                     )
                 ]
-            }          
+            }
+           
         async def route_query(state: State):
             """
             Account for scenarios:
