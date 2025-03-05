@@ -7,7 +7,7 @@ from ..gwblue_chat_bot.chat_bot_config import ChatBotConfig
 async def chat(
     *,
     system: str,
-    input: List[Any],
+    input_dict: Dict[str, Any],
     config: ChatBotConfig,
     vector_metadata: List[Dict[str, Any]],
 ) -> Callable[[], AsyncGenerator[str, None]]:
@@ -19,22 +19,17 @@ async def chat(
     """
     message_metadata = {k: vector_metadata[0][k] for k in ('uuid', 'conversation_id')}
 
-    if isinstance(input, list) and len(input) == 1:
+    chat_prompt = ChatPromptTemplate.from_messages([
+        ('system', system),
+        ('human', '{input}')
+    ])
+    if input_dict.get('prompt', False):
         chat_prompt = ChatPromptTemplate.from_messages([
             ('system', system),
-            ('human', '{input}')
+            ('human', input_dict['prompt'])
         ])
-        chain_input = {'input': input}
 
-    else:
-        chat_prompt = ChatPromptTemplate.from_messages([
-            ('system', system),
-            ('human', [
-                {'image_url': {'url': "{image_url}"}},
-                '{input}'
-            ])
-        ])
-        chain_input = {'input': input[0], 'image_url': input[1]['image_url']['url']}
+    input = input_dict['input']
 
     chat_bot = ChatBot(config=config)
     chain = chat_prompt | chat_bot
@@ -54,7 +49,7 @@ async def chat(
     )
 
     async def stream_response():
-        async for chunk in chain.astream(chain_input, config=run_config):
+        async for chunk in chain.astream({'input': input}, config=run_config):
             data_str = chunk.model_dump_json(indent=2)
             yield data_str
 

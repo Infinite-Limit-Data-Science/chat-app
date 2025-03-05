@@ -152,27 +152,32 @@ async def create_conversation(
     for img_file in image_files:
         raw_bytes = await img_file.read()
         encoded = base64.b64encode(raw_bytes).decode('utf-8')
-
         subtype = img_file.content_type.split('/')[-1]
         image_url = f'data:image/{subtype};base64,{encoded}'
 
-        image_prompts.append({'image_url': {'url': image_url}})    
+        image_prompts.append({
+            "type": "image_url",
+            'image_url': {'url': image_url}
+        })   
+        image_prompts.append({
+            "type": "text",
+            'text': content
+        }) 
 
     try:
         base_system_prompt = DEFAULT_IMAGE_PROMPT if len(image_prompts) > 0 else DEFAULT_PREPROMPT
         system_prompt = system_prompt or base_system_prompt
 
-        user_prompt_parts = [content]
-        for img_obj in image_prompts:
-            user_prompt_parts.append(img_obj)
-        if image_prompts:
-            user_prompt_parts.append('Please describe the image(s).')
+        if content and image_prompts:
+            input_dict = {'input': content, 'prompt': image_prompts }
+        elif content:
+            input_dict = {'input': content }
 
         chat_bot_config.message_history.session_id = created_conversation_id
 
         llm_stream = await chat(
             system=system_prompt,
-            input=user_prompt_parts,
+            input_dict=input_dict,
             config=chat_bot_config,
             vector_metadata=vectorstore_metadata,
         )

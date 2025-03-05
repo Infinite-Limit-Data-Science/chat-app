@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Generator
 from redis.client import Redis
 from redis.connection import ConnectionPool
-from langchain_core.prompts.chat import ChatPromptTemplate
+from langchain_core.prompts.chat import ChatPromptTemplate, PromptValue
 from langchain_core.runnables import RunnableConfig, RunnableParallel
 from ..chat_bot_config import (
     LLMConfig,
@@ -141,6 +141,27 @@ def compare_documents() -> list[UploadFile]:
         uploads.append(upload)
 
     return uploads
+
+@pytest.fixture
+def image_files() -> list[UploadFile]:
+    current_dir = Path(__file__).parent
+    files = [
+        current_dir / 'assets' / 'baby.jpg',
+        current_dir / 'assets' / 'persob.jpg',
+    ]
+
+    uploads = []
+    for path in files:
+        with path.open('rb') as f:
+            content = f.read()
+        upload = UploadFile(
+            file=io.BytesIO(content),
+            filename=path.name,
+            headers=Headers({'content-type': 'image/jpeg'}),
+        )
+        uploads.append(upload)
+
+    return uploads    
 
 @pytest.fixture
 def messages_db(chat_bot_config: ChatBotConfig) -> Database:
@@ -362,6 +383,7 @@ async def test_multimodal_image(
 
     assert len(ai_content) > 0
 
+
 @pytest.mark.asyncio
 async def test_message_history(
     chat_bot_config: ChatBotConfig,
@@ -478,17 +500,64 @@ async def test_unsafe_content(
     
     assert len(ai_content) > 0 
 
-# ask question on multiple docs stored previously in vector database
-# async def test_vector_history_from_multiple_docs
+@pytest.mark.asyncio
+async def test_multimodal_multiple_image(
+    chat_bot_config: ChatBotConfig,
+    message_metadata: Dict[str, Any],
+    conversation_doc: Dict[str, Any],
+    image_files: List[UploadFile],
+):
+    chat_bot_config.message_history.session_id = conversation_doc['_id']
 
-# async def test_usage_tokens_with_callback
+    prompt_parts = []
+    for img_file in image_files:
+        raw_bytes = await img_file.read()
+        encoded = base64.b64encode(raw_bytes).decode('utf-8')
+        subtype = img_file.content_type.split('/')[-1]
+        image_url = f'data:image/{subtype};base64,{encoded}'
 
-# async def test_images_embedded_in_docs
+        prompt_parts.append({
+            'type': 'image_url',
+            'image_url': {'url': image_url}
+        })
+        prompt_parts.append({
+            'type': 'text',
+            'text': 'Compare and contrast the images.'
+        })
+    
+    chat_prompt = ChatPromptTemplate.from_messages([
+        ('system', "You're a helpful assistant you can describe images."),
+        ('human', prompt_parts)
+    ])
+
+    chat_bot = ChatBot(config=chat_bot_config)
+    chain = chat_prompt | chat_bot
+    
+    config = RunnableConfig(
+        tags=[
+            'chat_bot_run_test', 
+            f'uuid_${message_metadata['uuid']}', 
+            f'conversation_id_${message_metadata['uuid']}'
+        ],
+        metadata={ 'vector_metadata': [message_metadata] },
+        configurable={ 'retrieval_mode': 'mmr' }
+    )
+
+    ai_content = ''
+    streaming_resp = []
+    async for chunk in chain.astream(
+        {'input': 'Compare and contrast the images'},
+        config=config
+    ):
+        print(f'Custom event ${chunk.content}')
+        ai_content += chunk.content
+        streaming_resp.append(chunk)
+    
+    assert len(ai_content) > 0 
 
 # openai requires cycles of human, ai, human, ai, so multiple
 # candidate completions must account for that
 # may require storing the same human prompt twice
-
 # Must change out the `context` block in prompt template based 
 # on new retriever strategy such as similarity instead of mmr 
 # and then pass the newly generated template to new node in 
@@ -504,6 +573,13 @@ async def test_unsafe_content(
 #     compare_documents: List[UploadFile],    
 # ):
 #     ...
+
+# async def test_images_embedded_in_docs
+
+# ask question on multiple docs stored previously in vector database
+# async def test_vector_history_from_multiple_docs
+
+# async def test_usage_tokens_with_callback
 
 # async def test_tool_calling_with_dataframe_tool
 

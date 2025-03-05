@@ -66,7 +66,7 @@ model=meta-llama/Llama-3.1-70B-Instruct
 token=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
 volume=$PWD/data
 
-docker container run --gpus all --shm-size 1g -e HUGGING_FACE_HUB_TOKEN=$token -p 8080:80 -v $volume:/data ghcr.io/huggingface/text-generation-inference:3.0.2 --model-id $model --max-batch-prefill-tokens 12582 --max-input-tokens 12582 --max-total-tokens 16777 --num-shard 8 --quantize bitsandbytes-nf4 --payload-limit 5000000
+docker container run --gpus all --shm-size 1g -e HUGGING_FACE_HUB_TOKEN=$token -p 8080:80 -v $volume:/data ghcr.io/huggingface/text-generation-inference:3.0.2 --model-id $model --max-batch-prefill-tokens 12582 --max-input-tokens 12582 --max-total-tokens 16777 --num-shard 8 --quantize bitsandbytes-nf4 --payload-limit 10000000
 
 # for llama guard ONLY:
 docker container run --gpus all --shm-size 1g -e HUGGING_FACE_HUB_TOKEN=$token -p 8080:80 -v $volume:/data ghcr.io/huggingface/text-generation-inference:3.0.2 --model-id $model --max-batch-prefill-tokens 12582 --max-input-tokens 12582 --max-total-tokens 13000 --num-shard 1 --quantize bitsandbytes-nf4 --payload-limit 5000000

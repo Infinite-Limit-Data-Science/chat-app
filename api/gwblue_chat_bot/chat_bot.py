@@ -21,7 +21,6 @@ import os
 import json
 from bson import ObjectId
 from collections import defaultdict
-from collections import deque
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.state import CompiledStateGraph
 from langchain_core.runnables import (
@@ -115,6 +114,12 @@ def _textualize_model_input(content: Any) -> str:
 
     else:
         return ""
+    
+def _chunk_pairs(pairs: List[Dict[str, Any]]):
+    if len(pairs) % 2 != 0:
+        raise ValueError('`pairs` must contain an even number of elements.')
+    for i in range(0, len(pairs), 2):
+        yield pairs[i : i + 2]
         
 class StreamingResponse(BaseModel):
     type: str
@@ -303,12 +308,8 @@ class ChatBot(RunnableSerializable[I, O]):
         `AIMessage` means that any metadata associated with that AIMessage is lost,
         scuh as token_usage or logprobs
         """
-        human_prompt = state['messages'][-2]
         answer_parser = RunnableLambda(lambda ai_message: {'answer': ai_message.content } )
-        if isinstance(human_prompt.content, str):
-            chain = registry['chat_prompt_with_history'](system_prompt) | self.chat_model | answer_parser
-        else:
-            chain = registry['multimodal_prompt_with_history'](system_prompt) | self.chat_model | answer_parser
+        chain = registry['chat_prompt_with_history'](system_prompt) | self.chat_model | answer_parser
         
         return chain.with_config(run_name=f'generic_chat_model_chain_{state['route']}')    
 
@@ -492,7 +493,7 @@ class ChatBot(RunnableSerializable[I, O]):
                 }, 
                 sort=[("createdAt", DESCENDING)])
         ) is not None:
-            chain = registry['summarization_template']() | self.chat_model
+            chain = registry['summarization_template']() | self.chat_model.bind(stream=False)
             summary = await chain.ainvoke({'input': ai_message['content']})
             self.message_history.chat_message_history.add_summary(summary.content)    
 
@@ -506,23 +507,17 @@ class ChatBot(RunnableSerializable[I, O]):
         system_prompt = state['messages'][0].content
         human_message = state['messages'][-2]
 
-        if isinstance(state['messages'][-2].content, str):
-            input_dict = {'input': state['messages'][-2].content}
+        if isinstance(human_message.content, str):
+            input_dict = {'input': human_message.content}
         elif isinstance(human_message.content, list):
-            input_dict = {'input': '', 'image_url': ''}
-            for item in human_message.content:
-                if isinstance(item, dict):
-                    if item.get('type') == 'image_url':
-                        input_dict['image_url'] = item['image_url']['url']
-                    elif item.get('type') == 'text':
-                        input_dict['input'] = item['text']
+            input_dict = { 'input': human_message.content[1]['text'] }
 
         async def on_start(run: Run, config: RunnableConfig):
             await self._aenter_chat_chain(run, config, system_prompt)
 
         async def on_end(run: Run, config: RunnableConfig):
             await self._aexit_chat_chain(run, config)
-                                     
+
         chain_with_history = self.message_history.get(chain).with_alisteners(
             on_start=on_start,
             on_end=on_end
@@ -545,7 +540,7 @@ class ChatBot(RunnableSerializable[I, O]):
         async def guardrails(state: State) -> State:
             user_content = state['messages'][1].content
             sanitized_text = _textualize_model_input(user_content)
-            ai_message = await self.safety_model.ainvoke([sanitized_text])
+            ai_message = await self.safety_model.bind(stream=False).ainvoke([sanitized_text])
 
             guardrails_message = AIMessage(
                 content=ai_message.content,
@@ -559,7 +554,7 @@ class ChatBot(RunnableSerializable[I, O]):
             if 'unsafe' in text:
                 return 'not_safe'
             elif 'safe' in text:
-                return 'route_query'
+                return 'prefill_system_prompt'
             else:
                 return 'not_safe'
 
@@ -571,7 +566,49 @@ class ChatBot(RunnableSerializable[I, O]):
                     )
                 ]
             }
-           
+
+        async def prefill_system_prompt(state: State) -> State:
+            import copy
+
+            system_message = state['messages'][0]
+            human_message = state['messages'][-2]
+            
+            if not isinstance(human_message.content, list):
+                return state
+
+            pairs = list(_chunk_pairs(human_message.content))
+            batches = []
+            for pair in pairs:
+                cloned_pair = [copy.deepcopy(item) for item in pair]
+                cloned_pair[1]['text'] = 'Describe the image in-depth.'
+                messages = [
+                    SystemMessage(content=system_message.content),
+                    HumanMessage(content=cloned_pair),
+                ]
+                batches.append(messages)
+            
+            non_streaming_model = self.chat_model.bind(stream=False)
+            ai_messages = await non_streaming_model.abatch(batches)
+
+            labeled_descs = []
+            for i, ai_message in enumerate(ai_messages, start=1):
+                desc = ai_message.content.strip()
+                labeled_descs.append(f"**Image #{i}**:\n{desc}")
+            combined_desc = "\n\n".join(labeled_descs)
+
+            old_prompt = system_message.content
+            updated_prompt = (
+                old_prompt
+                + "\n\n"
+                + "If the user asks about images, pictures, or photos, then use the following descriptions as if they were the actual images:\n"
+                + combined_desc
+            )
+
+            new_system_message = system_message.copy(update={'content': updated_prompt})
+            state['messages'][0] = new_system_message
+
+            return state
+
         async def route_query(state: State):
             """
             Account for scenarios:
@@ -653,6 +690,7 @@ class ChatBot(RunnableSerializable[I, O]):
 
         graph.add_node('guardrails', guardrails)
         graph.add_node('not_safe', not_safe)
+        graph.add_node('prefill_system_prompt', prefill_system_prompt)
         graph.add_node('route_query', route_query)
         graph.add_node('single_doc_prompt', single_doc_prompt)
         graph.add_node('multi_doc_prompt', multi_doc_prompt)
@@ -663,10 +701,11 @@ class ChatBot(RunnableSerializable[I, O]):
             'guardrails',
             guardrails_condition,
             {
-                'route_query': 'route_query',
+                'prefill_system_prompt': 'prefill_system_prompt',
                 'not_safe': 'not_safe'
             }
         )
+        graph.add_edge('prefill_system_prompt', 'route_query')
         graph.add_edge('not_safe', END)
         graph.add_conditional_edges(
             'route_query',
