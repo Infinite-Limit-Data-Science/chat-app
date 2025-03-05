@@ -121,7 +121,7 @@ def large_pdf_documents() -> List[UploadFile]:
     return [upload]
 
 @pytest.fixture
-def compare_documents() -> list[UploadFile]:
+def compare_documents() -> List[UploadFile]:
     current_dir = Path(__file__).parent
     files = [
         current_dir / "assets" / "ruby-rails-developer-v2.docx",
@@ -141,6 +141,27 @@ def compare_documents() -> list[UploadFile]:
         uploads.append(upload)
 
     return uploads
+
+@pytest.fixture
+def compare_previous_documents() -> List[UploadFile]:
+    current_dir = Path(__file__).parent
+    files = [
+        current_dir / "assets" / "NVIDIAAn.pdf",
+        current_dir / "assets" / "Nvidia-1tri-fiscal-2025.pdf",
+    ]
+
+    uploads = []
+    for path in files:
+        with path.open("rb") as f:
+            content = f.read()
+        upload = UploadFile(
+            file=io.BytesIO(content),
+            filename=path.name,
+            headers=Headers({"content-type": "application/pdf"}),
+        )
+        uploads.append(upload)
+
+    return uploads    
 
 @pytest.fixture
 def image_files() -> list[UploadFile]:
@@ -555,6 +576,59 @@ async def test_multimodal_multiple_image(
     
     assert len(ai_content) > 0 
 
+@pytest.mark.asyncio
+async def test_vector_history_from_multiple_docs(
+    chat_bot_config: ChatBotConfig,
+    message_metadata: Dict[str, Any],
+    conversation_doc: Dict[str, Any],
+    compare_previous_documents: List[UploadFile],
+):
+    chat_bot_config.message_history.session_id = conversation_doc['_id']
+    vector_store = os.environ['VECTOR_STORE']
+    _ = await ingest(
+        vector_store, 
+        compare_previous_documents, 
+        chat_bot_config.embeddings,
+        chat_bot_config.vectorstore,
+        message_metadata,
+    )
+
+    chat_prompt = ChatPromptTemplate.from_messages(
+        [
+            ('system', "You're a helpful assistant"),
+            ('human', '{input}')
+        ]
+    )
+    chat_bot = ChatBot(config=chat_bot_config)
+    chain = chat_prompt | chat_bot
+
+    config = RunnableConfig(
+        tags=[
+            'chat_bot_run_test', 
+            f'uuid_${message_metadata['uuid']}', 
+            f'conversation_id_${message_metadata['uuid']}'
+        ],
+        # below I replaced `metadatas` with `message_metadata`
+        # to test if it pulls vectors from multiple vector
+        # stores when asking question without file uploads
+        metadata={ 'vector_metadata': [message_metadata] },
+        configurable={ 'retrieval_mode': 'mmr' }
+    )
+
+    ai_content = ''
+    streaming_resp = []
+    async for chunk in chain.astream(
+        {'input': 'How did GAAP earnings per diluted share compare between Second Quarter Fiscal 2024 and First Quarter Fiscal 2025?'},
+        config=config
+    ):
+        print(f'Custom event ${chunk.content}')
+        ai_content += chunk.content
+        streaming_resp.append(chunk)
+    
+    assert len(ai_content) > 0
+
+# async def test_image_and_pdfs_uploads()
+
 # openai requires cycles of human, ai, human, ai, so multiple
 # candidate completions must account for that
 # may require storing the same human prompt twice
@@ -575,9 +649,6 @@ async def test_multimodal_multiple_image(
 #     ...
 
 # async def test_images_embedded_in_docs
-
-# ask question on multiple docs stored previously in vector database
-# async def test_vector_history_from_multiple_docs
 
 # async def test_usage_tokens_with_callback
 
