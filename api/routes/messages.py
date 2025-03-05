@@ -141,7 +141,11 @@ async def create_message(
             vector_metadata=vectorstore_metadata,
         )
         
-        return StreamingResponse(llm_stream(), media_type='text/event-stream')
+        return StreamingResponse(
+            llm_stream(), 
+            media_type='text/event-stream', 
+            headers={'Content-Encoding': 'identity'}
+        )        
     except HfHubHTTPError as e:
         error_info = {
             'url': e.response.url,

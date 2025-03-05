@@ -1,8 +1,9 @@
 import os
 from contextlib import asynccontextmanager
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+load_dotenv()
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pathlib import Path
@@ -101,20 +102,18 @@ app.mount('/assets', CustomStaticFiles(directory=path), name='assets')
 if os.getenv('IS_LOCAL') == 'true' and os.getenv('JWT_LOOKUP') == 'true':
     app.add_middleware(AddAuthorizationHeaderMiddleware)
 
-@app.get('/')
-async def serve_root():
-    return FileResponse('ui/dist/index.html')
-
-@app.get('/health')
-def health_check():
-    return { 'message': 'ok' }
-
 @app.middleware('http')
 async def api_route_middleware(request: Request, call_next):
     if request.scope['path'].startswith('/api'):
         return await call_next(request)
+    
+    if request.scope['path'].startswith('/health'):
+        return Response(content='{"message": "ok"}', media_type="application/json")
 
-    return await serve_static_file(request)
+    try:
+        return await serve_static_file(request)
+    except Exception as e:
+        return Response(content=f"Error: {str(e)}", status_code=500)
 
 async def serve_static_file(request: Request):
     path = request.scope['path']
@@ -122,7 +121,7 @@ async def serve_static_file(request: Request):
     if os.path.exists(file_path) and file_path != 'ui/dist/':
         return FileResponse(file_path)
     else:
-        return FileResponse(file_path)
+        return FileResponse('ui/dist/index.html')
 
 _prefix = '/api'
 app.include_router(home_router, prefix=_prefix)

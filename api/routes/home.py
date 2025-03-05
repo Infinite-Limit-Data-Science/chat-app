@@ -19,7 +19,10 @@ router = APIRouter(
     '/dashboard',
     response_description='Load dashbord items, including user settings and conversations',
 )
-async def dashboard(request: Request, record_offset: int = Query(0, description='record offset', alias='offset'), record_limit: int = Query(20, description="record limit", alias='limit')):
+async def dashboard(
+    request: Request, 
+    record_offset: int = Query(0, description='record offset', alias='offset'), 
+    record_limit: int = Query(20, description="record limit", alias='limit', le=10000)):
     """Load dashboard"""
     logger.info('Loading Dashboard')
 

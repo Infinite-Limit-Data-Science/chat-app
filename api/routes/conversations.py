@@ -49,7 +49,7 @@ router = APIRouter(
 async def conversations(
         request: Request, 
         record_offset: int = Query(0, description='record offset', alias='offset'), 
-        record_limit: int = Query(20, description="record limit", alias='limit'),
+        record_limit: int = Query(20, description="record limit", alias='limit', le=10000),
         sort: str = Query(None, description='sort field and direction as sort=field[asc|desc]', alias='sort')
     ):
     """List conversations by an offset and limit"""
@@ -182,7 +182,7 @@ async def create_conversation(
             vector_metadata=vectorstore_metadata,
         )
 
-        return StreamingResponse(llm_stream(), media_type='text/event-stream')        
+        return StreamingResponse(llm_stream(), media_type='text/event-stream', headers={'Content-Encoding': 'identity'})        
 
     except HfHubHTTPError as e:
         error_info = {
