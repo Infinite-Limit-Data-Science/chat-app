@@ -1,3 +1,14 @@
+
+token=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
+model=TIGER-Lab/VLM2Vec-Full
+docker run --runtime nvidia --gpus all -v ~/.cache/huggingface:/root/.cache/huggingface --env "HUGGING_FACE_HUB_TOKEN=$token" -p 8070:8000 --ipc=host vllm/vllm-openai:latest --model $model --trust-remote-code --tensor-parallel-size 4
+docker run --runtime nvidia --gpus all -v ~/.cache/huggingface:/root/.cache/huggingface --env "HUGGING_FACE_HUB_TOKEN=$token" -p 8070:8000 --ipc=host vllm/vllm-openai:latest --model $model --trust-remote-code --tensor-parallel-size 4 --max-num-batched-tokens 32768 --max-num-seqs 65 --max-model-len 32768
+
+g5.12xlarge
+sg-036a8002c430fc904
+ami-01c346d8c45cc6ae1
+generative-ai
+
 Like HF TGI, VLLM is an open-source library designed specifically for deploying and serving large language models (LLMs).
 
 vLLM is a Python library that also contains pre-compiled C++ and CUDA (12.1) binaries. As of now, vLLM’s binaries are compiled with CUDA 12.1 and public PyTorch release versions by default. In order to be performant, vLLM has to compile many cuda kernels. The compilation unfortunately introduces binary incompatibility with other CUDA versions and PyTorch versions, even for the same PyTorch version with different building configurations.

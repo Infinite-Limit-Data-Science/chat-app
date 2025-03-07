@@ -26,9 +26,22 @@ from huggingface_hub.inference._generated.types import (
     ChatCompletionInputTool
 )
 from huggingface_hub.inference._providers import get_provider_helper
+import huggingface_hub.inference._providers as providers
 from huggingface_hub.inference._common import _import_numpy, _bytes_to_dict, RequestParameters
+from huggingface_hub.inference._common import _as_dict
+from huggingface_hub.inference._providers._common import (
+    TaskProviderHelper,
+    filter_none,
+)
 from .inference_schema import HuggingFaceInferenceServerMixin
 from.huggingface_inference_server_config import HuggingFaceTGIConfig, HuggingFaceTEIConfig
+from .providers.vllm import VLLMEmbeddingTask
+
+providers.PROVIDERS["vllm"] = {
+    "embedding": VLLMEmbeddingTask()
+}
+
+_SUPPORTED_VISION_EMBEDDINGS = ["TIGER-Lab/VLM2Vec-Full"]
 
 @runtime_checkable
 class HuggingFaceInferenceLike(Protocol):
@@ -517,7 +530,24 @@ class HuggingFaceInferenceClient(HuggingFaceBaseInferenceClient):
         prompt_name: Optional[str] = None,
         truncate: Optional[bool] = None,
         truncation_direction: Optional[Literal["Left", "Right"]] = None,
+        **model_kwargs,
     ) -> "np.ndarray":
+        np = _import_numpy()
+        if self.model and self.model in _SUPPORTED_VISION_EMBEDDINGS:
+            provider_helper = get_provider_helper(self.client.provider, "embedding")
+
+            request_parameters = provider_helper.prepare_request(
+                inputs=model_kwargs,
+                parameters={},
+                headers=self.headers,
+                model=self.base_url,
+                api_key=self.credentials,
+            )
+
+            resp_bytes = self._inner_post(request_parameters, stream=False)
+            embeddings = provider_helper.get_response(resp_bytes)
+            return np.array(embeddings, dtype="float32")
+
         request_parameters = self._prepare_request_params(
             texts, 
             normalize=normalize, 
@@ -527,7 +557,6 @@ class HuggingFaceInferenceClient(HuggingFaceBaseInferenceClient):
         )
         
         response = self.client._inner_post(request_parameters)
-        np = _import_numpy()
         return np.array(_bytes_to_dict(response), dtype="float32")
     
     @overload

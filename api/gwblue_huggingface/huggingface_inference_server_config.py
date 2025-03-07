@@ -1,7 +1,8 @@
 from typing import Annotated, Optional, Dict, Any
 from typing_extensions import Doc
-from pydantic import Field, field_validator, model_validator, computed_field
+import ipaddress
 from urllib.parse import urlparse
+from pydantic import Field, field_validator, model_validator, computed_field
 from .inference_schema import InferenceSchema
 
 class HuggingFaceSelfHostedServer(InferenceSchema):
@@ -13,10 +14,24 @@ class HuggingFaceSelfHostedServer(InferenceSchema):
     @classmethod
     def validate_base_url(cls, value: str) -> str:
         parsed_url = urlparse(value)
-        if parsed_url.path not in ('', '/'):
-            raise ValueError(f'Invalid base_url: {value}. Must not contain extra path segments.')
+        
+        if not parsed_url.hostname:
+            raise ValueError(f'Invalid URL: "{value}". Hostname is required.')
+        
+        if not value.endswith('/'):
+            raise ValueError(f'URL must end with a forward slash: "{value}"')
+        
+        try:
+            ipaddress.ip_address(parsed_url.hostname)
+            if parsed_url.path not in ('', '/'):
+                raise ValueError(
+                    f'Invalid base_url: "{value}". Must not contain extra path segments for IP-based URL.'
+                )
+        except ValueError:
+            pass
+
         return value
-    
+        
     @property
     def self_hosted() -> bool:
         return True

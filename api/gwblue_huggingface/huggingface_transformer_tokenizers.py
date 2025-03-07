@@ -123,3 +123,23 @@ class LlamaGuard38BPretrainedTokenizer:
     @staticmethod
     def extract_dimensions(config: dict) -> int:
         return config.get('text_config').get('hidden_size')
+    
+class LlamaGuard311BVisionPretrainedTokenizer:
+    _tokenizer_name = TokenizerDescriptor()
+
+    def __init__(self, name: Optional[str] = None):
+        self._tokenizer_name = name or "meta_llama_guard_3_11B"
+    
+    @staticmethod
+    def extract_dimensions(config: dict) -> int:
+        return config.get('text_config').get('hidden_size')
+    
+class VLM2VecFullPretrainedTokenizer:
+    _tokenizer_name = TokenizerDescriptor()
+
+    def __init__(self, name: Optional[str] = None):
+        self._tokenizer_name = name or "tiger_lab_vlm2vec_full"
+    
+    @staticmethod
+    def extract_dimensions(config: dict) -> int:
+        return config.get('text_config').get('hidden_size')    
