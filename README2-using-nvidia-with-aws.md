@@ -63,13 +63,19 @@ model=meta-llama/Llama-3.1-70B-Instruct
 # model=meta-llama/Llama-3.2-11B-Vision-Instruct
 # model=meta-llama/Llama-3.1-70B-Instruct
 # model=meta-llama/Llama-Guard-3-8B
+# model=meta-llama/Llama-Guard-3-1B
 token=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
 volume=$PWD/data
 
-docker container run --gpus all --shm-size 1g -e HUGGING_FACE_HUB_TOKEN=$token -p 8080:80 -v $volume:/data ghcr.io/huggingface/text-generation-inference:3.0.2 --model-id $model --max-batch-prefill-tokens 12582 --max-input-tokens 12582 --max-total-tokens 16777 --num-shard 8 --quantize bitsandbytes-nf4 --payload-limit 10000000
+docker container run --gpus all --shm-size 1g -e HUGGING_FACE_HUB_TOKEN=$token -p 8080:80 -v $volume:/data ghcr.io/huggingface/text-generation-inference:3.0.2 --model-id $model --max-batch-prefill-tokens 12582 --max-input-tokens 12582 --max-total-tokens 16777 --num-shard 4 --quantize bitsandbytes-nf4 --payload-limit 10000000
 
 # for llama guard ONLY:
-docker container run --gpus all --shm-size 1g -e HUGGING_FACE_HUB_TOKEN=$token -p 8080:80 -v $volume:/data ghcr.io/huggingface/text-generation-inference:3.0.2 --model-id $model --max-batch-prefill-tokens 12582 --max-input-tokens 12582 --max-total-tokens 13000 --num-shard 1 --quantize bitsandbytes-nf4 --payload-limit 5000000
+docker container run --gpus all --shm-size 1g -e HUGGING_FACE_HUB_TOKEN=$token -p 8072:80 -v $volume:/data ghcr.io/huggingface/text-generation-inference:3.0.2 --model-id $model --max-batch-prefill-tokens 12582 --max-input-tokens 12582 --max-total-tokens 13000 --num-shard 1 --quantize bitsandbytes-nf4 --payload-limit 5000000
+
+token=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
+model=TIGER-Lab/VLM2Vec-Full
+docker run --runtime nvidia --gpus all -v ~/.cache/huggingface:/root/.cache/huggingface --env "HUGGING_FACE_HUB_TOKEN=$token" -p 8070:8000 --ipc=host vllm/vllm-openai:latest --model $model --trust-remote-code --task embed --tensor-parallel-size 1 --max-num-batched-tokens 24256 --max-num-seqs 65 --max-model-len 24256
+
 
 
 docker container exec 06b214cb37af printenv

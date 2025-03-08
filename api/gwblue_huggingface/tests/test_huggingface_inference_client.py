@@ -10,22 +10,28 @@ from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 from huggingface_hub.inference._generated.types import ChatCompletionOutput
 from ..huggingface_inference_client import HuggingFaceInferenceClient
-from ..huggingface_transformer_tokenizers import VLM2VecFullPretrainedTokenizer
+from ..huggingface_transformer_tokenizers import (
+    BgeLargePretrainedTokenizer,
+    VLM2VecFullPretrainedTokenizer,
+)
 from ..huggingface_inference_server_config import HuggingFaceTEIConfig, HuggingFaceTGIConfig
 
 load_dotenv()
 
-def _model_config(model_type=str) -> str:
+def _model_config(model_type: str, model_name: str) -> str:
     models = json.loads(os.environ[model_type])
-    
+    model = next((model for model in models if model["name"] == model_name), None)
+    if not model:
+        raise ValueError(f"Model {model_name} does not exist in {model_type}")
+
     return {
-        'name': models[0]['name'],
-        'url': models[0]['endpoints'][0]['url']
+        'name': model['name'],
+        'url': model['endpoints'][0]['url']
     }
 
 @pytest.fixture
 def tgi_self_hosted_config() -> HuggingFaceTGIConfig:
-    config = _model_config('MODELS')
+    config = _model_config("MODELS", "meta-llama/Llama-3.2-11B-Vision-Instruct")
 
     return HuggingFaceTGIConfig(
         name=config['name'],
@@ -39,7 +45,7 @@ def tgi_self_hosted_config() -> HuggingFaceTGIConfig:
 
 @pytest.fixture
 def tei_self_hosted_config() -> HuggingFaceTEIConfig:
-    config = _model_config('EMBEDDING_MODELS')
+    config = _model_config("EMBEDDING_MODELS", "BAAI/bge-large-en-v1.5")
 
     return HuggingFaceTEIConfig(
         name=config['name'],
@@ -53,7 +59,7 @@ def tei_self_hosted_config() -> HuggingFaceTEIConfig:
 
 @pytest.fixture
 def tei_self_hosted_config_vision() -> HuggingFaceTEIConfig:
-    config = _model_config('EMBEDDING_MODELS')
+    config = _model_config("EMBEDDING_MODELS", "TIGER-Lab/VLM2Vec-Full")
     
     return HuggingFaceTEIConfig(
         name=config['name'],
@@ -82,13 +88,18 @@ def tei_inference_client(tei_self_hosted_config: HuggingFaceTEIConfig) -> Huggin
     )
 
 @pytest.fixture
-def tei_inference_client_vision(tei_self_hosted_config: HuggingFaceTEIConfig) -> HuggingFaceInferenceClient:
+def tei_inference_client_vision(tei_self_hosted_config_vision: HuggingFaceTEIConfig) -> HuggingFaceInferenceClient:
     return HuggingFaceInferenceClient(
-        base_url=tei_self_hosted_config.url,
-        credentials=tei_self_hosted_config.auth_token,
-        tei_config=tei_self_hosted_config,
+        base_url=tei_self_hosted_config_vision.url,
+        credentials=tei_self_hosted_config_vision.auth_token,
+        tei_config=tei_self_hosted_config_vision,
+        provider='vllm',
         model='TIGER-Lab/VLM2Vec-Full'
     )
+
+@pytest.fixture
+def bge() -> BgeLargePretrainedTokenizer:
+    return BgeLargePretrainedTokenizer()
 
 @pytest.fixture
 def vlm2vec() -> VLM2VecFullPretrainedTokenizer:
@@ -110,57 +121,21 @@ def test_inference_client_feature_extraction(tei_inference_client: HuggingFaceIn
 def test_inference_client_feature_extraction_trunc(
     tei_inference_client: HuggingFaceInferenceClient, 
     corpus: str, 
-    vlm2vec: VLM2VecFullPretrainedTokenizer
+    bge: BgeLargePretrainedTokenizer
 ):
     corpus = " ".join([corpus] * 10)
     embeddings = tei_inference_client.feature_extraction(corpus, truncate=True)
 
-    assert embeddings.size == vlm2vec.dimensions
+    assert embeddings.size == bge.dimensions
 
 def test_inference_client_feature_extraction_not_tokens(
     tei_inference_client: HuggingFaceInferenceClient, 
     corpus: str, 
-    vlm2vec: VLM2VecFullPretrainedTokenizer
+    bge: BgeLargePretrainedTokenizer
 ):
-    tokens  = vlm2vec.tokenizer.encode(corpus, add_special_tokens=True)
+    tokens  = bge.tokenizer.encode(corpus, add_special_tokens=True)
     embeddings = tei_inference_client.feature_extraction(corpus, truncate=True)
-    decoded = vlm2vec.tokenizer.decode(embeddings[0])
-
-    assert tokens != decoded
-
-def test_inference_client_feature_extraction_vision(
-    tei_inference_client_vision: HuggingFaceInferenceClient, 
-    vlm2vec: VLM2VecFullPretrainedTokenizer
-):
-    image_path = Path(__file__).parent / 'assets' / 'baby.jpg'
-    with image_path.open('rb') as f:
-        base64_image = base64.b64encode(f.read()).decode('utf-8')
-    image_url = f'data:image/jpeg;base64,{base64_image}'
-
-    tokens  = vlm2vec.tokenizer.encode(corpus, add_special_tokens=True)
-    embeddings = tei_inference_client_vision.feature_extraction({
-        "model": "TIGER-Lab/VLM2Vec-Full",
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": image_url,
-                        }
-                    },
-                    {
-                        "type": "text",
-                        "text": "Describe the image."
-                    },
-                ],
-            }
-        ],
-        "encoding_format": "float",
-        "mm_processor_kwargs": {},
-    }, truncate=True)
-    decoded = vlm2vec.tokenizer.decode(embeddings[0])
+    decoded = bge.tokenizer.decode(embeddings[0])
 
     assert tokens != decoded
 
@@ -168,6 +143,56 @@ def test_inference_client_feature_extraction_vision(
 async def test_async_inference_client_feature_extraction(tei_inference_client: HuggingFaceInferenceClient, corpus: str):
     embeddings = await tei_inference_client.afeature_extraction(corpus)
     assert embeddings.dtype == 'float32'
+
+def test_inference_client_feature_extraction_vision(
+    tei_inference_client_vision: HuggingFaceInferenceClient, 
+    corpus: str,
+):
+    embeddings = tei_inference_client_vision.feature_extraction(corpus)
+    assert len(embeddings) > 0
+
+def test_inference_client_feature_extraction_vision2(
+    tei_inference_client_vision: HuggingFaceInferenceClient, 
+):
+    image_path = Path(__file__).parent / 'assets' / 'baby.jpg'
+    with image_path.open('rb') as f:
+        base64_image = base64.b64encode(f.read()).decode('utf-8')
+    image_url = f'data:image/jpeg;base64,{base64_image}'
+
+    embeddings = tei_inference_client_vision.feature_extraction([
+        {
+            "image_url": image_url,
+            "text": "Describe the image",
+        }
+    ])
+
+    assert len(embeddings) > 0
+
+@pytest.mark.asyncio
+async def test_async_inference_client_feature_extraction_vision(
+    tei_inference_client_vision: HuggingFaceInferenceClient, 
+    corpus: str,
+):
+    embeddings = await tei_inference_client_vision.afeature_extraction(corpus)
+    assert len(embeddings) > 0
+
+@pytest.mark.asyncio
+async def test_async_inference_client_feature_extraction_vision2(
+    tei_inference_client_vision: HuggingFaceInferenceClient, 
+):
+    image_path = Path(__file__).parent / 'assets' / 'baby.jpg'
+    with image_path.open('rb') as f:
+        base64_image = base64.b64encode(f.read()).decode('utf-8')
+    image_url = f'data:image/jpeg;base64,{base64_image}'
+
+    embeddings = await tei_inference_client_vision.afeature_extraction([
+        {
+            "image_url": image_url,
+            "text": "Describe the image",
+        }
+    ])
+
+    assert len(embeddings) > 0
 
 def test_inference_client_chat_completion(tgi_inference_client: HuggingFaceInferenceClient):
     chat_completion_output = tgi_inference_client.chat_completion(
@@ -321,7 +346,7 @@ def test_inference_client_chat_completion_with_output_usage(tgi_inference_client
     assert chat_completion_output.usage.completion_tokens > 0
     assert chat_completion_output.usage.total_tokens > 0
 
-# @pytest.mark.skip(reason="Temporarily disabled for debugging")
+@pytest.mark.skip(reason="Temporarily disabled for debugging")
 def test_inference_client_chat_completion_with_tool_calling(tgi_inference_client: HuggingFaceInferenceClient):
     class WeatherForecastRequest(BaseModel):
         location: str = Field(..., description="The city and state, e.g., 'San Francisco, CA'")

@@ -1,14 +1,23 @@
 from typing import TypeVar, Optional, Protocol, Annotated
 from typing_extensions import Doc
-from transformers import PreTrainedTokenizerBase
+from transformers import PreTrainedTokenizerBase, AutoTokenizer
+from pathlib import Path
 import importlib
-import os
 import json
 import re
 
 T = TypeVar('T')
 U = TypeVar('U')
 
+"""
+Tokenizers convert raw text into a sequence of token IDs - 
+the "words" or "subwords" the model actually consumes.
+
+Transformer models understand these integer IDs representing
+tokens.
+
+We cache the Tokenizers
+"""
 TRANSFORMER_TOKENIZER_CACHE = 'transformers/tokenizers/cache'
 
 def transform_name(s: str) -> str:
@@ -47,19 +56,42 @@ class TokenizerDescriptor:
         if not isinstance(value, str):
             raise ValueError(f'{self.name} must be a string')
         
-        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),TRANSFORMER_TOKENIZER_CACHE, value, 'tokenizer_config.json'), 'r') as f:
+        current_file_dir = Path(__file__).resolve().parent
+        local_dir = current_file_dir / TRANSFORMER_TOKENIZER_CACHE / value
+        tokenizer_config_path = local_dir / "tokenizer_config.json"
+
+        with tokenizer_config_path.open("r", encoding="utf-8") as f:
             tokenizer_config = json.load(f)
-            tokenizer_class_name: PreTrainedTokenizerBase = tokenizer_config['tokenizer_class']
-            transformers_module = importlib.import_module('transformers')
-            cls = getattr(transformers_module, tokenizer_class_name)
-            tokenizer = cls.from_pretrained(os.path.join(os.path.dirname(os.path.abspath(__file__)),TRANSFORMER_TOKENIZER_CACHE, value))
+            tokenizer_class_name: str = tokenizer_config["tokenizer_class"]
+
+        transformers_module = importlib.import_module("transformers")
+        cls = getattr(transformers_module, tokenizer_class_name)
+
+        try:
+            tokenizer = cls.from_pretrained(
+                local_dir,
+                local_files_only=True,
+                trust_remote_code=True
+            )
+        except Exception as e:
+            print(f"Failed to load tokenizer class '{tokenizer_class_name}' from config. Falling back to AutoTokenizer.\nError: {e}")
+
+            tokenizer = AutoTokenizer.from_pretrained(
+                local_dir,
+                local_files_only=True,
+                trust_remote_code=True
+            )
 
         setattr(instance, 'tokenizer', tokenizer)
         setattr(instance, 'sequence_length', tokenizer.model_max_length)
         setattr(instance, 'dimensions', self.load_dimensions(instance, value))
 
     def load_dimensions(self, instance: U, value: str) -> int:
-        with open(os.path.join(os.path.dirname(os.path.abspath(__file__)),TRANSFORMER_TOKENIZER_CACHE, value, 'config.json'), 'r') as f:
+        current_file_dir = Path(__file__).resolve().parent
+        local_dir = current_file_dir / TRANSFORMER_TOKENIZER_CACHE / value
+        config_path = local_dir / "config.json"
+        
+        with config_path.open("r", encoding="utf-8") as f:
             config = json.load(f)
             dimensions = int(instance.extract_dimensions(config))
         return dimensions
@@ -142,4 +174,4 @@ class VLM2VecFullPretrainedTokenizer:
     
     @staticmethod
     def extract_dimensions(config: dict) -> int:
-        return config.get('text_config').get('hidden_size')    
+        return config.get('hidden_size')    

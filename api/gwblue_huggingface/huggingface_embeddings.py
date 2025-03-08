@@ -6,10 +6,10 @@ from pydantic import ConfigDict, Field, field_validator, model_validator
 from typing_extensions import Self
 from .inference_schema import HuggingFaceInferenceServerMixin
 from .huggingface_inference_server_config import HuggingFaceTEIConfig
-from .huggingface_inference_client import HuggingFaceInferenceLike, HuggingFaceInferenceClient
+from .huggingface_inference_client import HuggingFaceInferenceClient
 
 class HuggingFaceBaseEmbeddings(HuggingFaceInferenceServerMixin, Embeddings):
-    client: Optional[HuggingFaceInferenceLike] = Field(description='Low-level Inference Client to interface to the self-hosted HF TEI Server', default=None)
+    client: Optional[HuggingFaceInferenceClient] = Field(description='Low-level Inference Client to interface to the self-hosted HF TEI Server', default=None)
 
     model_config = ConfigDict(
         extra="forbid",

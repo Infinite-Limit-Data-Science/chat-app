@@ -1,13 +1,26 @@
 
 token=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
 model=TIGER-Lab/VLM2Vec-Full
-docker run --runtime nvidia --gpus all -v ~/.cache/huggingface:/root/.cache/huggingface --env "HUGGING_FACE_HUB_TOKEN=$token" -p 8070:8000 --ipc=host vllm/vllm-openai:latest --model $model --trust-remote-code --tensor-parallel-size 4
-docker run --runtime nvidia --gpus all -v ~/.cache/huggingface:/root/.cache/huggingface --env "HUGGING_FACE_HUB_TOKEN=$token" -p 8070:8000 --ipc=host vllm/vllm-openai:latest --model $model --trust-remote-code --tensor-parallel-size 4 --max-num-batched-tokens 32768 --max-num-seqs 65 --max-model-len 32768
+docker run --runtime nvidia --gpus all -v ~/.cache/huggingface:/root/.cache/huggingface --env "HUGGING_FACE_HUB_TOKEN=$token" -p 8070:8000 --ipc=host vllm/vllm-openai:latest --model $model --trust-remote-code --task embed --tensor-parallel-size 4 --max-num-batched-tokens 32768 --max-num-seqs 65 --max-model-len 32768
 
 g5.12xlarge
 sg-036a8002c430fc904
 ami-01c346d8c45cc6ae1
 generative-ai
+
+# run it along tei:
+token=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
+model=BAAI/bge-large-en-v1.5
+volume=$PWD/data
+docker run --gpus all -e HUGGING_FACE_HUB_TOKEN=$token -p 8071:80 -v $volume:/data --pull always ghcr.io/huggingface/text-embeddings-inference:1.5 --model-id $model --max-batch-tokens 32768 --max-client-batch-size 128 --max-batch-requests 64 --auto-truncate
+
+ docker container ls
+CONTAINER ID   IMAGE                                               COMMAND                  CREATED         STATUS         PORTS
+                         NAMES
+daee2eb610ac   ghcr.io/huggingface/text-embeddings-inference:1.5   "text-embeddings-rou…"   3 minutes ago   Up 3 minutes   0.0.0.0:8071->80/tcp, [::]:8071->80/tcp       beautiful_bohr
+d55a1a476498   vllm/vllm-openai:latest                             "python3 -m vllm.ent…"   21 hours ago    Up 2 hours     0.0.0.0:8070->8000/tcp, [::]:8070->8000/tcp   kind_leakey
+
+
 
 Like HF TGI, VLLM is an open-source library designed specifically for deploying and serving large language models (LLMs).
 
