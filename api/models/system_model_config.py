@@ -17,11 +17,10 @@ class SystemModelConfig(AbstractModel):
 
 class EndpointDict(TypedDict):
     url: str
-    type: str
+    provider: str
 
 class SystemModelConfigSchema(LLMBase):
-    endpoints: Optional[List[EndpointDict]] = Field(description='Valid if using TGI', default=None)
-    model: Optional[str] = Field(description='Valid if using pipeline', default=None)
+    endpoints: List[EndpointDict] = Field(description='Endpoint URL and Provider (e.g. hf-inference, vllm, fireworks-ai, etc)')
     stream: Optional[bool] = Field(description='Enable streaming', default=True)
 
     class Config:

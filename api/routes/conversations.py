@@ -96,7 +96,7 @@ async def create_conversation(
 
     conversation_schema = CreateConversationSchema(
         uuid=request.state.uuid, 
-        modell_name=chat_bot_config.llm.name, 
+        modell_name=chat_bot_config.llm.model, 
         prompt_used=content,
     )
 

@@ -17,16 +17,16 @@ from langchain_core.runnables.config import RunnableConfig
 from langchain_core.callbacks.base import BaseCallbackHandler
 from langchain.schema import LLMResult
 from langchain_core.runnables.utils import ConfigurableField
-from ..huggingface_inference_server_config import HuggingFaceTGIConfig
+from ..huggingface_inference_server_config import HuggingFaceInferenceConfig
 from ..huggingface_llm import HuggingFaceLLM
 from ..huggingface_embeddings import HuggingFaceEmbeddings
-from ..huggingface_inference_server_config import HuggingFaceTEIConfig
+from ..huggingface_inference_server_config import HuggingFaceEmbeddingsConfig
 from ..huggingface_transformer_tokenizers import BgeLargePretrainedTokenizer 
 from .corpus import examples
 
 @pytest.fixture
-def tgi_self_hosted_config() -> HuggingFaceTGIConfig:
-    return HuggingFaceTGIConfig(
+def tgi_self_hosted_config() -> HuggingFaceInferenceConfig:
+    return HuggingFaceInferenceConfig(
         name='meta-llama/Meta-Llama-3.1-70B-Instruct',
         url=os.environ['TEST_TGI_URL'],
         auth_token=os.environ['TEST_AUTH_TOKEN'],
@@ -37,18 +37,18 @@ def tgi_self_hosted_config() -> HuggingFaceTGIConfig:
     )
 
 @pytest.fixture
-def llm(tgi_self_hosted_config: HuggingFaceTGIConfig) -> HuggingFaceLLM:
+def llm(tgi_self_hosted_config: HuggingFaceInferenceConfig) -> HuggingFaceLLM:
     return HuggingFaceLLM(
         base_url=tgi_self_hosted_config.url,
         credentials=tgi_self_hosted_config.auth_token,
-        tgi_config=tgi_self_hosted_config,
+        inference_config=tgi_self_hosted_config,
         max_tokens=tgi_self_hosted_config.available_generated_tokens,
         temperature=0.8 
     )
 
 @pytest.fixture
-def tei_self_hosted_config() -> HuggingFaceTEIConfig:
-    return HuggingFaceTEIConfig(
+def tei_self_hosted_config() -> HuggingFaceEmbeddingsConfig:
+    return HuggingFaceEmbeddingsConfig(
         name='BAAI/bge-large-en-v1.5',
         url=os.environ['TEST_TEI_URL'],
         auth_token=os.environ['TEST_AUTH_TOKEN'],        
@@ -59,7 +59,7 @@ def tei_self_hosted_config() -> HuggingFaceTEIConfig:
     )
 
 @pytest.fixture
-def embeddings(tei_self_hosted_config: HuggingFaceTEIConfig) -> HuggingFaceEmbeddings:
+def embeddings(tei_self_hosted_config: HuggingFaceEmbeddingsConfig) -> HuggingFaceEmbeddings:
     return HuggingFaceEmbeddings(
         base_url=tei_self_hosted_config.url,
         credentials=tei_self_hosted_config.auth_token
@@ -174,11 +174,11 @@ class ConfigurableCaptureCallbackHandler(BaseCallbackHandler):
             self.captured_temp = response.llm_output.get('final_temp')
 
 @pytest.fixture
-def spy_llm(tgi_self_hosted_config: HuggingFaceTGIConfig) -> SpyHuggingFaceLLM:
+def spy_llm(tgi_self_hosted_config: HuggingFaceInferenceConfig) -> SpyHuggingFaceLLM:
     return SpyHuggingFaceLLM(
         base_url=tgi_self_hosted_config.url,
         credentials=tgi_self_hosted_config.auth_token,
-        tgi_config=tgi_self_hosted_config,
+        inference_config=tgi_self_hosted_config,
         max_tokens=tgi_self_hosted_config.available_generated_tokens,
         temperature=0.8 
     )

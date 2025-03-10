@@ -4,8 +4,6 @@ from .mongo_schema import PrimaryKeyMixinSchema, TimestampMixinSchema, ChatSchem
 
 LLMSchema: TypeAlias = BaseModel
 
-_TextTask = Literal['text-generation', 'text2text-generation', 'summarization', 'translation']
-
 class LLMPrompt(ChatSchema):
     title: str
     content: str

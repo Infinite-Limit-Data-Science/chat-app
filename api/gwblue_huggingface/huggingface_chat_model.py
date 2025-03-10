@@ -163,7 +163,7 @@ class HuggingFaceChatModel(BaseChatModel):
                 f"received {type(self.llm)}"
             )
 
-        tokenizer_name = self.llm.tgi_config.name or self.model_name
+        tokenizer_name = self.llm.inference_config.name or self.model_name
         if not tokenizer_name:
             raise TypeError(
                 "Expected model name to be defined"
@@ -217,7 +217,7 @@ class HuggingFaceChatModel(BaseChatModel):
             generation_info=token_usage,
         )
         generations.append(gen)
-        model_object = self.llm.client.tgi_config.name if self.llm.client.tgi_config else None
+        model_object = self.llm.client.inference_config.name if self.llm.client.inference_config else None
         llm_output = {"token_usage": token_usage, "model": model_object}
         return ChatResult(generations=generations, llm_output=llm_output)
         

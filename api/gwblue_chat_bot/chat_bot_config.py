@@ -4,16 +4,16 @@ from redis.client import Redis
 from bson import ObjectId
 
 class ModelConfig(BaseModel):
-    name: str
+    model: str
     endpoint: str
     token: str
-    server: str
+    provider: str
 
 class LLMConfig(ModelConfig):
     parameters: Dict[str, Any] = Field(default_factory=dict)
 
 class EmbeddingsConfig(ModelConfig):
-    dimensions: int
+    max_batch_tokens: int
 
 class MetadataSchema(TypedDict):
     name: str 

@@ -6,7 +6,7 @@ from .embedding_schema import EmbeddingBase
 
 class EndpointDict(TypedDict):
     url: str
-    type: str
+    provider: str
 
 class SystemEmbeddingConfig(AbstractModel):
     __modelname__ = 'system_embedding_configs'

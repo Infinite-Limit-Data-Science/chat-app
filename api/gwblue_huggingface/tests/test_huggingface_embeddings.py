@@ -1,5 +1,6 @@
 import pytest
 import os
+import json
 from typing import List, Iterator
 from dotenv import load_dotenv
 from langchain_core.documents import Document
@@ -7,18 +8,33 @@ from langchain_redis import RedisConfig
 from langchain_redis import RedisVectorStore
 from redisvl.query.filter import Tag
 from ..huggingface_embeddings import HuggingFaceEmbeddings
-from ..huggingface_transformer_tokenizers import BgeLargePretrainedTokenizer 
-from ...langchain_chunkinator import Chunkinator
+from ..huggingface_transformer_tokenizers import (
+    BgeLargePretrainedTokenizer,
+    VLM2VecFullPretrainedTokenizer
+) 
 from ..huggingface_inference_server_config import HuggingFaceTEIConfig
 from .corpus import dummy_corpus1
 
 load_dotenv()
 
+def _model_config(model_type: str, model_name: str) -> str:
+    models = json.loads(os.environ[model_type])
+    model = next((model for model in models if model["name"] == model_name), None)
+    if not model:
+        raise ValueError(f"Model {model_name} does not exist in {model_type}")
+
+    return {
+        'name': model['name'],
+        'url': model['endpoints'][0]['url']
+    }
+
 @pytest.fixture
 def tei_self_hosted_config() -> HuggingFaceTEIConfig:
+    config = _model_config("EMBEDDING_MODELS", "BAAI/bge-large-en-v1.5")
+
     return HuggingFaceTEIConfig(
-        name='BAAI/bge-large-en-v1.5',
-        url=os.environ['TEST_TEI_URL'],
+        name=config['name'],
+        url=config['url'],
         auth_token=os.environ['TEST_AUTH_TOKEN'],        
         max_batch_tokens=32768,
         max_client_batch_size=128,
@@ -27,7 +43,28 @@ def tei_self_hosted_config() -> HuggingFaceTEIConfig:
     )
 
 @pytest.fixture
+def tei_self_hosted_config_vision() -> HuggingFaceTEIConfig:
+    config = _model_config("EMBEDDING_MODELS", "TIGER-Lab/VLM2Vec-Full")
+    
+    return HuggingFaceTEIConfig(
+        name=config['name'],
+        url=config['url'],
+        auth_token=os.environ['TEST_AUTH_TOKEN'],
+        max_batch_tokens=32768,
+        max_client_batch_size=128,
+        max_batch_requests=64,
+        auto_truncate=True
+    )
+
+@pytest.fixture
 def chunks(tei_self_hosted_config: HuggingFaceTEIConfig) -> List[str]:
+    documents = [Document(page_content=dummy_corpus1, metadata={'source': 'book'})]
+    chunkinator = Chunkinator.Base(documents, tei_self_hosted_config)
+    return chunkinator.chunk()
+
+@pytest.fixture
+def chunks_multimodal(tei_self_hosted_config: HuggingFaceTEIConfig) -> List[str]:
+    # pdf with images: START HERE
     documents = [Document(page_content=dummy_corpus1, metadata={'source': 'book'})]
     chunkinator = Chunkinator.Base(documents, tei_self_hosted_config)
     return chunkinator.chunk() 
@@ -48,7 +85,6 @@ def vectorstore(
     embeddings: HuggingFaceEmbeddings, 
     tokenizer: BgeLargePretrainedTokenizer
 ) -> Iterator[RedisVectorStore]:
-    # TODO: need to create a cleaner wrapper class for redis vectorstore
     config = RedisConfig(
         index_name="test1",
         redis_url=os.environ['REDIS_URL'],

@@ -5,7 +5,7 @@ from langchain_core.embeddings import Embeddings
 from pydantic import ConfigDict, Field, field_validator, model_validator
 from typing_extensions import Self
 from .inference_schema import HuggingFaceInferenceServerMixin
-from .huggingface_inference_server_config import HuggingFaceTEIConfig
+from .huggingface_inference_server_config import HuggingFaceEmbeddingsConfig
 from .huggingface_inference_client import HuggingFaceInferenceClient
 
 class HuggingFaceBaseEmbeddings(HuggingFaceInferenceServerMixin, Embeddings):
@@ -26,26 +26,32 @@ class HuggingFaceBaseEmbeddings(HuggingFaceInferenceServerMixin, Embeddings):
         return value
 
 class HuggingFaceEmbeddings(HuggingFaceBaseEmbeddings):
+    config: Optional[HuggingFaceEmbeddingsConfig] = None
+
     @model_validator(mode="after")
     def validate_environment(self) -> Self:
-        HuggingFaceTEIConfig(
-            name='BAAI/bge-large-en-v1.5',
-            url=os.environ['TEST_TEI_URL'],
-            auth_token=os.environ['TEST_AUTH_TOKEN'],        
-            max_batch_tokens=32768,
-            max_client_batch_size=128,
-            max_batch_requests=64,
-            auto_truncate=True
-        )
+        if not self.config:
+            config = HuggingFaceEmbeddingsConfig(**{
+                'url': self.base_url,
+                'auth_token': self.credentials,
+                'provider': self.provider,
+                'model': self.model,
+                'timeout': self.timeout,
+                'headers': self.headers,
+            })
+        config = self.config or config
+            
         client = HuggingFaceInferenceClient(
-            base_url=self.base_url,
-            credentials=self.credentials,
+            base_url=self.config.url,
+            credentials=self.config.auth_token,
+            provider=self.config.provider,
+            model=self.model,
             timeout=self.timeout,
             headers=self.headers
         )
         self.client = client
 
-        return self    
+        return self
 
     def embed_documents(self, texts: List[str], **feat_extract_kwargs) -> List[List[float]]:
         #  Replace newlines, which can negatively affect performance.

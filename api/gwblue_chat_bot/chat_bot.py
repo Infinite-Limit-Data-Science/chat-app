@@ -70,14 +70,14 @@ from langchain_core.retrievers import RetrieverLike
 from pymongo import DESCENDING
 
 from .graph_state import State
-from .language_models.huggingface import HuggingFaceInference
+from .language_models.huggingface_hub import HuggingFaceHub
 from .chat_bot_config import ChatBotConfig
 # from .local_tools.route_query_tool import RouteQueryTool
 
 from langchain_redis import RedisConfig
 from redisvl.query.filter import Tag, FilterExpression
-from ..gwblue_redis_vectoretriever.config import VectorStoreSchema
-from ..gwblue_redis_vectoretriever.vectorstore import RedisVectorStoreTTL
+from ..gwblue_vectoretrievers.redis.config import VectorStoreSchema
+from ..gwblue_vectoretrievers.redis.vectorstore import RedisVectorStoreTTL
 
 from .prompts import registry
 from .message_history import (
@@ -150,16 +150,15 @@ class ChatBot(RunnableSerializable[I, O]):
     def load_environment(self) -> Self:
         graph = StateGraph(State)
 
-        hf = HuggingFaceInference(config=self.config,model_types={})
-        inference_engine = {
-            'tgi': hf,
-            'tei': hf,
-            'vllm': None,
+        hf_hub = HuggingFaceHub(config=self.config, model_types={})
+        platform = {
+            'hf_inference': hf_hub,
+            'vllm': hf_hub,
         }
         
-        self.chat_model = inference_engine[self.config.llm.server]('chat_model')
-        self.safety_model = inference_engine[self.config.guardrails.server]('guardrails')
-        self.embeddings = inference_engine[self.config.embeddings.server]('embeddings')
+        self.chat_model = platform[self.config.llm.provider]('chat_model')
+        self.safety_model = platform[self.config.guardrails.provider]('guardrails')
+        self.embeddings = platform[self.config.embeddings.provider]('embeddings')
 
         if self.alt:
             self.chat_model.llm = self.chat_model.llm.bind(

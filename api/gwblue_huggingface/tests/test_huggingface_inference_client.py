@@ -14,7 +14,10 @@ from ..huggingface_transformer_tokenizers import (
     BgeLargePretrainedTokenizer,
     VLM2VecFullPretrainedTokenizer,
 )
-from ..huggingface_inference_server_config import HuggingFaceTEIConfig, HuggingFaceTGIConfig
+from ..huggingface_inference_server_config import (
+    HuggingFaceEmbeddingsConfig, 
+    HuggingFaceInferenceConfig,
+)
 
 load_dotenv()
 
@@ -30,10 +33,10 @@ def _model_config(model_type: str, model_name: str) -> str:
     }
 
 @pytest.fixture
-def tgi_self_hosted_config() -> HuggingFaceTGIConfig:
+def tgi_self_hosted_config() -> HuggingFaceInferenceConfig:
     config = _model_config("MODELS", "meta-llama/Llama-3.2-11B-Vision-Instruct")
 
-    return HuggingFaceTGIConfig(
+    return HuggingFaceInferenceConfig(
         name=config['name'],
         url=config['url'],
         auth_token=os.environ['TEST_AUTH_TOKEN'],
@@ -44,10 +47,10 @@ def tgi_self_hosted_config() -> HuggingFaceTGIConfig:
     )
 
 @pytest.fixture
-def tei_self_hosted_config() -> HuggingFaceTEIConfig:
+def tei_self_hosted_config() -> HuggingFaceInferenceConfig:
     config = _model_config("EMBEDDING_MODELS", "BAAI/bge-large-en-v1.5")
 
-    return HuggingFaceTEIConfig(
+    return HuggingFaceInferenceConfig(
         name=config['name'],
         url=config['url'],
         auth_token=os.environ['TEST_AUTH_TOKEN'],
@@ -58,10 +61,10 @@ def tei_self_hosted_config() -> HuggingFaceTEIConfig:
     )
 
 @pytest.fixture
-def tei_self_hosted_config_vision() -> HuggingFaceTEIConfig:
+def tei_self_hosted_config_vision() -> HuggingFaceEmbeddingsConfig:
     config = _model_config("EMBEDDING_MODELS", "TIGER-Lab/VLM2Vec-Full")
     
-    return HuggingFaceTEIConfig(
+    return HuggingFaceEmbeddingsConfig(
         name=config['name'],
         url=config['url'],
         auth_token=os.environ['TEST_AUTH_TOKEN'],
@@ -72,27 +75,27 @@ def tei_self_hosted_config_vision() -> HuggingFaceTEIConfig:
     )
 
 @pytest.fixture
-def tgi_inference_client(tgi_self_hosted_config: HuggingFaceTGIConfig) -> HuggingFaceInferenceClient:
+def tgi_inference_client(tgi_self_hosted_config: HuggingFaceInferenceConfig) -> HuggingFaceInferenceClient:
     return HuggingFaceInferenceClient(
         base_url=tgi_self_hosted_config.url,
         credentials=tgi_self_hosted_config.auth_token,
-        tgi_config=tgi_self_hosted_config
+        inference_config=tgi_self_hosted_config
     )
 
 @pytest.fixture
-def tei_inference_client(tei_self_hosted_config: HuggingFaceTEIConfig) -> HuggingFaceInferenceClient:
+def tei_inference_client(tei_self_hosted_config: HuggingFaceEmbeddingsConfig) -> HuggingFaceInferenceClient:
     return HuggingFaceInferenceClient(
         base_url=tei_self_hosted_config.url,
         credentials=tei_self_hosted_config.auth_token,
-        tei_config=tei_self_hosted_config
+        embeddings_config=tei_self_hosted_config
     )
 
 @pytest.fixture
-def tei_inference_client_vision(tei_self_hosted_config_vision: HuggingFaceTEIConfig) -> HuggingFaceInferenceClient:
+def tei_inference_client_vision(tei_self_hosted_config_vision: HuggingFaceEmbeddingsConfig) -> HuggingFaceInferenceClient:
     return HuggingFaceInferenceClient(
         base_url=tei_self_hosted_config_vision.url,
         credentials=tei_self_hosted_config_vision.auth_token,
-        tei_config=tei_self_hosted_config_vision,
+        embeddings_config=tei_self_hosted_config_vision,
         provider='vllm',
         model='TIGER-Lab/VLM2Vec-Full'
     )
@@ -203,7 +206,7 @@ def test_inference_client_chat_completion(tgi_inference_client: HuggingFaceInfer
             }
         ],
         stream=False, # not needed, defaults to False
-        max_tokens=tgi_inference_client.tgi_config.available_generated_tokens,
+        max_tokens=tgi_inference_client.inference_config.available_generated_tokens,
         temperature=0.8 # add randomness
     )
 
@@ -222,7 +225,7 @@ def test_inference_client_chat_completion_with_multiple_candidates(tgi_inference
                 'content': 'What is Generative AI?'
             }
         ],
-        max_tokens=tgi_inference_client.tgi_config.available_generated_tokens,
+        max_tokens=tgi_inference_client.inference_config.available_generated_tokens,
         num_generations=3,
         temperature=0.8
     )
@@ -238,7 +241,7 @@ def test_inference_client_chat_completion_with_multiple_candidates(tgi_inference
 @pytest.mark.asyncio
 async def test_inference_client_chat_completion_with_logprobs(tgi_inference_client: HuggingFaceInferenceClient):
     messages = [{'role': 'user', 'content': 'What is Generative AI?'}]
-    max_tokens = tgi_inference_client.tgi_config.available_generated_tokens
+    max_tokens = tgi_inference_client.inference_config.available_generated_tokens
     params = [
         {'top_p': 0.5},
         {'top_p': 0.9}
@@ -266,7 +269,7 @@ async def test_inference_client_chat_completion_with_logprobs(tgi_inference_clie
 @pytest.mark.asyncio
 async def test_inference_client_chat_completion_with_reranking(tgi_inference_client: HuggingFaceInferenceClient):
     messages = [{'role': 'user', 'content': 'What is Generative AI?'}]
-    max_tokens = tgi_inference_client.tgi_config.available_generated_tokens
+    max_tokens = tgi_inference_client.inference_config.available_generated_tokens
     params = [
         {'top_p': 0.5},
         {'top_p': 0.9}
@@ -320,7 +323,7 @@ def test_inference_client_chat_completion_with_image_to_text(tgi_inference_clien
                 ]
             }
         ],
-        max_tokens=tgi_inference_client.tgi_config.available_generated_tokens,
+        max_tokens=tgi_inference_client.inference_config.available_generated_tokens,
         temperature=0.8,
         logprobs=True
     )
@@ -338,7 +341,7 @@ def test_inference_client_chat_completion_with_output_usage(tgi_inference_client
                 'content': 'What is Generative AI?'
             }
         ],
-        max_tokens=tgi_inference_client.tgi_config.available_generated_tokens,
+        max_tokens=tgi_inference_client.inference_config.available_generated_tokens,
         temperature=0.8
     )
 
@@ -369,7 +372,7 @@ def test_inference_client_chat_completion_with_tool_calling(tgi_inference_client
             {'role': 'system', 'content': 'Use the provided tools to answer user questions.'},
             {'role': 'user', 'content': "What's the weather like in New York for the next 3 days?"}
         ],
-        max_tokens=tgi_inference_client.tgi_config.available_generated_tokens,
+        max_tokens=tgi_inference_client.inference_config.available_generated_tokens,
         tools=tools,
         tool_choice='auto',
         temperature=0.8
@@ -391,7 +394,7 @@ async def test_async_inference_client_chat_completion(tgi_inference_client: Hugg
                 'content': 'What is Generative AI?'
             }
         ],
-        max_tokens=tgi_inference_client.tgi_config.available_generated_tokens,
+        max_tokens=tgi_inference_client.inference_config.available_generated_tokens,
         temperature=0.8
     )
 
@@ -409,7 +412,7 @@ async def test_async_streaming_inference_client_chat_completion(tgi_inference_cl
                 'content': 'What is Generative AI?'
             }
         ],
-        max_tokens=tgi_inference_client.tgi_config.available_generated_tokens,
+        max_tokens=tgi_inference_client.inference_config.available_generated_tokens,
         temperature=0.8,
         stream=True,
         logprobs=True

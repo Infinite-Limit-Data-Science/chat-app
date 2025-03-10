@@ -19,7 +19,7 @@ from huggingface_hub.inference._generated.types import (
 )
 from .inference_schema import HuggingFaceInferenceServerMixin
 from .huggingface_inference_client import HuggingFaceInferenceClient
-from .huggingface_inference_server_config import HuggingFaceTGIConfig
+from .huggingface_inference_server_config import HuggingFaceInferenceConfig
 from .helpers.chat_completion_helper import (
     postprocess_chat_completion_output,
     postprocess_chat_completion_stream_output,
@@ -37,7 +37,7 @@ class HuggingFaceLLM(LLM, HuggingFaceInferenceServerMixin):
     client: Optional[HuggingFaceInferenceClient] = Field(description='Hugging Face Inference Client to interface with Hugging Face Hub Messages API', default=None)
     # InferenceClient parameters (in addition to HuggingFaceInferenceServerMixin)
     timeout: float = 120
-    tgi_config: Optional[HuggingFaceTGIConfig] = None
+    inference_config: Optional[HuggingFaceInferenceConfig] = None
 
     # chat_completion parameters supported by Hugging Face Hub Messages API and Hugging Face TGI
     # common parameters are provided explicitly, the remaining parameters to HuggingFaceInferenceClient.chat_completion are provided through `model_kwargs`
@@ -91,7 +91,7 @@ class HuggingFaceLLM(LLM, HuggingFaceInferenceServerMixin):
         client = HuggingFaceInferenceClient(
             base_url=self.base_url,
             credentials=self.credentials,
-            tgi_config=self.tgi_config,
+            inference_config=self.inference_config,
             timeout=self.timeout,
             headers=self.headers
         )

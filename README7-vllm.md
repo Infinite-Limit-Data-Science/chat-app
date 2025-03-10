@@ -1,7 +1,7 @@
 
 token=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
 model=TIGER-Lab/VLM2Vec-Full
-docker run --runtime nvidia --gpus all -v ~/.cache/huggingface:/root/.cache/huggingface --env "HUGGING_FACE_HUB_TOKEN=$token" -p 8070:8000 --ipc=host vllm/vllm-openai:latest --model $model --trust-remote-code --task embed --tensor-parallel-size 4 --max-num-batched-tokens 32768 --max-num-seqs 65 --max-model-len 32768
+docker run --runtime nvidia --gpus all -v ~/.cache/huggingface:/root/.cache/huggingface --env "HUGGING_FACE_HUB_TOKEN=$token" -p 8070:8000 --ipc=host vllm/vllm-openai:latest --model $model --trust-remote-code --task embed --tensor-parallel-size 4 --max-num-batched-tokens 24256 --max-num-seqs 65 --max-model-len 24256
 
 g5.12xlarge
 sg-036a8002c430fc904

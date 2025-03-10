@@ -1,13 +1,16 @@
 import pytest
 import os
 from dotenv import load_dotenv
-from ..huggingface_inference_server_config import HuggingFaceTGIConfig, HuggingFaceTEIConfig
+from ..huggingface_inference_server_config import (
+    HuggingFaceInferenceConfig,
+    HuggingFaceEmbeddingsConfig,
+)
 
 load_dotenv()
 
 @pytest.fixture
-def tgi_self_hosted_config() -> HuggingFaceTGIConfig:
-    return HuggingFaceTGIConfig(
+def tgi_self_hosted_config() -> HuggingFaceInferenceConfig:
+    return HuggingFaceInferenceConfig(
         name='meta-llama/Meta-Llama-3.1-70B-Instruct',
         url=os.environ['TEST_TGI_URL'],
         auth_token=os.environ['TEST_AUTH_TOKEN'],
@@ -18,8 +21,8 @@ def tgi_self_hosted_config() -> HuggingFaceTGIConfig:
     )
 
 @pytest.fixture
-def tei_self_hosted_config() -> HuggingFaceTEIConfig:
-    return HuggingFaceTEIConfig(
+def tei_self_hosted_config() -> HuggingFaceEmbeddingsConfig:
+    return HuggingFaceEmbeddingsConfig(
         name='BAAI/bge-large-en-v1.5',
         url=os.environ['TEST_TEI_URL'],
         auth_token=os.environ['TEST_AUTH_TOKEN'],
@@ -29,8 +32,8 @@ def tei_self_hosted_config() -> HuggingFaceTEIConfig:
         auto_truncate=True
     )
 
-def test_tgi_self_hosted_config(tgi_self_hosted_config: HuggingFaceTGIConfig):
-    assert tgi_self_hosted_config.endpoint_type == 'tgi'
+def test_tgi_self_hosted_config(tgi_self_hosted_config: HuggingFaceInferenceConfig):
+    assert tgi_self_hosted_config.provider == 'hf-inference'
 
-def test_tei_self_hosted_config(tei_self_hosted_config: HuggingFaceTEIConfig):
-    assert tei_self_hosted_config.endpoint_type == 'tei'
+def test_tei_self_hosted_config(tei_self_hosted_config: HuggingFaceEmbeddingsConfig):
+    assert tei_self_hosted_config.provider == 'hf-inference'

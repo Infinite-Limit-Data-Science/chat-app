@@ -143,11 +143,11 @@ async def llm_model_config(
     system_model_config: SystemModelConfigSchema = Depends(refresh_model_configs)
 ) -> Dict[str, any]:
     return {
-        'name': system_model_config.name,
+        'model': system_model_config.name,
         'endpoint': system_model_config.endpoints[0]['url'],
         'token': request.state.authorization,
         'parameters': dict(system_model_config.parameters),
-        'server': 'tgi'
+        'provider': system_model_config.endpoints[0]['provider']
     }
 
 async def guardrails_model_config(
@@ -178,11 +178,11 @@ async def embeddings_model_config(request: Request) -> Dict[str, any]:
     if not active_model_config:
         HTTPException(status_code=404, detail='Expected Embedding Model, got None')
     return {
-        'name': active_model_config.name,
+        'model': active_model_config.name,
         'endpoint': active_model_config.endpoints[0]['url'],
         'token': request.state.authorization,
-        'dimensions': active_model_config.dimensions,
-        'server': 'tei'
+        'provider': active_model_config.endpoints[0]['provider'],
+        'max_batch_tokens': active_model_config.max_batch_tokens
     }
 
 async def get_prompt_template(

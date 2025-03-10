@@ -41,7 +41,7 @@ from huggingface_hub.inference._providers._common import (
     filter_none,
 )
 from .inference_schema import HuggingFaceInferenceServerMixin
-from.huggingface_inference_server_config import HuggingFaceTGIConfig, HuggingFaceTEIConfig
+from.huggingface_inference_server_config import HuggingFaceInferenceConfig, HuggingFaceEmbeddingsConfig
 from .providers.vllm import VLLMEmbeddingTask
 
 providers.PROVIDERS["vllm"] = {
@@ -85,8 +85,8 @@ class HuggingFaceBaseInferenceClient(HuggingFaceInferenceServerMixin):
         return value
     
 class HuggingFaceInferenceClient(HuggingFaceBaseInferenceClient):
-    tgi_config: Optional[HuggingFaceTGIConfig] = None
-    tei_config: Optional[HuggingFaceTEIConfig] = None
+    inference_config: Optional[HuggingFaceInferenceConfig] = None
+    embeddings_config: Optional[HuggingFaceEmbeddingsConfig] = None
 
     @model_validator(mode="after")
     def validate_environment(self) -> Self:
@@ -239,12 +239,12 @@ class HuggingFaceInferenceClient(HuggingFaceBaseInferenceClient):
         gen_obj = _stream_chat_completion_response()
         ```
         """
-        if self.tgi_config:
+        if self.inference_config:
             if not max_tokens:
-                max_tokens = self.tgi_config.available_generated_tokens
+                max_tokens = self.inference_config.available_generated_tokens
 
-            if not (1 <= max_tokens <= self.tgi_config.available_generated_tokens):
-                raise ValueError(f'max_tokens must be between 1 and {self.tgi_config.available_generated_tokens}, got {max_tokens}')
+            if not (1 <= max_tokens <= self.inference_config.available_generated_tokens):
+                raise ValueError(f'max_tokens must be between 1 and {self.inference_config.available_generated_tokens}, got {max_tokens}')
 
         if num_generations:
             print('Warning: The OpenAI API `n` option is unsupported by Hugging Face TGI (even if supported by Hugging Face Hub Messages API). Ignoring the num_generations option..')
