@@ -1,6 +1,8 @@
 import pytest
 import os
 import json
+import base64
+from pathlib import Path
 from typing import List, Iterator
 from dotenv import load_dotenv
 from langchain_core.documents import Document
@@ -12,7 +14,7 @@ from ..huggingface_transformer_tokenizers import (
     BgeLargePretrainedTokenizer,
     VLM2VecFullPretrainedTokenizer
 ) 
-from ..huggingface_inference_server_config import HuggingFaceTEIConfig
+from ...gwblue_text_splitters import MixedContentTextSplitter
 from .corpus import dummy_corpus1
 
 load_dotenv()
@@ -25,65 +27,92 @@ def _model_config(model_type: str, model_name: str) -> str:
 
     return {
         'name': model['name'],
-        'url': model['endpoints'][0]['url']
+        'url': model['endpoints'][0]['url'],
+        'provider': model['endpoints'][0]['provider'],
     }
 
 @pytest.fixture
-def tei_self_hosted_config() -> HuggingFaceTEIConfig:
+def text_embeddings() -> HuggingFaceEmbeddings:
     config = _model_config("EMBEDDING_MODELS", "BAAI/bge-large-en-v1.5")
 
-    return HuggingFaceTEIConfig(
-        name=config['name'],
-        url=config['url'],
-        auth_token=os.environ['TEST_AUTH_TOKEN'],        
-        max_batch_tokens=32768,
-        max_client_batch_size=128,
-        max_batch_requests=64,
-        auto_truncate=True
-    )
-
-@pytest.fixture
-def tei_self_hosted_config_vision() -> HuggingFaceTEIConfig:
-    config = _model_config("EMBEDDING_MODELS", "TIGER-Lab/VLM2Vec-Full")
-    
-    return HuggingFaceTEIConfig(
-        name=config['name'],
-        url=config['url'],
-        auth_token=os.environ['TEST_AUTH_TOKEN'],
-        max_batch_tokens=32768,
-        max_client_batch_size=128,
-        max_batch_requests=64,
-        auto_truncate=True
-    )
-
-@pytest.fixture
-def chunks(tei_self_hosted_config: HuggingFaceTEIConfig) -> List[str]:
-    documents = [Document(page_content=dummy_corpus1, metadata={'source': 'book'})]
-    chunkinator = Chunkinator.Base(documents, tei_self_hosted_config)
-    return chunkinator.chunk()
-
-@pytest.fixture
-def chunks_multimodal(tei_self_hosted_config: HuggingFaceTEIConfig) -> List[str]:
-    # pdf with images: START HERE
-    documents = [Document(page_content=dummy_corpus1, metadata={'source': 'book'})]
-    chunkinator = Chunkinator.Base(documents, tei_self_hosted_config)
-    return chunkinator.chunk() 
-
-@pytest.fixture
-def embeddings(tei_self_hosted_config: HuggingFaceTEIConfig) -> HuggingFaceEmbeddings:
     return HuggingFaceEmbeddings(
-        base_url=tei_self_hosted_config.url,
-        credentials=tei_self_hosted_config.auth_token
+        base_url=config['url'],
+        credentials=os.environ['TEST_AUTH_TOKEN'],
+        provider=config['provider'],
+        model=config['name'],
     )
 
 @pytest.fixture
-def tokenizer() -> BgeLargePretrainedTokenizer:
+def embeddings() -> HuggingFaceEmbeddings:
+    config = _model_config("EMBEDDING_MODELS", "TIGER-Lab/VLM2Vec-Full")
+
+    return HuggingFaceEmbeddings(
+        base_url=config['url'],
+        credentials=os.environ['TEST_AUTH_TOKEN'],
+        provider=config['provider'],
+        model=config['name'],
+    )
+
+@pytest.fixture
+def bge_tokenizer() -> BgeLargePretrainedTokenizer:
     return BgeLargePretrainedTokenizer()
+
+@pytest.fixture
+def vlm_tokenizer() -> VLM2VecFullPretrainedTokenizer:
+    return VLM2VecFullPretrainedTokenizer()
+
+@pytest.fixture
+def text_chunks(vlm_tokenizer: VLM2VecFullPretrainedTokenizer) -> List[str]:
+    docs = [Document(page_content=dummy_corpus1, metadata={'source': 'book', 'page': 0})]
+    sequence_length = 2000
+    overlap = int(sequence_length * 0.05)
+    len_function = lambda text: len(vlm_tokenizer.tokenizer.encode(text))
+
+    mixed_content_splitter = MixedContentTextSplitter(
+        chunk_size=sequence_length,
+        chunk_overlap=overlap,
+        length_function=len_function,
+        metadata={'uuid': '1', 'conversation_id': '1'},
+    )
+    chunks = mixed_content_splitter.split_documents(docs)
+    
+    return chunks
+
+@pytest.fixture
+def mixed_message_chunks() -> List[str]:
+    image_path = Path(__file__).parent / 'assets' / 'baby.jpg'
+    with image_path.open('rb') as f:
+        base64_image = base64.b64encode(f.read()).decode('utf-8')
+    image_url = f'data:image/jpeg;base64,{base64_image}'
+
+    page_content = f"""
+    This is an image of a baby.
+
+    He is taller than most babies and graces a smile.
+
+    {image_url}
+    """
+
+    docs = [Document(page_content=page_content, metadata={'source': 'book', 'page': 0})]
+    sequence_length = 2000
+    overlap = int(sequence_length * 0.05)
+    len_function = lambda text: len(vlm_tokenizer.tokenizer.encode(text))
+
+    mixed_content_splitter = MixedContentTextSplitter(
+        chunk_size=sequence_length,
+        chunk_overlap=overlap,
+        length_function=len_function,
+        metadata={'uuid': '1', 'conversation_id': '1'},
+    )
+    chunks = mixed_content_splitter.split_documents(docs)
+    
+    return chunks    
+
 
 @pytest.fixture
 def vectorstore(
     embeddings: HuggingFaceEmbeddings, 
-    tokenizer: BgeLargePretrainedTokenizer
+    vlm_tokenizer: VLM2VecFullPretrainedTokenizer
 ) -> Iterator[RedisVectorStore]:
     config = RedisConfig(
         index_name="test1",
@@ -91,8 +120,7 @@ def vectorstore(
         metadata_schema=[
             {"name": "source", "type": "tag"},
         ],
-        # setting this avoids unnecessary request for embeddings
-        embedding_dimensions=tokenizer.dimensions
+        embedding_dimensions=vlm_tokenizer.dimensions
     )
 
     store = RedisVectorStore(embeddings, config=config)
@@ -102,10 +130,21 @@ def vectorstore(
     store.index.clear()
     store.index.delete(drop=True)
 
+# 
 # @pytest.mark.skip(reason="Temporarily disabled for debugging")
-def test_embed_documents(embeddings: HuggingFaceEmbeddings):
+def test_bge_embed_documents(
+    text_embeddings: text_embeddings,
+    bge_tokenizer: BgeLargePretrainedTokenizer,
+):
+    embedded_vectors = text_embeddings.embed_documents([dummy_corpus1])
+    assert len(embedded_vectors[0]) == bge_tokenizer.dimensions
+
+def test_vlm_embed_documents(
+    embeddings: HuggingFaceEmbeddings,
+    vlm_tokenizer: VLM2VecFullPretrainedTokenizer,
+):
     embedded_vectors = embeddings.embed_documents([dummy_corpus1])
-    assert len(embedded_vectors) > 0
+    assert len(embedded_vectors[0]) == vlm_tokenizer.dimensions
 
 def test_embed_multiple_documents(embeddings: HuggingFaceEmbeddings):
     embedded_vectors = embeddings.embed_documents([dummy_corpus1, dummy_corpus1.upper()])
@@ -119,18 +158,19 @@ def test_embed_documents_in_vector_db(vectorstore: RedisVectorStore):
     ids = vectorstore.add_texts([dummy_corpus1], [{'source': 'book'}])
     assert ids[0].startswith('test1')
 
-def test_embed_documents_with_similarity_search(vectorstore: RedisVectorStore, chunks: List[str]):
-    vectorstore.add_documents(chunks)
+def test_embed_documents_with_similarity_search(vectorstore: RedisVectorStore, text_chunks: List[str]):
+    vectorstore.add_documents(text_chunks)
     query = "What did King Ulfric Stormborn do in 879"
     results = vectorstore.similarity_search(
         query, 
         k=2, 
         filter=Tag('source') == 'book'
     )
+
     assert len(results) == 2
 
-def test_embed_documents_with_similarity_search_with_score(vectorstore: RedisVectorStore, chunks: List[str]): 
-    vectorstore.add_documents(chunks)
+def test_embed_documents_with_similarity_search_with_score(vectorstore: RedisVectorStore, text_chunks: List[str]): 
+    vectorstore.add_documents(text_chunks)
     query = "What did King Ulfric Stormborn do in 879"    
     results = vectorstore.similarity_search_with_score(
         query, 
@@ -143,8 +183,11 @@ def test_embed_documents_with_similarity_search_with_score(vectorstore: RedisVec
 
     assert score1 < score2
 
-def test_embed_documents_with_max_marginal_relevance_search(vectorstore: RedisVectorStore, chunks: List[str]):
-    vectorstore.add_documents(chunks)
+def test_embed_documents_with_max_marginal_relevance_search(
+    vectorstore: RedisVectorStore, 
+    text_chunks: List[str]
+):
+    vectorstore.add_documents(text_chunks)
     query = "What did King Ulfric Stormborn do in 879"    
     results = vectorstore.max_marginal_relevance_search(
         query, 
@@ -154,8 +197,12 @@ def test_embed_documents_with_max_marginal_relevance_search(vectorstore: RedisVe
 
     assert len(results) == 2
 
-def test_embed_documents_with_similarity_search_by_vector(embeddings: HuggingFaceEmbeddings, vectorstore: RedisVectorStore, chunks: List[str]):
-    vectorstore.add_documents(chunks)
+def test_embed_documents_with_similarity_search_by_vector(
+    embeddings: HuggingFaceEmbeddings, 
+    vectorstore: RedisVectorStore, 
+    text_chunks: List[str]
+):
+    vectorstore.add_documents(text_chunks)
     
     query = "What did King Ulfric Stormborn do in 879"
     float_32_1024_dimensional_bge_vector = embeddings.embed_documents([query])[0]
@@ -166,8 +213,12 @@ def test_embed_documents_with_similarity_search_by_vector(embeddings: HuggingFac
     )
     assert len(results) == 2
 
-def test_embed_documents_with_similarity_search_with_score_by_vector(embeddings: HuggingFaceEmbeddings, vectorstore: RedisVectorStore, chunks: List[str]):
-    vectorstore.add_documents(chunks)
+def test_embed_documents_with_similarity_search_with_score_by_vector(
+    embeddings: HuggingFaceEmbeddings, 
+    vectorstore: RedisVectorStore, 
+    text_chunks: List[str]
+):
+    vectorstore.add_documents(text_chunks)
 
     query = "What did King Ulfric Stormborn do in 879"
     float_32_1024_dimensional_bge_vector = embeddings.embed_documents([query])[0]
@@ -182,8 +233,12 @@ def test_embed_documents_with_similarity_search_with_score_by_vector(embeddings:
 
     assert score1 < score2
 
-def test_embed_documents_with_max_marginal_relevance_search_by_vector(embeddings: HuggingFaceEmbeddings, vectorstore: RedisVectorStore, chunks: List[str]):
-    vectorstore.add_documents(chunks)
+def test_embed_documents_with_max_marginal_relevance_search_by_vector(
+    embeddings: HuggingFaceEmbeddings, 
+    vectorstore: RedisVectorStore, 
+    text_chunks: List[str]
+):
+    vectorstore.add_documents(text_chunks)
 
     query = "What did King Ulfric Stormborn do in 879"
     float_32_1024_dimensional_bge_vector = embeddings.embed_documents([query])[0]
@@ -216,8 +271,11 @@ async def test_aembed_documents_in_vector_db(vectorstore: RedisVectorStore):
     assert ids[0].startswith('test1')
 
 @pytest.mark.asyncio
-async def test_aembed_documents_with_similarity_search(vectorstore: RedisVectorStore, chunks: List[str]):
-    await vectorstore.aadd_documents(chunks)
+async def test_aembed_documents_with_similarity_search(
+    vectorstore: RedisVectorStore, 
+    text_chunks: List[str]
+):
+    await vectorstore.aadd_documents(text_chunks)
     query = "What did King Ulfric Stormborn do in 879"
     results = await vectorstore.asimilarity_search(
         query, 
@@ -225,3 +283,8 @@ async def test_aembed_documents_with_similarity_search(vectorstore: RedisVectorS
         filter=Tag('source') == 'book'
     )
     assert len(results) == 2
+
+# now some multimodal testing:
+# 1) upload multiple chunks of images and do a similarity search and get multiple base64 strings back
+# 2) try a max marginal relevance on multiple images
+# 3) embed a combination of images and text and retrieve both base64 images and text 

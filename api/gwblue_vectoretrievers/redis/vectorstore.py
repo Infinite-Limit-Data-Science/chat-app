@@ -3,6 +3,17 @@ import asyncio
 from langchain_core.documents import Document
 from langchain_redis import RedisVectorStore
 
+"""
+Light wrappper to RedisVectorStore to support TTL 
+and improve vector retrieval
+
+FT._LIST
+FT.INFO
+FT.SEARCH user_conversations "*" LIMIT 0 10
+FT.SEARCH user_conversations "*" LIMIT 0 0
+FT.INFO user_conversations
+FT.DROPINDEX user_conversations DD
+"""
 class RedisVectorStoreTTL(RedisVectorStore):
     async def aadd_documents_with_ttl(
         self, 

@@ -26,25 +26,25 @@ class HuggingFaceBaseEmbeddings(HuggingFaceInferenceServerMixin, Embeddings):
         return value
 
 class HuggingFaceEmbeddings(HuggingFaceBaseEmbeddings):
-    config: Optional[HuggingFaceEmbeddingsConfig] = None
+    # config: Optional[HuggingFaceEmbeddingsConfig] = None
 
     @model_validator(mode="after")
     def validate_environment(self) -> Self:
-        if not self.config:
-            config = HuggingFaceEmbeddingsConfig(**{
-                'url': self.base_url,
-                'auth_token': self.credentials,
-                'provider': self.provider,
-                'model': self.model,
-                'timeout': self.timeout,
-                'headers': self.headers,
-            })
-        config = self.config or config
+        # if not self.config:
+        #     config = HuggingFaceEmbeddingsConfig(**{
+        #         'url': self.base_url,
+        #         'auth_token': self.credentials,
+        #         'provider': self.provider,
+        #         'model': self.model,
+        #         'timeout': self.timeout,
+        #         'headers': self.headers,
+        #     })
+        # config = self.config or config
             
         client = HuggingFaceInferenceClient(
-            base_url=self.config.url,
-            credentials=self.config.auth_token,
-            provider=self.config.provider,
+            base_url=self.base_url,
+            credentials=self.credentials,
+            provider=self.provider,
             model=self.model,
             timeout=self.timeout,
             headers=self.headers

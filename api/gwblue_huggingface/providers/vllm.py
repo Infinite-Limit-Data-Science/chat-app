@@ -1,3 +1,4 @@
+import json
 from typing import Any, Dict, Optional, Union
 from huggingface_hub.inference._common import _as_dict
 from huggingface_hub.inference._providers._common import (
@@ -33,7 +34,7 @@ class VLLMEmbeddingTask(TaskProviderHelper):
             "mm_processor_kwargs": {},
         }
 
-        if isinstance(inputs["text"], str):
+        if isinstance(inputs.get("text"), list) and all(isinstance(t, str) for t in inputs["text"]):
             payload["input"] = inputs["text"]
             payload.update(parameters)
             return payload
@@ -45,30 +46,33 @@ class VLLMEmbeddingTask(TaskProviderHelper):
             }
         ]
 
-        if isinstance(inputs["text"], list) and len(inputs["text"]) > 0:
-            message_item = inputs["text"][0]
-            if isinstance(message_item, dict):
-                if "image_url" in message_item:
+        content_list = inputs["text"] if isinstance(inputs["text"], list) else [inputs["text"]]
+
+        for item in content_list:
+            if isinstance(item, dict):
+                if "image_url" in item:
                     payload["messages"][0]["content"].append({
                         "type": "image_url",
-                        "image_url": {"url": message_item["image_url"]}
+                        "image_url": {"url": item["image_url"]}
                     })
-
-                if "text" in message_item:
-                    user_text = message_item["text"]
-                    if isinstance(user_text, list):
-                        text_str = " ".join(user_text)
-                    else:
-                        text_str = user_text
-
+                if "text" in item:
                     payload["messages"][0]["content"].append({
                         "type": "text",
-                        "text": text_str
+                        "text": item["text"]
                     })
+            elif isinstance(item, str):
+
+                payload["messages"][0]["content"].append({
+                    "type": "text",
+                    "text": item
+                })
 
         payload.update(parameters)
         return payload
     
     def get_response(self, response: Union[bytes, Dict]) -> Any:
         resp_dict = _as_dict(response)
-        return resp_dict["data"][0]["embedding"]
+        all_embeddings = []
+        for item in resp_dict["data"]:
+            all_embeddings.append(item["embedding"])
+        return all_embeddings

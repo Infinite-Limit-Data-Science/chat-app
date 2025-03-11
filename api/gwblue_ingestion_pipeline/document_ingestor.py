@@ -44,11 +44,11 @@ class VectorStoreConfig(BaseModel):
     )
 
 class EmbeddingsConfig(TypedDict):
-    name: str
+    model: str
     endpoint: str
     token: str
-    server: str
-    dimensions: int
+    provider: str
+    max_batch_tokens: int
 
 class DocumentIngestor(ABC):
     def __init__(
@@ -63,7 +63,7 @@ class DocumentIngestor(ABC):
         self._file = file
         self.embeddings = embeddings
         self.metadata = metadata
-        self.local_tokenizer = get_tokenizer_class_by_prefix(embeddings_config.name)()
+        self.local_tokenizer = get_tokenizer_class_by_prefix(embeddings_config.model)()
         
         config = RedisConfig(**{
             'redis_client': vector_config.client,
