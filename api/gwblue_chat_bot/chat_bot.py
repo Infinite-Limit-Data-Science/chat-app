@@ -78,6 +78,7 @@ from langchain_redis import RedisConfig
 from redisvl.query.filter import Tag, FilterExpression
 from ..gwblue_vectorstores.redis.config import VectorStoreSchema
 from ..gwblue_vectorstores.redis.multimodal_vectorstore import MultiModalVectorStore
+from ..gwblue_huggingface.huggingface_transformer_tokenizers import get_tokenizer_class_by_prefix
 
 from .prompts import registry
 from .message_history import (
@@ -152,7 +153,7 @@ class ChatBot(RunnableSerializable[I, O]):
 
         hf_hub = HuggingFaceHub(config=self.config, model_types={})
         platform = {
-            'hf_inference': hf_hub,
+            'hf-inference': hf_hub,
             'vllm': hf_hub,
         }
         
@@ -166,10 +167,11 @@ class ChatBot(RunnableSerializable[I, O]):
                 seed=42,
             )
 
+        local_tokenizer = get_tokenizer_class_by_prefix(self.config.embeddings.model)()
         config = RedisConfig(**{
             'redis_client': self.config.vectorstore.client,
             'metadata_schema': self.config.vectorstore.metadata_schema,
-            'embedding_dimensions': self.config.embeddings.dimensions,
+            'embedding_dimensions': local_tokenizer.dimensions,
             **VectorStoreSchema().model_dump()
         })
             

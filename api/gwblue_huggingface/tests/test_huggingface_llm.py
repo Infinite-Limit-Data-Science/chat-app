@@ -2,9 +2,11 @@ import pytest
 import re
 import os
 import uuid
+import json
 from uuid import UUID
 import itertools
 from typing import Iterator, List, Optional, Dict
+from dotenv import load_dotenv
 from faker import Faker
 import pandas as pd
 from pydantic import BaseModel, Field, field_validator
@@ -12,68 +14,71 @@ from langchain_core.prompts import PromptTemplate, FewShotPromptTemplate
 from langchain.output_parsers import PydanticOutputParser, RetryOutputParser
 from langchain_core.example_selectors import MaxMarginalRelevanceExampleSelector
 from langchain_redis import RedisConfig
-from langchain_redis import RedisVectorStore
 from langchain_core.runnables.config import RunnableConfig
 from langchain_core.callbacks.base import BaseCallbackHandler
 from langchain.schema import LLMResult
 from langchain_core.runnables.utils import ConfigurableField
-from ..huggingface_inference_server_config import HuggingFaceInferenceConfig
 from ..huggingface_llm import HuggingFaceLLM
 from ..huggingface_embeddings import HuggingFaceEmbeddings
-from ..huggingface_inference_server_config import HuggingFaceEmbeddingsConfig
-from ..huggingface_transformer_tokenizers import BgeLargePretrainedTokenizer 
+from ..huggingface_transformer_tokenizers import (
+    VLM2VecFullPretrainedTokenizer
+)
+from ...gwblue_vectorstores.redis.multimodal_vectorstore import (
+    MultiModalVectorStore
+)
 from .corpus import examples
 
-@pytest.fixture
-def tgi_self_hosted_config() -> HuggingFaceInferenceConfig:
-    return HuggingFaceInferenceConfig(
-        name='meta-llama/Meta-Llama-3.1-70B-Instruct',
-        url=os.environ['TEST_TGI_URL'],
-        auth_token=os.environ['TEST_AUTH_TOKEN'],
-        max_input_tokens=12582,
-        max_total_tokens=16777,
-        max_batch_prefill_tokens=12582+50,
-        payload_limit=5_000_000
-    )
+load_dotenv()
+
+_MAX_INPUT_TOKENS = 12582
+
+_MAX_TOTAL_TOKENS = 16777
+
+def _model_config(model_type: str, model_name: str) -> str:
+    models = json.loads(os.environ[model_type])
+    model = next((model for model in models if model["name"] == model_name), None)
+    if not model:
+        raise ValueError(f"Model {model_name} does not exist in {model_type}")
+
+    return {
+        'name': model['name'],
+        'url': model['endpoints'][0]['url'],
+        'provider': model['endpoints'][0]['provider'],
+    }
 
 @pytest.fixture
-def llm(tgi_self_hosted_config: HuggingFaceInferenceConfig) -> HuggingFaceLLM:
+def llm() -> HuggingFaceLLM:
+    config = _model_config("MODELS", "meta-llama/Llama-3.2-11B-Vision-Instruct")
+
     return HuggingFaceLLM(
-        base_url=tgi_self_hosted_config.url,
-        credentials=tgi_self_hosted_config.auth_token,
-        inference_config=tgi_self_hosted_config,
-        max_tokens=tgi_self_hosted_config.available_generated_tokens,
-        temperature=0.8 
+        base_url=config['url'],
+        credentials=os.environ['TEST_AUTH_TOKEN'],
+        max_tokens=_MAX_TOTAL_TOKENS-_MAX_INPUT_TOKENS,
+        temperature=0.8,
+        provider=config['provider'],
+        model=config['name'],
     )
 
 @pytest.fixture
-def tei_self_hosted_config() -> HuggingFaceEmbeddingsConfig:
-    return HuggingFaceEmbeddingsConfig(
-        name='BAAI/bge-large-en-v1.5',
-        url=os.environ['TEST_TEI_URL'],
-        auth_token=os.environ['TEST_AUTH_TOKEN'],        
-        max_batch_tokens=32768,
-        max_client_batch_size=128,
-        max_batch_requests=64,
-        auto_truncate=True
-    )
+def embeddings() -> HuggingFaceEmbeddings:
+    config = _model_config("EMBEDDING_MODELS", "TIGER-Lab/VLM2Vec-Full")
 
-@pytest.fixture
-def embeddings(tei_self_hosted_config: HuggingFaceEmbeddingsConfig) -> HuggingFaceEmbeddings:
     return HuggingFaceEmbeddings(
-        base_url=tei_self_hosted_config.url,
-        credentials=tei_self_hosted_config.auth_token
+        base_url=config['url'],
+        credentials=os.environ['TEST_AUTH_TOKEN'],
+        provider=config['provider'],
+        model=config['name'],
     )
 
 @pytest.fixture
-def tokenizer() -> BgeLargePretrainedTokenizer:
-    return BgeLargePretrainedTokenizer()
+def vlm_tokenizer() -> VLM2VecFullPretrainedTokenizer:
+    return VLM2VecFullPretrainedTokenizer()
 
 @pytest.fixture
 def vectorstore(
     embeddings: HuggingFaceEmbeddings, 
-    tokenizer: BgeLargePretrainedTokenizer
-) -> Iterator[RedisVectorStore]:
+    vlm_tokenizer: VLM2VecFullPretrainedTokenizer
+) -> Iterator[MultiModalVectorStore]:
     config = RedisConfig(
         index_name="test1",
         redis_url=os.environ['REDIS_URL'],
@@ -81,11 +86,10 @@ def vectorstore(
             {"name": "input", "type": "text"},
             {"name": "output", "type": "text"},
         ],
-        # setting this avoids unnecessary request for embeddings
-        embedding_dimensions=tokenizer.dimensions
+        embedding_dimensions=vlm_tokenizer.dimensions
     )
 
-    store = RedisVectorStore(embeddings, config=config)
+    store = MultiModalVectorStore(embeddings, config=config)
 
     yield store
 
@@ -174,20 +178,23 @@ class ConfigurableCaptureCallbackHandler(BaseCallbackHandler):
             self.captured_temp = response.llm_output.get('final_temp')
 
 @pytest.fixture
-def spy_llm(tgi_self_hosted_config: HuggingFaceInferenceConfig) -> SpyHuggingFaceLLM:
+def spy_llm() -> SpyHuggingFaceLLM:
+    config = _model_config("MODELS", "meta-llama/Llama-3.2-11B-Vision-Instruct")
+
     return SpyHuggingFaceLLM(
-        base_url=tgi_self_hosted_config.url,
-        credentials=tgi_self_hosted_config.auth_token,
-        inference_config=tgi_self_hosted_config,
-        max_tokens=tgi_self_hosted_config.available_generated_tokens,
-        temperature=0.8 
+        base_url=config['url'],
+        credentials=os.environ['TEST_AUTH_TOKEN'],
+        max_tokens=_MAX_TOTAL_TOKENS-_MAX_INPUT_TOKENS,
+        temperature=0.8,
+        provider=config['provider'],
+        model=config['name'],
     )
 
 def test_llm_type(llm: HuggingFaceLLM):
     assert getattr(llm, '_llm_type') == 'huggingface_llm'
 
 def test_identifying_params(llm: HuggingFaceLLM):
-    assert getattr(llm, '_identifying_params') == {'endpoint_url': os.environ['TEST_TGI_URL'], 'model_kwargs': {}}
+    assert getattr(llm, '_identifying_params') == {'endpoint_url': llm.base_url, 'model_kwargs': {}}
 
 def test_llm_invoke(llm: HuggingFaceLLM):
     ai_message = llm.invoke('What is Generative AI?')
@@ -222,7 +229,7 @@ def test_llm_invoke_with_output_parser(llm: HuggingFaceLLM):
 
 def test_llm_invoke_with_few_shot_prompt(
     llm: HuggingFaceLLM, 
-    vectorstore: Iterator[RedisVectorStore],
+    vectorstore: Iterator[MultiModalVectorStore],
     sample_population: List[str]
 ):
     def example_to_text(

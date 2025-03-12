@@ -30,38 +30,47 @@ from langchain.schema import LLMResult
 from langchain_core.runnables.utils import ConfigurableField
 from langchain_core.runnables import RunnableParallel, RunnableLambda
 from pydantic import BaseModel, Field, field_validator, ConfigDict
-from ..huggingface_inference_server_config import HuggingFaceInferenceConfig
 from ..huggingface_llm import HuggingFaceLLM
 from ..huggingface_chat_model import HuggingFaceChatModel
 from ..huggingface_embeddings import HuggingFaceEmbeddings
-from ..huggingface_inference_server_config import HuggingFaceEmbeddingsConfig
-from ..huggingface_transformer_tokenizers import BgeLargePretrainedTokenizer 
 from .corpus import examples
 from .tools import PandasExpressionTool, PandasExpressionInput
+from ..huggingface_transformer_tokenizers import (
+    VLM2VecFullPretrainedTokenizer
+)
+from ...gwblue_vectorstores.redis.multimodal_vectorstore import (
+    MultiModalVectorStore
+)
 
 load_dotenv()
 
-@pytest.fixture
-def tgi_self_hosted_config() -> HuggingFaceInferenceConfig:
-    return HuggingFaceInferenceConfig(
-        name='meta-llama/Meta-Llama-3.1-70B-Instruct',
-        url=os.environ['TEST_TGI_URL'],
-        auth_token=os.environ['TEST_AUTH_TOKEN'],
-        max_input_tokens=12582,
-        max_total_tokens=16777,
-        max_batch_prefill_tokens=12582+50,
-        payload_limit=5_000_000
-    )
+_MAX_INPUT_TOKENS = 12582
+
+_MAX_TOTAL_TOKENS = 16777
+
+def _model_config(model_type: str, model_name: str) -> str:
+    models = json.loads(os.environ[model_type])
+    model = next((model for model in models if model["name"] == model_name), None)
+    if not model:
+        raise ValueError(f"Model {model_name} does not exist in {model_type}")
+
+    return {
+        'name': model['name'],
+        'url': model['endpoints'][0]['url'],
+        'provider': model['endpoints'][0]['provider'],
+    }
 
 @pytest.fixture
-def llm(tgi_self_hosted_config: HuggingFaceInferenceConfig) -> HuggingFaceLLM:
+def llm() -> HuggingFaceLLM:
+    config = _model_config("MODELS", "meta-llama/Llama-3.2-11B-Vision-Instruct")
+
     return HuggingFaceLLM(
-        base_url=tgi_self_hosted_config.url,
-        credentials=tgi_self_hosted_config.auth_token,
-        inference_config=tgi_self_hosted_config,
-        max_tokens=tgi_self_hosted_config.available_generated_tokens,
+        base_url=config['url'],
+        credentials=os.environ['TEST_AUTH_TOKEN'],
+        max_tokens=_MAX_TOTAL_TOKENS-_MAX_INPUT_TOKENS,
         temperature=0.8,
-        logprobs=True
+        provider=config['provider'],
+        model=config['name'],
     )
 
 @pytest.fixture
@@ -69,33 +78,25 @@ def chat_model(llm: HuggingFaceLLM) -> HuggingFaceChatModel:
     return HuggingFaceChatModel(llm=llm)
 
 @pytest.fixture
-def tei_self_hosted_config() -> HuggingFaceEmbeddingsConfig:
-    return HuggingFaceEmbeddingsConfig(
-        name='BAAI/bge-large-en-v1.5',
-        url=os.environ['TEST_TEI_URL'],
-        auth_token=os.environ['TEST_AUTH_TOKEN'],        
-        max_batch_tokens=32768,
-        max_client_batch_size=128,
-        max_batch_requests=64,
-        auto_truncate=True
-    )
+def embeddings() -> HuggingFaceEmbeddings:
+    config = _model_config("EMBEDDING_MODELS", "TIGER-Lab/VLM2Vec-Full")
 
-@pytest.fixture
-def embeddings(tei_self_hosted_config: HuggingFaceEmbeddingsConfig) -> HuggingFaceEmbeddings:
     return HuggingFaceEmbeddings(
-        base_url=tei_self_hosted_config.url,
-        credentials=tei_self_hosted_config.auth_token
+        base_url=config['url'],
+        credentials=os.environ['TEST_AUTH_TOKEN'],
+        provider=config['provider'],
+        model=config['name'],
     )
 
 @pytest.fixture
-def tokenizer() -> BgeLargePretrainedTokenizer:
-    return BgeLargePretrainedTokenizer()
+def vlm_tokenizer() -> VLM2VecFullPretrainedTokenizer:
+    return VLM2VecFullPretrainedTokenizer()
 
 @pytest.fixture
 def vectorstore(
     embeddings: HuggingFaceEmbeddings, 
-    tokenizer: BgeLargePretrainedTokenizer
-) -> Iterator[RedisVectorStore]:
+    vlm_tokenizer: VLM2VecFullPretrainedTokenizer
+) -> Iterator[MultiModalVectorStore]:
     config = RedisConfig(
         index_name="test1",
         redis_url=os.environ['REDIS_URL'],
@@ -103,16 +104,16 @@ def vectorstore(
             {"name": "input", "type": "text"},
             {"name": "output", "type": "text"},
         ],
-        # setting this avoids unnecessary request for embeddings
-        embedding_dimensions=tokenizer.dimensions
+        embedding_dimensions=vlm_tokenizer.dimensions
     )
 
-    store = RedisVectorStore(embeddings, config=config)
+    store = MultiModalVectorStore(embeddings, config=config)
 
     yield store
 
     store.index.clear()
     store.index.delete(drop=True)
+
 
 @pytest.fixture
 def sample_population() -> List[str]:
@@ -165,13 +166,16 @@ class SpyHuggingFaceLLM(HuggingFaceLLM):
         return llm_result
 
 @pytest.fixture
-def spy_llm(tgi_self_hosted_config: HuggingFaceInferenceConfig) -> SpyHuggingFaceLLM:
+def spy_llm() -> SpyHuggingFaceLLM:
+    config = _model_config("MODELS", "meta-llama/Llama-3.2-11B-Vision-Instruct")
+
     return SpyHuggingFaceLLM(
-        base_url=tgi_self_hosted_config.url,
-        credentials=tgi_self_hosted_config.auth_token,
-        inference_config=tgi_self_hosted_config,
-        max_tokens=tgi_self_hosted_config.available_generated_tokens,
-        temperature=0.8 
+        base_url=config['url'],
+        credentials=os.environ['TEST_AUTH_TOKEN'],
+        max_tokens=_MAX_TOTAL_TOKENS-_MAX_INPUT_TOKENS,
+        temperature=0.8,
+        provider=config['provider'],
+        model=config['name'],
     )
 
 @pytest.fixture
@@ -186,8 +190,6 @@ class ConfigurableCaptureCallbackHandler(BaseCallbackHandler):
     def on_llm_end(self, response: LLMResult, run_id=None, **kwargs):
         if response.llm_output is not None:
             self.captured_temp = response.llm_output.get('final_temp')
-
-
 
 def test_chat_model_invoke_with_image_to_text(chat_model: HuggingFaceChatModel):
     image_path = Path(__file__).parent / 'assets' / 'baby.jpg'
@@ -211,4 +213,3 @@ def test_chat_model_invoke_with_image_to_text(chat_model: HuggingFaceChatModel):
     chain = chat_prompt | chat_model
     ai_message = chain.invoke({'image_url': image_url})
     assert len(ai_message.content) > 0
-

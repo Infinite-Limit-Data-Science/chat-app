@@ -5,6 +5,11 @@ from urllib.parse import urlparse
 from pydantic import Field, field_validator, model_validator, computed_field
 from .inference_schema import InferenceSchema
 
+"""
+None of these classes are actually used in the application, but rather printed
+during execution of __main__ package through the command-line
+"""
+
 class HuggingFaceSelfHostedServer(InferenceSchema):
     model: str = Field(description='Name of model hosted on self-hosted TEI', pattern=r".+/.+")
     url: str = Field(description='The URL of the self-hosted TEI Server')

@@ -85,8 +85,6 @@ class HuggingFaceBaseInferenceClient(HuggingFaceInferenceServerMixin):
         return value
     
 class HuggingFaceInferenceClient(HuggingFaceBaseInferenceClient):
-    inference_config: Optional[HuggingFaceInferenceConfig] = None
-    embeddings_config: Optional[HuggingFaceEmbeddingsConfig] = None
 
     @model_validator(mode="after")
     def validate_environment(self) -> Self:
@@ -239,12 +237,12 @@ class HuggingFaceInferenceClient(HuggingFaceBaseInferenceClient):
         gen_obj = _stream_chat_completion_response()
         ```
         """
-        if self.inference_config:
-            if not max_tokens:
-                max_tokens = self.inference_config.available_generated_tokens
+        # if self.inference_config:
+        #     if not max_tokens:
+        #         max_tokens = self.inference_config.available_generated_tokens
 
-            if not (1 <= max_tokens <= self.inference_config.available_generated_tokens):
-                raise ValueError(f'max_tokens must be between 1 and {self.inference_config.available_generated_tokens}, got {max_tokens}')
+        #     if not (1 <= max_tokens <= self.inference_config.available_generated_tokens):
+        #         raise ValueError(f'max_tokens must be between 1 and {self.inference_config.available_generated_tokens}, got {max_tokens}')
 
         if num_generations:
             print('Warning: The OpenAI API `n` option is unsupported by Hugging Face TGI (even if supported by Hugging Face Hub Messages API). Ignoring the num_generations option..')

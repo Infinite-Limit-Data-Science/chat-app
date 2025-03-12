@@ -14,12 +14,12 @@ from ..huggingface_transformer_tokenizers import (
     BgeLargePretrainedTokenizer,
     VLM2VecFullPretrainedTokenizer,
 )
-from ..huggingface_inference_server_config import (
-    HuggingFaceEmbeddingsConfig, 
-    HuggingFaceInferenceConfig,
-)
 
 load_dotenv()
+
+_MAX_INPUT_TOKENS = 12582
+
+_MAX_TOTAL_TOKENS = 16777
 
 def _model_config(model_type: str, model_name: str) -> str:
     models = json.loads(os.environ[model_type])
@@ -29,75 +29,84 @@ def _model_config(model_type: str, model_name: str) -> str:
 
     return {
         'name': model['name'],
-        'url': model['endpoints'][0]['url']
+        'url': model['endpoints'][0]['url'],
+        'provider': model['endpoints'][0]['provider'],
     }
 
+
+# @pytest.fixture
+# def tgi_self_hosted_config() -> HuggingFaceInferenceConfig:
+#     config = _model_config("MODELS", "meta-llama/Llama-3.2-11B-Vision-Instruct")
+
+#     return HuggingFaceInferenceConfig(
+#         name=config['name'],
+#         url=config['url'],
+#         auth_token=os.environ['TEST_AUTH_TOKEN'],
+#         max_input_tokens=12582,
+#         max_total_tokens=16777,
+#         max_batch_prefill_tokens=12582+50,
+#         payload_limit=5_000_000
+#     )
+
+# @pytest.fixture
+# def tei_self_hosted_config() -> HuggingFaceInferenceConfig:
+#     config = _model_config("EMBEDDING_MODELS", "BAAI/bge-large-en-v1.5")
+
+#     return HuggingFaceInferenceConfig(
+#         name=config['name'],
+#         url=config['url'],
+#         auth_token=os.environ['TEST_AUTH_TOKEN'],
+#         max_batch_tokens=32768,
+#         max_client_batch_size=128,
+#         max_batch_requests=64,
+#         auto_truncate=True
+#     )
+
+# @pytest.fixture
+# def tei_self_hosted_config_vision() -> HuggingFaceEmbeddingsConfig:
+#     config = _model_config("EMBEDDING_MODELS", "TIGER-Lab/VLM2Vec-Full")
+    
+#     return HuggingFaceEmbeddingsConfig(
+#         name=config['name'],
+#         url=config['url'],
+#         auth_token=os.environ['TEST_AUTH_TOKEN'],
+#         max_batch_tokens=32768,
+#         max_client_batch_size=128,
+#         max_batch_requests=64,
+#         auto_truncate=True
+#     )
+
 @pytest.fixture
-def tgi_self_hosted_config() -> HuggingFaceInferenceConfig:
+def inference_client() -> HuggingFaceInferenceClient:
     config = _model_config("MODELS", "meta-llama/Llama-3.2-11B-Vision-Instruct")
 
-    return HuggingFaceInferenceConfig(
-        name=config['name'],
-        url=config['url'],
-        auth_token=os.environ['TEST_AUTH_TOKEN'],
-        max_input_tokens=12582,
-        max_total_tokens=16777,
-        max_batch_prefill_tokens=12582+50,
-        payload_limit=5_000_000
+    return HuggingFaceInferenceClient(
+        base_url=config['url'],
+        model=config['name'],
+        provider=config['provider'],
+        credentials=os.environ['TEST_AUTH_TOKEN'],
     )
 
-@pytest.fixture
-def tei_self_hosted_config() -> HuggingFaceInferenceConfig:
-    config = _model_config("EMBEDDING_MODELS", "BAAI/bge-large-en-v1.5")
+# @pytest.fixture
+# def embeddings_client() -> HuggingFaceInferenceClient:
+#     config = _model_config("EMBEDDING_MODELS", "BAAI/bge-large-en-v1.5")
 
-    return HuggingFaceInferenceConfig(
-        name=config['name'],
-        url=config['url'],
-        auth_token=os.environ['TEST_AUTH_TOKEN'],
-        max_batch_tokens=32768,
-        max_client_batch_size=128,
-        max_batch_requests=64,
-        auto_truncate=True
-    )
+#     return HuggingFaceInferenceClient(
+#         base_url=config['url'],
+#         model=config['name'],
+#         provider=config['provider'],
+#         credentials=os.environ['TEST_AUTH_TOKEN'],
+#     )
 
 @pytest.fixture
-def tei_self_hosted_config_vision() -> HuggingFaceEmbeddingsConfig:
+def embeddings_client() -> HuggingFaceInferenceClient:
     config = _model_config("EMBEDDING_MODELS", "TIGER-Lab/VLM2Vec-Full")
-    
-    return HuggingFaceEmbeddingsConfig(
-        name=config['name'],
-        url=config['url'],
-        auth_token=os.environ['TEST_AUTH_TOKEN'],
-        max_batch_tokens=32768,
-        max_client_batch_size=128,
-        max_batch_requests=64,
-        auto_truncate=True
-    )
 
-@pytest.fixture
-def tgi_inference_client(tgi_self_hosted_config: HuggingFaceInferenceConfig) -> HuggingFaceInferenceClient:
     return HuggingFaceInferenceClient(
-        base_url=tgi_self_hosted_config.url,
-        credentials=tgi_self_hosted_config.auth_token,
-        inference_config=tgi_self_hosted_config
-    )
-
-@pytest.fixture
-def tei_inference_client(tei_self_hosted_config: HuggingFaceEmbeddingsConfig) -> HuggingFaceInferenceClient:
-    return HuggingFaceInferenceClient(
-        base_url=tei_self_hosted_config.url,
-        credentials=tei_self_hosted_config.auth_token,
-        embeddings_config=tei_self_hosted_config
-    )
-
-@pytest.fixture
-def tei_inference_client_vision(tei_self_hosted_config_vision: HuggingFaceEmbeddingsConfig) -> HuggingFaceInferenceClient:
-    return HuggingFaceInferenceClient(
-        base_url=tei_self_hosted_config_vision.url,
-        credentials=tei_self_hosted_config_vision.auth_token,
-        embeddings_config=tei_self_hosted_config_vision,
-        provider='vllm',
-        model='TIGER-Lab/VLM2Vec-Full'
+        base_url=config['url'],
+        model=config['name'],
+        provider=config['provider'],
+        credentials=os.environ['TEST_AUTH_TOKEN'],
     )
 
 @pytest.fixture
@@ -117,52 +126,52 @@ def corpus() -> str:
     """
     return text
 
-def test_inference_client_feature_extraction(tei_inference_client: HuggingFaceInferenceClient, corpus: str):
-    embeddings = tei_inference_client.feature_extraction(corpus)
+def test_inference_client_feature_extraction(embeddings_client: HuggingFaceInferenceClient, corpus: str):
+    embeddings = embeddings_client.feature_extraction(corpus)
     assert embeddings.dtype == 'float32'
 
 def test_inference_client_feature_extraction_trunc(
-    tei_inference_client: HuggingFaceInferenceClient, 
+    embeddings_client: HuggingFaceInferenceClient, 
     corpus: str, 
-    bge: BgeLargePretrainedTokenizer
+    vlm2vec: VLM2VecFullPretrainedTokenizer
 ):
     corpus = " ".join([corpus] * 10)
-    embeddings = tei_inference_client.feature_extraction(corpus, truncate=True)
+    embeddings = embeddings_client.feature_extraction(corpus, truncate=True)
 
-    assert embeddings.size == bge.dimensions
+    assert embeddings.size == vlm2vec.dimensions
 
 def test_inference_client_feature_extraction_not_tokens(
-    tei_inference_client: HuggingFaceInferenceClient, 
+    embeddings_client: HuggingFaceInferenceClient, 
     corpus: str, 
     bge: BgeLargePretrainedTokenizer
 ):
     tokens  = bge.tokenizer.encode(corpus, add_special_tokens=True)
-    embeddings = tei_inference_client.feature_extraction(corpus, truncate=True)
+    embeddings = embeddings_client.feature_extraction(corpus, truncate=True)
     decoded = bge.tokenizer.decode(embeddings[0])
 
     assert tokens != decoded
 
 @pytest.mark.asyncio
-async def test_async_inference_client_feature_extraction(tei_inference_client: HuggingFaceInferenceClient, corpus: str):
-    embeddings = await tei_inference_client.afeature_extraction(corpus)
+async def test_async_inference_client_feature_extraction(embeddings_client: HuggingFaceInferenceClient, corpus: str):
+    embeddings = await embeddings_client.afeature_extraction(corpus)
     assert embeddings.dtype == 'float32'
 
 def test_inference_client_feature_extraction_vision(
-    tei_inference_client_vision: HuggingFaceInferenceClient, 
+    embeddings_client: HuggingFaceInferenceClient, 
     corpus: str,
 ):
-    embeddings = tei_inference_client_vision.feature_extraction(corpus)
+    embeddings = embeddings_client.feature_extraction(corpus)
     assert len(embeddings) > 0
 
 def test_inference_client_feature_extraction_vision2(
-    tei_inference_client_vision: HuggingFaceInferenceClient, 
+    embeddings_client: HuggingFaceInferenceClient, 
 ):
     image_path = Path(__file__).parent / 'assets' / 'baby.jpg'
     with image_path.open('rb') as f:
         base64_image = base64.b64encode(f.read()).decode('utf-8')
     image_url = f'data:image/jpeg;base64,{base64_image}'
 
-    embeddings = tei_inference_client_vision.feature_extraction([
+    embeddings = embeddings_client.feature_extraction([
         {
             "image_url": image_url,
             "text": "Describe the image",
@@ -173,22 +182,22 @@ def test_inference_client_feature_extraction_vision2(
 
 @pytest.mark.asyncio
 async def test_async_inference_client_feature_extraction_vision(
-    tei_inference_client_vision: HuggingFaceInferenceClient, 
+    embeddings_client: HuggingFaceInferenceClient, 
     corpus: str,
 ):
-    embeddings = await tei_inference_client_vision.afeature_extraction(corpus)
+    embeddings = await embeddings_client.afeature_extraction(corpus)
     assert len(embeddings) > 0
 
 @pytest.mark.asyncio
 async def test_async_inference_client_feature_extraction_vision2(
-    tei_inference_client_vision: HuggingFaceInferenceClient, 
+    embeddings_client: HuggingFaceInferenceClient, 
 ):
     image_path = Path(__file__).parent / 'assets' / 'baby.jpg'
     with image_path.open('rb') as f:
         base64_image = base64.b64encode(f.read()).decode('utf-8')
     image_url = f'data:image/jpeg;base64,{base64_image}'
 
-    embeddings = await tei_inference_client_vision.afeature_extraction([
+    embeddings = await embeddings_client.afeature_extraction([
         {
             "image_url": image_url,
             "text": "Describe the image",
@@ -197,8 +206,8 @@ async def test_async_inference_client_feature_extraction_vision2(
 
     assert len(embeddings) > 0
 
-def test_inference_client_chat_completion(tgi_inference_client: HuggingFaceInferenceClient):
-    chat_completion_output = tgi_inference_client.chat_completion(
+def test_inference_client_chat_completion(inference_client: HuggingFaceInferenceClient):
+    chat_completion_output = inference_client.chat_completion(
         messages = [
             {
                 'role': 'user',
@@ -206,7 +215,7 @@ def test_inference_client_chat_completion(tgi_inference_client: HuggingFaceInfer
             }
         ],
         stream=False, # not needed, defaults to False
-        max_tokens=tgi_inference_client.inference_config.available_generated_tokens,
+        max_tokens=_MAX_TOTAL_TOKENS-_MAX_INPUT_TOKENS,
         temperature=0.8 # add randomness
     )
 
@@ -217,15 +226,15 @@ def test_inference_client_chat_completion(tgi_inference_client: HuggingFaceInfer
     assert chat_completion_output.choices[0].message.role == 'assistant'
     assert len(chat_completion_output.choices[0].message.content) > 0
 
-def test_inference_client_chat_completion_with_multiple_candidates(tgi_inference_client: HuggingFaceInferenceClient):
-    chat_completion_output = tgi_inference_client.chat_completion(
+def test_inference_client_chat_completion_with_multiple_candidates(inference_client: HuggingFaceInferenceClient):
+    chat_completion_output = inference_client.chat_completion(
         messages = [
             {
                 'role': 'user',
                 'content': 'What is Generative AI?'
             }
         ],
-        max_tokens=tgi_inference_client.inference_config.available_generated_tokens,
+        max_tokens=_MAX_TOTAL_TOKENS-_MAX_INPUT_TOKENS,
         num_generations=3,
         temperature=0.8
     )
@@ -239,16 +248,16 @@ def test_inference_client_chat_completion_with_multiple_candidates(tgi_inference
         assert len(choice.message.content) > 0
 
 @pytest.mark.asyncio
-async def test_inference_client_chat_completion_with_logprobs(tgi_inference_client: HuggingFaceInferenceClient):
+async def test_inference_client_chat_completion_with_logprobs(inference_client: HuggingFaceInferenceClient):
     messages = [{'role': 'user', 'content': 'What is Generative AI?'}]
-    max_tokens = tgi_inference_client.inference_config.available_generated_tokens
+    max_tokens = _MAX_TOTAL_TOKENS-_MAX_INPUT_TOKENS
     params = [
         {'top_p': 0.5},
         {'top_p': 0.9}
     ]
 
     async def fetch_chat_completion(top_p_value):
-        return tgi_inference_client.chat_completion(
+        return inference_client.chat_completion(
             messages=messages,
             max_tokens=max_tokens,
             temperature=0.8,
@@ -267,16 +276,16 @@ async def test_inference_client_chat_completion_with_logprobs(tgi_inference_clie
             assert -2.5 <= mean_logprob <= 1.0, f'Mean logprob {mean_logprob} out of range'
 
 @pytest.mark.asyncio
-async def test_inference_client_chat_completion_with_reranking(tgi_inference_client: HuggingFaceInferenceClient):
+async def test_inference_client_chat_completion_with_reranking(inference_client: HuggingFaceInferenceClient):
     messages = [{'role': 'user', 'content': 'What is Generative AI?'}]
-    max_tokens = tgi_inference_client.inference_config.available_generated_tokens
+    max_tokens = _MAX_TOTAL_TOKENS-_MAX_INPUT_TOKENS
     params = [
         {'top_p': 0.5},
         {'top_p': 0.9}
     ]
 
     async def fetch_chat_completion(top_p_value):
-        return tgi_inference_client.chat_completion(
+        return inference_client.chat_completion(
             messages=messages,
             max_tokens=max_tokens,
             temperature=0.8,
@@ -301,13 +310,13 @@ async def test_inference_client_chat_completion_with_reranking(tgi_inference_cli
 
     assert len(best_choice.message.content) > 0 
 
-def test_inference_client_chat_completion_with_image_to_text(tgi_inference_client: HuggingFaceInferenceClient):
+def test_inference_client_chat_completion_with_image_to_text(inference_client: HuggingFaceInferenceClient):
     image_path = Path(__file__).parent / 'assets' / 'baby.jpg'
     with image_path.open('rb') as f:
         base64_image = base64.b64encode(f.read()).decode('utf-8')
     image_url = f'data:image/jpeg;base64,{base64_image}'
 
-    chat_completion_output = tgi_inference_client.chat_completion(
+    chat_completion_output = inference_client.chat_completion(
         messages = [
             {
                 'role': 'user',
@@ -323,7 +332,7 @@ def test_inference_client_chat_completion_with_image_to_text(tgi_inference_clien
                 ]
             }
         ],
-        max_tokens=tgi_inference_client.inference_config.available_generated_tokens,
+        max_tokens=_MAX_TOTAL_TOKENS-_MAX_INPUT_TOKENS,
         temperature=0.8,
         logprobs=True
     )
@@ -333,15 +342,15 @@ def test_inference_client_chat_completion_with_image_to_text(tgi_inference_clien
         assert choice.message.role == 'assistant'
         assert len(choice.message.content) > 0
 
-def test_inference_client_chat_completion_with_output_usage(tgi_inference_client: HuggingFaceInferenceClient):
-    chat_completion_output = tgi_inference_client.chat_completion(
+def test_inference_client_chat_completion_with_output_usage(inference_client: HuggingFaceInferenceClient):
+    chat_completion_output = inference_client.chat_completion(
         messages = [
             {
                 'role': 'user',
                 'content': 'What is Generative AI?'
             }
         ],
-        max_tokens=tgi_inference_client.inference_config.available_generated_tokens,
+        max_tokens=_MAX_TOTAL_TOKENS-_MAX_INPUT_TOKENS,
         temperature=0.8
     )
 
@@ -350,7 +359,7 @@ def test_inference_client_chat_completion_with_output_usage(tgi_inference_client
     assert chat_completion_output.usage.total_tokens > 0
 
 @pytest.mark.skip(reason="Temporarily disabled for debugging")
-def test_inference_client_chat_completion_with_tool_calling(tgi_inference_client: HuggingFaceInferenceClient):
+def test_inference_client_chat_completion_with_tool_calling(inference_client: HuggingFaceInferenceClient):
     class WeatherForecastRequest(BaseModel):
         location: str = Field(..., description="The city and state, e.g., 'San Francisco, CA'")
         format: str = Field(..., description="Temperature unit: 'celsius' or 'fahrenheit'", enum=["celsius", "fahrenheit"])
@@ -367,12 +376,12 @@ def test_inference_client_chat_completion_with_tool_calling(tgi_inference_client
         }
     ]
 
-    chat_completion_output: ChatCompletionOutput = tgi_inference_client.chat_completion(
+    chat_completion_output: ChatCompletionOutput = inference_client.chat_completion(
         messages = [
             {'role': 'system', 'content': 'Use the provided tools to answer user questions.'},
             {'role': 'user', 'content': "What's the weather like in New York for the next 3 days?"}
         ],
-        max_tokens=tgi_inference_client.inference_config.available_generated_tokens,
+        max_tokens=_MAX_TOTAL_TOKENS-_MAX_INPUT_TOKENS,
         tools=tools,
         tool_choice='auto',
         temperature=0.8
@@ -386,15 +395,15 @@ def test_inference_client_chat_completion_with_tool_calling(tgi_inference_client
         assert tool_call.function.arguments['format'] == 'celsius'
 
 @pytest.mark.asyncio
-async def test_async_inference_client_chat_completion(tgi_inference_client: HuggingFaceInferenceClient):
-    chat_completion_output = await tgi_inference_client.achat_completion(
+async def test_async_inference_client_chat_completion(inference_client: HuggingFaceInferenceClient):
+    chat_completion_output = await inference_client.achat_completion(
         messages = [
             {
                 'role': 'user',
                 'content': 'What is Generative AI?'
             }
         ],
-        max_tokens=tgi_inference_client.inference_config.available_generated_tokens,
+        max_tokens=_MAX_TOTAL_TOKENS-_MAX_INPUT_TOKENS,
         temperature=0.8
     )
 
@@ -404,15 +413,15 @@ async def test_async_inference_client_chat_completion(tgi_inference_client: Hugg
     assert len(chat_completion_output.choices[0].message.content) > 0
 
 @pytest.mark.asyncio
-async def test_async_streaming_inference_client_chat_completion(tgi_inference_client: HuggingFaceInferenceClient):
-    chat_completion_output = await tgi_inference_client.achat_completion(
+async def test_async_streaming_inference_client_chat_completion(inference_client: HuggingFaceInferenceClient):
+    chat_completion_output = await inference_client.achat_completion(
         messages = [
             {
                 'role': 'user',
                 'content': 'What is Generative AI?'
             }
         ],
-        max_tokens=tgi_inference_client.inference_config.available_generated_tokens,
+        max_tokens=_MAX_TOTAL_TOKENS-_MAX_INPUT_TOKENS,
         temperature=0.8,
         stream=True,
         logprobs=True
