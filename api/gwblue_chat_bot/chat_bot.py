@@ -342,10 +342,34 @@ class ChatBot(RunnableSerializable[I, O]):
         prompt: BasePromptTemplate,
         preprompt_filter: Optional[Runnable] = None,
     ) -> Runnable[Dict[str, Any], Any]:
-        """Custom implementation to handle preprompt messages"""        
+        """Custom implementation to handle preprompt messages"""
+        def format_doc(doc: Document, doc_prompt: str) -> str:
+            content = doc.page_content
+            if content.startswith("data:image/"):
+                model_binding = self.chat_model.bind(stream=False)
+                ai_message = model_binding.invoke(
+                    [
+                        {
+                            'role': 'user',
+                            'content': [
+                                {
+                                    'type': 'image_url',
+                                    'image_url': {'url': content},
+                                },
+                                {
+                                    'type': 'text',
+                                    'text': 'Describe this image.'
+                                }
+                            ]
+                        }
+                    ]
+                )
+                doc = Document(page_content=ai_message.content)
+            return format_document(doc, doc_prompt)
+
         def format_docs(inputs: dict) -> str:
             return DEFAULT_DOCUMENT_SEPARATOR.join(
-                format_document(doc, DEFAULT_DOCUMENT_PROMPT)
+                format_doc(doc, DEFAULT_DOCUMENT_PROMPT)
                 for doc in inputs['context']
             )
 
