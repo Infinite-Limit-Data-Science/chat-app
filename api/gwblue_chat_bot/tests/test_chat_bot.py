@@ -3,6 +3,7 @@ import json
 import pytest
 import tempfile
 import shutil
+import asyncio
 from pathlib import Path
 from typing import Dict, Any, List, Generator, Iterator
 from redis.client import Redis
@@ -22,7 +23,10 @@ import io
 from fastapi import UploadFile
 from starlette.datastructures import Headers
 from ...gwblue_huggingface import HuggingFaceEmbeddings
-from ...gwblue_ingestion_pipeline import LazyPdfIngestor
+from ...gwblue_ingestion_pipeline import (
+    LazyPdfIngestor,
+    LazyWordIngestor,
+)
 
 from bson import ObjectId
 from uuid import uuid4
@@ -205,6 +209,24 @@ def compare_previous_documents() -> List[UploadFile]:
     return uploads    
 
 @pytest.fixture
+def compare_file_paths(compare_documents: list[UploadFile]) -> Iterator[List[Path]]:
+    temp_dir = tempfile.mkdtemp()
+    file_paths: List[Path] = []
+
+    try:
+        for upload_file in compare_documents:
+            tmp_file_path = Path(temp_dir) / upload_file.filename
+            file_bytes = upload_file.file.read()
+            with open(tmp_file_path, "wb") as f:
+                f.write(file_bytes)
+            file_paths.append(tmp_file_path)
+
+        yield file_paths
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@pytest.fixture
 def image_files() -> list[UploadFile]:
     current_dir = Path(__file__).parent
     files = [
@@ -316,91 +338,117 @@ async def test_single_doc_prompt(
     
     assert len(ai_content) > 0
     
-# @pytest.mark.asyncio
-# async def test_multi_doc_prompt(
-#     chat_bot_config: ChatBotConfig,
-#     message_metadata: Dict[str, Any],
-#     conversation_doc: Dict[str, Any],
-#     compare_documents: List[UploadFile],
-# ):
-#     chat_bot_config.message_history.session_id = conversation_doc['_id']
-#     vector_store = os.environ['VECTOR_STORE']
-#     metadatas = await ingest(
-#         vector_store, 
-#         compare_documents, 
-#         chat_bot_config.embeddings,
-#         chat_bot_config.vectorstore,
-#         message_metadata,
-#     )
+@pytest.mark.asyncio
+async def test_multi_doc_prompt(
+    embeddings: HuggingFaceEmbeddings,
+    chat_bot_config: ChatBotConfig,
+    message_metadata: Dict[str, Any],
+    conversation_doc: Dict[str, Any],
+    compare_file_paths: List[UploadFile],
+):
+    chat_bot_config.message_history.session_id = conversation_doc['_id']
 
-#     chat_prompt = ChatPromptTemplate.from_messages(
-#         [
-#             ('system', "You're a helpful assistant"),
-#             ('human', '{input}')
-#         ]
-#     )
-#     chat_bot = ChatBot(config=chat_bot_config)
-#     chain = chat_prompt | chat_bot
+    metadatas = [
+        {
+            **message_metadata, 
+            'conversation_id': str(message_metadata['conversation_id']), 
+            'source': 'ruby-rails-developer-v2.docx',
+        },
+        {
+            **message_metadata, 
+            'conversation_id': str(message_metadata['conversation_id']), 
+            'source': 'senior-cloud-engineer-v1.docx',
+        },
+        {
+            **message_metadata, 
+            'conversation_id': str(message_metadata['conversation_id']), 
+            'source': 'senior-devops-engineer-v4.docx',            
+        }
+    ]
 
-#     config = RunnableConfig(
-#         tags=[
-#             'chat_bot_run_test', 
-#             f'uuid_${message_metadata['uuid']}', 
-#             f'conversation_id_${message_metadata['uuid']}'
-#         ],
-#         metadata={ 'vector_metadata': metadatas },
-#         configurable={ 'retrieval_mode': 'mmr' }
-#     )
+    ingestors = []
+    for file_path, metadata in zip(compare_file_paths, metadatas):
+        ingestor = LazyWordIngestor(
+            file_path,
+            embeddings=embeddings,
+            metadata=metadata,
+            vector_config=chat_bot_config.vectorstore,
+            embeddings_config=chat_bot_config.embeddings,
+        )
+        ingestors.append(ingestor)
 
-#     ai_content = ''
-#     streaming_resp = []
-#     async for chunk in chain.astream(
-#         {'input': 'Compare the three documents'},
-#         config=config
-#     ):
-#         print(f'Custom event ${chunk.content}')
-#         ai_content += chunk.content
-#         streaming_resp.append(chunk)
+    tasks = [asyncio.create_task(ingestor.ingest()) for ingestor in ingestors]
+    ids: List[List[str]] = await asyncio.gather(*tasks)
+    print(ids)
+
+    chat_prompt = ChatPromptTemplate.from_messages(
+        [
+            ('system', "You're a helpful assistant"),
+            ('human', '{input}')
+        ]
+    )
+    chat_bot = ChatBot(config=chat_bot_config)
+    chain = chat_prompt | chat_bot
+
+    config = RunnableConfig(
+        tags=[
+            'chat_bot_run_test', 
+            f'uuid_${message_metadata['uuid']}', 
+            f'conversation_id_${message_metadata['uuid']}'
+        ],
+        metadata={ 'vector_metadata': metadatas },
+        configurable={ 'retrieval_mode': 'mmr' }
+    )
+
+    ai_content = ''
+    streaming_resp = []
+    async for chunk in chain.astream(
+        {'input': 'Compare the three documents'},
+        config=config
+    ):
+        print(f'Custom event ${chunk.content}')
+        ai_content += chunk.content
+        streaming_resp.append(chunk)
     
-#     assert len(ai_content) > 0
+    assert len(ai_content) > 0
 
-# @pytest.mark.asyncio
-# async def test_pretrained_corpus_prompt(
-#     chat_bot_config: ChatBotConfig,
-#     message_metadata: Dict[str, Any],
-#     conversation_doc: Dict[str, Any],
-# ):
-#     chat_bot_config.message_history.session_id = conversation_doc['_id']
-#     chat_prompt = ChatPromptTemplate.from_messages(
-#         [
-#             ('system', "You're a helpful assistant"),
-#             ('human', '{input}')
-#         ]
-#     )
-#     chat_bot = ChatBot(config=chat_bot_config)
-#     chain = chat_prompt | chat_bot
+@pytest.mark.asyncio
+async def test_pretrained_corpus_prompt(
+    chat_bot_config: ChatBotConfig,
+    message_metadata: Dict[str, Any],
+    conversation_doc: Dict[str, Any],
+):
+    chat_bot_config.message_history.session_id = conversation_doc['_id']
+    chat_prompt = ChatPromptTemplate.from_messages(
+        [
+            ('system', "You're a helpful assistant"),
+            ('human', '{input}')
+        ]
+    )
+    chat_bot = ChatBot(config=chat_bot_config)
+    chain = chat_prompt | chat_bot
 
-#     config = RunnableConfig(
-#         tags=[
-#             'chat_bot_run_test', 
-#             f'uuid_${message_metadata['uuid']}', 
-#             f'conversation_id_${message_metadata['uuid']}'
-#         ],
-#         metadata={ 'vector_metadata': [message_metadata] },
-#         configurable={ 'retrieval_mode': 'mmr' }
-#     )
+    config = RunnableConfig(
+        tags=[
+            'chat_bot_run_test', 
+            f'uuid_${message_metadata['uuid']}', 
+            f'conversation_id_${message_metadata['uuid']}'
+        ],
+        metadata={ 'vector_metadata': [message_metadata] },
+        configurable={ 'retrieval_mode': 'mmr' }
+    )
 
-#     ai_content = ''
-#     streaming_resp = []
-#     async for chunk in chain.astream(
-#         {'input': 'Tell me about the movie Memento.'},
-#         config=config
-#     ):
-#         print(f'Custom event ${chunk.content}')
-#         ai_content += chunk.content
-#         streaming_resp.append(chunk)
+    ai_content = ''
+    streaming_resp = []
+    async for chunk in chain.astream(
+        {'input': 'Tell me about the movie Memento.'},
+        config=config
+    ):
+        print(f'Custom event ${chunk.content}')
+        ai_content += chunk.content
+        streaming_resp.append(chunk)
     
-#     assert len(ai_content) > 0    
+    assert len(ai_content) > 0    
 
 # @pytest.mark.asyncio
 # async def test_multimodal_image(
