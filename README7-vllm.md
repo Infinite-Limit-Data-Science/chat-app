@@ -1,3 +1,5 @@
+# https://docs.vllm.ai/en/latest/getting_started/examples/openai_embedding_client.html
+# https://docs.vllm.ai/en/latest/getting_started/examples/openai_chat_embedding_client_for_multimodal.html !!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 token=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
 model=TIGER-Lab/VLM2Vec-Full

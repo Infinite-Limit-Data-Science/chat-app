@@ -16,8 +16,8 @@ from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from pydantic import BaseModel, ConfigDict
 from ..gwblue_text_splitters.mixed_content_text_splitter import MixedContentTextSplitter
-from ..gwblue_vectoretrievers.redis.config import VectorStoreSchema
-from ..gwblue_vectoretrievers.redis.vectorstore import RedisVectorStoreTTL
+from ..gwblue_vectorstores.redis.config import VectorStoreSchema
+from ..gwblue_vectorstores.redis.multimodal_vectorstore import MultiModalVectorStore
 from ..gwblue_huggingface.huggingface_transformer_tokenizers import (
     get_tokenizer_class_by_prefix
 )
@@ -72,7 +72,7 @@ class DocumentIngestor(ABC):
             **VectorStoreSchema().model_dump()
         })
             
-        self.vector_store = RedisVectorStoreTTL(
+        self.vector_store = MultiModalVectorStore(
             self.embeddings, 
             config=config
         )

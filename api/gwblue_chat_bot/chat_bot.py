@@ -76,8 +76,8 @@ from .chat_bot_config import ChatBotConfig
 
 from langchain_redis import RedisConfig
 from redisvl.query.filter import Tag, FilterExpression
-from ..gwblue_vectoretrievers.redis.config import VectorStoreSchema
-from ..gwblue_vectoretrievers.redis.vectorstore import RedisVectorStoreTTL
+from ..gwblue_vectorstores.redis.config import VectorStoreSchema
+from ..gwblue_vectorstores.redis.multimodal_vectorstore import MultiModalVectorStore
 
 from .prompts import registry
 from .message_history import (
@@ -137,7 +137,7 @@ class ChatBot(RunnableSerializable[I, O]):
     retry_model: BaseChatModel = Field(default=None, exclude=True)
     safety_model: BaseChatModel = Field(default=None, exclude=True)
     embeddings: Embeddings = Field(default=None, exclude=True)
-    vector_store: RedisVectorStoreTTL = Field(default=None, exclude=True)
+    vector_store: MultiModalVectorStore = Field(default=None, exclude=True)
     message_history: MongoMessageHistory = Field(default=None, exclude=True)
 
     alt: Optional[bool] = False
@@ -173,7 +173,7 @@ class ChatBot(RunnableSerializable[I, O]):
             **VectorStoreSchema().model_dump()
         })
             
-        self.vector_store = RedisVectorStoreTTL(
+        self.vector_store = MultiModalVectorStore(
             self.embeddings, 
             config=config
         )

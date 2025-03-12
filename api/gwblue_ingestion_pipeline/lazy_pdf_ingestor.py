@@ -10,7 +10,7 @@ class LazyPdfIngestor(DocumentIngestor):
             self._file,
             extract_images=True,
             images_parser=Base64BlobParser(),
-            images_inner_format="html-img",
+            images_inner_format="raw",
             mode="page",
         )
         for doc in loader.lazy_load():

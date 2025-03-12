@@ -1,20 +1,23 @@
 import pytest
 import os
 import json
-import base64
 from pathlib import Path
 from typing import List, Iterator
 from dotenv import load_dotenv
 from langchain_core.documents import Document
 from langchain_redis import RedisConfig
-from langchain_redis import RedisVectorStore
 from redisvl.query.filter import Tag
 from ..huggingface_embeddings import HuggingFaceEmbeddings
 from ..huggingface_transformer_tokenizers import (
     BgeLargePretrainedTokenizer,
     VLM2VecFullPretrainedTokenizer
 ) 
+from langchain_community.document_loaders import PyPDFLoader
+from ...gwblue_document_loaders.parsers import Base64BlobParser
 from ...gwblue_text_splitters import MixedContentTextSplitter
+from ...gwblue_vectorstores.redis.multimodal_vectorstore import (
+    MultiModalVectorStore
+)
 from .corpus import dummy_corpus1
 
 load_dotenv()
@@ -79,21 +82,17 @@ def text_chunks(vlm_tokenizer: VLM2VecFullPretrainedTokenizer) -> List[str]:
     return chunks
 
 @pytest.fixture
-def mixed_message_chunks() -> List[str]:
-    image_path = Path(__file__).parent / 'assets' / 'baby.jpg'
-    with image_path.open('rb') as f:
-        base64_image = base64.b64encode(f.read()).decode('utf-8')
-    image_url = f'data:image/jpeg;base64,{base64_image}'
+def mixed_message_chunks(vlm_tokenizer: VLM2VecFullPretrainedTokenizer) -> List[str]:
+    pdf_path = Path(__file__).parent / 'assets' / 'jpeg.pdf'
+    loader = PyPDFLoader(
+        pdf_path,
+        extract_images=True,
+        images_parser=Base64BlobParser(),
+        images_inner_format="raw",
+        mode="page",
+    )
+    docs = loader.load()
 
-    page_content = f"""
-    This is an image of a baby.
-
-    He is taller than most babies and graces a smile.
-
-    {image_url}
-    """
-
-    docs = [Document(page_content=page_content, metadata={'source': 'book', 'page': 0})]
     sequence_length = 2000
     overlap = int(sequence_length * 0.05)
     len_function = lambda text: len(vlm_tokenizer.tokenizer.encode(text))
@@ -113,7 +112,7 @@ def mixed_message_chunks() -> List[str]:
 def vectorstore(
     embeddings: HuggingFaceEmbeddings, 
     vlm_tokenizer: VLM2VecFullPretrainedTokenizer
-) -> Iterator[RedisVectorStore]:
+) -> Iterator[MultiModalVectorStore]:
     config = RedisConfig(
         index_name="test1",
         redis_url=os.environ['REDIS_URL'],
@@ -123,7 +122,7 @@ def vectorstore(
         embedding_dimensions=vlm_tokenizer.dimensions
     )
 
-    store = RedisVectorStore(embeddings, config=config)
+    store = MultiModalVectorStore(embeddings, config=config)
 
     yield store
 
@@ -154,11 +153,11 @@ def test_embed_query(embeddings: HuggingFaceEmbeddings):
     embedded_vectors = embeddings.embed_query(dummy_corpus1)
     assert len(embedded_vectors) > 0
 
-def test_embed_documents_in_vector_db(vectorstore: RedisVectorStore):
+def test_embed_documents_in_vector_db(vectorstore: MultiModalVectorStore):
     ids = vectorstore.add_texts([dummy_corpus1], [{'source': 'book'}])
     assert ids[0].startswith('test1')
 
-def test_embed_documents_with_similarity_search(vectorstore: RedisVectorStore, text_chunks: List[str]):
+def test_embed_documents_with_similarity_search(vectorstore: MultiModalVectorStore, text_chunks: List[str]):
     vectorstore.add_documents(text_chunks)
     query = "What did King Ulfric Stormborn do in 879"
     results = vectorstore.similarity_search(
@@ -169,7 +168,7 @@ def test_embed_documents_with_similarity_search(vectorstore: RedisVectorStore, t
 
     assert len(results) == 2
 
-def test_embed_documents_with_similarity_search_with_score(vectorstore: RedisVectorStore, text_chunks: List[str]): 
+def test_embed_documents_with_similarity_search_with_score(vectorstore: MultiModalVectorStore, text_chunks: List[str]): 
     vectorstore.add_documents(text_chunks)
     query = "What did King Ulfric Stormborn do in 879"    
     results = vectorstore.similarity_search_with_score(
@@ -184,7 +183,7 @@ def test_embed_documents_with_similarity_search_with_score(vectorstore: RedisVec
     assert score1 < score2
 
 def test_embed_documents_with_max_marginal_relevance_search(
-    vectorstore: RedisVectorStore, 
+    vectorstore: MultiModalVectorStore, 
     text_chunks: List[str]
 ):
     vectorstore.add_documents(text_chunks)
@@ -199,7 +198,7 @@ def test_embed_documents_with_max_marginal_relevance_search(
 
 def test_embed_documents_with_similarity_search_by_vector(
     embeddings: HuggingFaceEmbeddings, 
-    vectorstore: RedisVectorStore, 
+    vectorstore: MultiModalVectorStore, 
     text_chunks: List[str]
 ):
     vectorstore.add_documents(text_chunks)
@@ -215,7 +214,7 @@ def test_embed_documents_with_similarity_search_by_vector(
 
 def test_embed_documents_with_similarity_search_with_score_by_vector(
     embeddings: HuggingFaceEmbeddings, 
-    vectorstore: RedisVectorStore, 
+    vectorstore: MultiModalVectorStore, 
     text_chunks: List[str]
 ):
     vectorstore.add_documents(text_chunks)
@@ -235,7 +234,7 @@ def test_embed_documents_with_similarity_search_with_score_by_vector(
 
 def test_embed_documents_with_max_marginal_relevance_search_by_vector(
     embeddings: HuggingFaceEmbeddings, 
-    vectorstore: RedisVectorStore, 
+    vectorstore: MultiModalVectorStore, 
     text_chunks: List[str]
 ):
     vectorstore.add_documents(text_chunks)
@@ -266,13 +265,13 @@ async def test_aembed_query(embeddings: HuggingFaceEmbeddings):
     assert len(embedded_vectors) > 0
 
 @pytest.mark.asyncio
-async def test_aembed_documents_in_vector_db(vectorstore: RedisVectorStore):
+async def test_aembed_documents_in_vector_db(vectorstore: MultiModalVectorStore):
     ids = await vectorstore.aadd_texts([dummy_corpus1], [{'source': 'book'}])
     assert ids[0].startswith('test1')
 
 @pytest.mark.asyncio
 async def test_aembed_documents_with_similarity_search(
-    vectorstore: RedisVectorStore, 
+    vectorstore: MultiModalVectorStore, 
     text_chunks: List[str]
 ):
     await vectorstore.aadd_documents(text_chunks)
@@ -284,7 +283,45 @@ async def test_aembed_documents_with_similarity_search(
     )
     assert len(results) == 2
 
-# now some multimodal testing:
-# 1) upload multiple chunks of images and do a similarity search and get multiple base64 strings back
-# 2) try a max marginal relevance on multiple images
-# 3) embed a combination of images and text and retrieve both base64 images and text 
+def test_embed_multimodal_documents_with_similarity_search(
+    vectorstore: MultiModalVectorStore, 
+    mixed_message_chunks: List[str]
+):
+    vectorstore.add_documents(mixed_message_chunks)
+    query = "Describe the document"
+    results = vectorstore.similarity_search(
+        query, 
+        k=2, 
+        filter=Tag('source') == "jpeg.pdf"
+    )
+
+    assert len(results) == 2
+
+def test_embed_multimodal_documents_with_max_marginal_relevance_search(
+    vectorstore: MultiModalVectorStore, 
+    mixed_message_chunks: List[str]
+):
+    vectorstore.add_documents(mixed_message_chunks)
+    query = "Describe the document"
+    results = vectorstore.max_marginal_relevance_search(
+        query, 
+        k=2, 
+        filter=Tag('source') == 'jpeg.pdf'
+    )
+
+    assert len(results) == 2
+
+@pytest.mark.asyncio
+async def test_aembed_multimodal_documents_with_similarity_search(
+    vectorstore: MultiModalVectorStore, 
+    mixed_message_chunks: List[str]
+):
+    await vectorstore.aadd_documents(mixed_message_chunks)
+    query = "Describe the document"
+    results = await vectorstore.asimilarity_search(
+        query, 
+        k=2, 
+        filter=Tag('source') == "jpeg.pdf"
+    )
+
+    assert len(results) == 2

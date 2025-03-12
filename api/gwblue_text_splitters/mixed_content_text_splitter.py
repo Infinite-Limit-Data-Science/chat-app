@@ -36,7 +36,7 @@ class MixedContentTextSplitter(TextSplitter):
         chunk_size: int = 4000,
         chunk_overlap: int = 200,
         length_function: Callable[[str], int] = len,
-        img_pattern: str = r'(<img[^>]+>)',
+        img_pattern: str = r'(<img[^>]*src="[^"]+"[^>]*>)',
         metadata: Dict[str, Any] = {},
     ):
         super().__init__(
@@ -64,6 +64,10 @@ class MixedContentTextSplitter(TextSplitter):
             }
             new_meta = {**new_meta, **self.metadata}
 
+            if "source" in new_meta:
+                from pathlib import Path
+                new_meta["source"] = Path(new_meta["source"]).name
+
             chunks = self.split_text(doc.page_content)
 
             for chunk in chunks:
@@ -71,7 +75,6 @@ class MixedContentTextSplitter(TextSplitter):
                     match = re.search(r'src="([^"]+)"', chunk, flags=re.IGNORECASE)
                     if match:
                         chunk = match.group(1)
-                    # store only base64 string, not image tags
                     output_docs.append(Document(page_content=chunk, metadata={**new_meta, "chunk_type": "image"}))
                 else:
                     output_docs.append(Document(page_content=chunk, metadata={**new_meta, "chunk_type": "text"}))

@@ -50,4 +50,4 @@ class Base64BlobParser(BaseImageBlobParser):
             img.save(output, format="PNG")
             image_bytes = output.getvalue()
         encoded = base64.b64encode(image_bytes).decode("utf-8")
-        return f"data:image/png;base64,{encoded}"
+        return f'<img src="data:image/png;base64,{encoded}" alt="Extracted PNG" />'
