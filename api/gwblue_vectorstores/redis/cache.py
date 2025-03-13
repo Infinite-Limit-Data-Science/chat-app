@@ -8,12 +8,12 @@
 #     def content_field_name(self) -> str:
 #         """Name for document content"""
 #         return self.config.content_field
-    
+
 #     @property
 #     def embedding_vector_field_name(self) -> str:
 #         """Name for embedding vectors"""
 #         return self.config.embedding_field
-    
+
 #     @property
 #     def embedding_dimensions(self) -> int:
 #         """Embedding Dimension count"""
@@ -22,17 +22,17 @@
 #     async def aadd(self, documents: Iterator[Document]) -> List[str]:
 #         """Add documents to the vector store asynchronously, expecting metadata per document"""
 #         return await self.vector_store.aadd_documents_with_ttl(documents, _VECTOR_TTL_30_DAYS, self.embeddings.max_batch_requests)
-    
+
 #     async def asimilarity_search(
-#         self, 
+#         self,
 #         query: str,
 #         filter: FilterExpression = None
 #     ) -> List[Document]:
 #         """Use Async Cosine Similarity Search to get immediate results"""
 #         return await self.vector_store.asimilarity_search(query, filter=filter)
-    
+
 #     async def adelete(
-#         self, 
+#         self,
 #         query: str = '',
 #         filter: FilterExpression = None
 #     ) -> bool:
@@ -43,10 +43,10 @@
 #             if result:
 #                 return True
 #         return False
-    
+
 #     async def inspect(
-#         self, 
-#         query: str, 
+#         self,
+#         query: str,
 #         k: int = 4,
 #         filter: FilterExpression = None,
 #     ) -> str:
@@ -65,9 +65,9 @@
 #         output = f"""
 #             Document Size:
 #             {len(results)}
-#             Data: 
+#             Data:
 #             {tabulate(table_data, headers=headers, tablefmt='grid')}
-#             Schema: 
+#             Schema:
 #             {self}
 #         """
 

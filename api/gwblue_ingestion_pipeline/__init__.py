@@ -4,8 +4,8 @@ from .lazy_text_ingestor import LazyTextIngestor
 from .lazy_word_ingestor import LazyWordIngestor
 
 __all__ = [
-    'LazyPdfIngestor',
-    'LazyPowerPointIngestor',
-    'LazyTextIngestor',
-    'LazyWordIngestor',
+    "LazyPdfIngestor",
+    "LazyPowerPointIngestor",
+    "LazyTextIngestor",
+    "LazyWordIngestor",
 ]

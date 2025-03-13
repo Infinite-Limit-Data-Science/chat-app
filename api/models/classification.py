@@ -5,37 +5,42 @@ from enum import Enum
 from typing import Callable, Any
 from abc import ABC, abstractmethod
 
+
 class Generations(Enum):
-    TEXT_GENERATION = 'text-generation'
-    CONTENT_SAFETY = 'content-safety'
+    TEXT_GENERATION = "text-generation"
+    CONTENT_SAFETY = "content-safety"
+
 
 class ActiveStrategy(ABC):
     def __init__(self):
         self.generate_classification_methods()
-    
+
     @abstractmethod
     def set_active(self, model_configs: dict, active_model_name: str) -> None:
         """Apply active/inactive state changes to models in this classification."""
         pass
-    
+
     @abstractmethod
     def get_classification(self) -> str:
-        pass        
+        pass
 
     @staticmethod
     def load_classifications_from_env() -> set:
-        models_json = os.getenv('MODELS', '[]')
+        models_json = os.getenv("MODELS", "[]")
         models = json.loads(models_json)
-        
-        classifications = {model['classification'] for model in models if 'classification' in model}
-        
+
+        classifications = {
+            model["classification"] for model in models if "classification" in model
+        }
+
         return classifications
 
     def classify(self, classification: str) -> Callable[[Any], bool]:
         def method(self) -> bool:
             return self.get_classification() == classification
+
         return method
-    
+
     def generate_classification_methods(self) -> None:
         """Metaprogram classification methods based on the MODELS environment variable."""
         for generation in Generations:
@@ -43,9 +48,11 @@ class ActiveStrategy(ABC):
 
             if not hasattr(self, method_name):
                 setattr(
-                    self, 
-                    method_name, 
-                    types.MethodType(self.classify(generation.value), self))
+                    self,
+                    method_name,
+                    types.MethodType(self.classify(generation.value), self),
+                )
+
 
 class TextGenerationActiveStrategy(ActiveStrategy):
     def set_active(self, model_configs: dict, active_model_name: str) -> None:
@@ -55,6 +62,7 @@ class TextGenerationActiveStrategy(ActiveStrategy):
     def get_classification(self) -> str:
         return Generations.TEXT_GENERATION.value
 
+
 # class ImageToTextActiveStrategy(ActiveStrategy):
 #     def set_active(self, model_configs: dict, active_model_name: str) -> None:
 #         for model_name, config in model_configs.items():
@@ -63,18 +71,21 @@ class TextGenerationActiveStrategy(ActiveStrategy):
 #     def get_classification(self) -> str:
 #         return 'image_to_text'
 
+
 class ContentSafetyStrategy(ActiveStrategy):
     def set_active(self, model_configs: dict, active_model_name: str) -> None:
         pass
 
     def get_classification(self) -> str:
         return Generations.CONTENT_SAFETY.value
-    
+
+
 STRATEGY_MAP = {
     Generations.TEXT_GENERATION.value: TextGenerationActiveStrategy(),
     # 'image-to-text': ImageToTextActiveStrategy(),
     Generations.CONTENT_SAFETY.value: ContentSafetyStrategy(),
 }
+
 
 def get_strategy_for_classification(classification: str) -> ActiveStrategy:
     return STRATEGY_MAP.get(classification, None)

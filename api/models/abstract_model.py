@@ -1,6 +1,7 @@
 from typing import List
 from abc import ABC, abstractmethod
 
+
 class AbstractModel(ABC):
     @classmethod
     @abstractmethod

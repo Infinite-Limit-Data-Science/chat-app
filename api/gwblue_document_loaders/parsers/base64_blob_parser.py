@@ -3,6 +3,7 @@ from PIL import Image
 from io import BytesIO
 from langchain_community.document_loaders.parsers.images import BaseImageBlobParser
 
+
 class Base64BlobParser(BaseImageBlobParser):
     """
     Pillow supports the following file formats:
@@ -19,11 +20,11 @@ class Base64BlobParser(BaseImageBlobParser):
 
     Pillow tries to open the underlying file using "decoders" for each known image file format.
     The image decoder is the plug-in that knows how to interpret a particular file format.
-    When Pillow sees a file with a .png extension, for instance, it calls the PNG "decoder" 
-    to parse the contents, decompress or decode the bits, and load them into a standard in-memory 
+    When Pillow sees a file with a .png extension, for instance, it calls the PNG "decoder"
+    to parse the contents, decompress or decode the bits, and load them into a standard in-memory
     structure.
 
-    Once loaded, regardless of the file format and decoder used, it still produces one Image object. 
+    Once loaded, regardless of the file format and decoder used, it still produces one Image object.
 
     If Pillow has a decoder for the format, Image.open(...) returns a PIL.Image.Image object —
     regardless of whether the underlying image is PNG, JPEG, GIF, or something else.
@@ -42,9 +43,10 @@ class Base64BlobParser(BaseImageBlobParser):
     - "I": 32-bit signed integer pixels
     - "F": 32-bit floating point pixels
 
-    Given the multimodal embeddings only support JPG and PNG, re-encode the 
+    Given the multimodal embeddings only support JPG and PNG, re-encode the
     in-memory PIL.Image.Image object into a new PNG file stored in memory.
     """
+
     def _analyze_image(self, img: Image.Image) -> str:
         with BytesIO() as output:
             img.save(output, format="PNG")

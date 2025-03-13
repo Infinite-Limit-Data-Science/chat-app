@@ -8,10 +8,10 @@ from .huggingface_llm import HuggingFaceLLM
 from .huggingface_chat_model import HuggingFaceChatModel
 
 __all__ = [
-    'HuggingFaceInferenceConfig',
-    'HuggingFaceEmbeddingsConfig',
-    'HuggingFaceEmbeddings',
-    'HuggingFaceInferenceClient',
-    'HuggingFaceLLM',
-    'HuggingFaceChatModel',
+    "HuggingFaceInferenceConfig",
+    "HuggingFaceEmbeddingsConfig",
+    "HuggingFaceEmbeddings",
+    "HuggingFaceInferenceClient",
+    "HuggingFaceLLM",
+    "HuggingFaceChatModel",
 ]

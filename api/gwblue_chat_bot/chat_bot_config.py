@@ -3,21 +3,26 @@ from pydantic import BaseModel, Field, ConfigDict
 from redis.client import Redis
 from bson import ObjectId
 
+
 class ModelConfig(BaseModel):
     model: str
     endpoint: str
     token: str
     provider: str
 
+
 class LLMConfig(ModelConfig):
     parameters: Dict[str, Any] = Field(default_factory=dict)
+
 
 class EmbeddingsConfig(ModelConfig):
     max_batch_tokens: int
 
+
 class MetadataSchema(TypedDict):
-    name: str 
-    type: str 
+    name: str
+    type: str
+
 
 class RedisVectorStoreConfig(BaseModel):
     client: Optional[Redis] = None
@@ -27,7 +32,8 @@ class RedisVectorStoreConfig(BaseModel):
     model_config = ConfigDict(
         arbitrary_types_allowed=True,
     )
-    
+
+
 class MongoMessageHistoryConfig(BaseModel):
     name: str
     url: str
@@ -43,8 +49,7 @@ class MongoMessageHistoryConfig(BaseModel):
 class ChatBotConfig(BaseModel):
     llm: LLMConfig
     retry_llm: Optional[LLMConfig] = Field(
-        description='Secondary LLM for second-opinion tasks', 
-        default=None
+        description="Secondary LLM for second-opinion tasks", default=None
     )
     embeddings: EmbeddingsConfig
     guardrails: Optional[LLMConfig] = None

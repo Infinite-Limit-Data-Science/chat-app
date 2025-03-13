@@ -3,45 +3,42 @@ from fastapi import APIRouter, Body, Depends
 from ..logger import logger
 from ..auth.bearer_authentication import get_current_user
 from ..repositories.base_mongo_repository import base_mongo_factory as factory
-from ..models.setting import (
-    SettingSchema, UpdateSettingSchema, Setting)
+from ..models.setting import SettingSchema, UpdateSettingSchema, Setting
 
 SettingRepo = factory(Setting)
 
 router = APIRouter(
-    prefix='/settings', 
-    tags=['setting'],
-    dependencies=[Depends(get_current_user)]
+    prefix="/settings", tags=["setting"], dependencies=[Depends(get_current_user)]
 )
 
+
 @router.get(
-    '/{id}',
+    "/{id}",
     response_description="Get a single setting",
     response_model=Union[SettingSchema, dict],
     response_model_by_alias=False,
 )
 async def get_setting(id: str):
     """Get setting record from configured database by id"""
-    if (
-        setting := await SettingRepo.find_one(id)
-    ) is not None:
+    if (setting := await SettingRepo.find_one(id)) is not None:
         return setting
     return {}
 
+
 @router.put(
-    '/{id}',
+    "/{id}",
     response_description="update a single setting",
     response_model=Union[UpdateSettingSchema, dict],
     response_model_by_alias=False,
 )
 async def update_setting(id: str, setting_schema: UpdateSettingSchema = Body(...)):
     """Update settings, where associations are expected to be set up on client"""
-    logger.info(f'updating setting schema {id} with {setting_schema}')
+    logger.info(f"updating setting schema {id} with {setting_schema}")
 
     if (
         updated_setting := await SettingRepo.update_one(
-            id, 
-            _set=setting_schema.model_dump(by_alias=True))
+            id, _set=setting_schema.model_dump(by_alias=True)
+        )
     ) is not None:
         return updated_setting
     return {}

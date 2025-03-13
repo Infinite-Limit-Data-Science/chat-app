@@ -1,15 +1,15 @@
 from typing import List, Optional, Union
 import base64
-from fastapi import ( 
-    APIRouter, 
-    status, 
-    Request, 
-    Query, 
-    Body, 
-    Form, 
-    Depends, 
-    File, 
-    UploadFile
+from fastapi import (
+    APIRouter,
+    status,
+    Request,
+    Query,
+    Body,
+    Form,
+    Depends,
+    File,
+    UploadFile,
 )
 from fastapi.exceptions import HTTPException
 from fastapi.responses import StreamingResponse
@@ -25,57 +25,63 @@ from .configs import (
 )
 from ..gwblue_chat_bot.chat_bot_config import ChatBotConfig
 from .uploads import ingest_files
-from ..repositories.conversation_mongo_repository import ( 
-    ConversationMongoRepository as ConversationRepo
+from ..repositories.conversation_mongo_repository import (
+    ConversationMongoRepository as ConversationRepo,
 )
 from ..models.conversation import (
     ConversationSchema,
     CreateConversationSchema,
-    ConversationCollectionSchema, 
+    ConversationCollectionSchema,
     UpdateConversationSchema,
 )
 
 router = APIRouter(
-    prefix='/conversations',
-    tags=['conversation'],
-    dependencies=[Depends(get_current_user)]
+    prefix="/conversations",
+    tags=["conversation"],
+    dependencies=[Depends(get_current_user)],
 )
+
+
 @router.get(
-    '/',
-    response_description='List all conversations',
+    "/",
+    response_description="List all conversations",
     response_model=ConversationCollectionSchema,
     response_model_by_alias=False,
 )
 async def conversations(
-        request: Request, 
-        record_offset: int = Query(0, description='record offset', alias='offset'), 
-        record_limit: int = Query(20, description="record limit", alias='limit', le=10000),
-        sort: str = Query(None, description='sort field and direction as sort=field[asc|desc]', alias='sort')
-    ):
+    request: Request,
+    record_offset: int = Query(0, description="record offset", alias="offset"),
+    record_limit: int = Query(20, description="record limit", alias="limit", le=10000),
+    sort: str = Query(
+        None,
+        description="sort field and direction as sort=field[asc|desc]",
+        alias="sort",
+    ),
+):
     """List conversations by an offset and limit"""
-    logger.info('loading conversations')
+    logger.info("loading conversations")
 
-    sort_field, sort_direction = 'updatedAt', 'desc'
+    sort_field, sort_direction = "updatedAt", "desc"
     if sort:
-        parts = sort.split('[')
+        parts = sort.split("[")
         if len(parts) == 2:
             sort_field = parts[0]
-            sort_direction = parts[1].strip(']')
-            if sort_direction not in ['asc', 'desc']:
-                sort_direction = 'desc'
+            sort_direction = parts[1].strip("]")
+            if sort_direction not in ["asc", "desc"]:
+                sort_direction = "desc"
 
     conversations = await ConversationRepo.all(
-        options={
-            request.state.uuid_name: request.state.uuid
-        }, 
-        offset=record_offset, 
+        options={request.state.uuid_name: request.state.uuid},
+        offset=record_offset,
         limit=record_limit,
         sort_field=sort_field,
-        sort_direction=sort_direction)
+        sort_direction=sort_direction,
+    )
     return ConversationCollectionSchema(conversations=conversations)
 
+
 @router.post(
-    '/',
+    "/",
     response_description="Add new conversation",
     status_code=status.HTTP_201_CREATED,
 )
@@ -92,11 +98,11 @@ async def create_conversation(
     chat bot configs loaded for each request to sync changes between
     user and system configs on the fly
     """
-    logger.info(f'invoking conversation endpoint with content `{content}`')
+    logger.info(f"invoking conversation endpoint with content `{content}`")
 
     conversation_schema = CreateConversationSchema(
-        uuid=request.state.uuid, 
-        modell_name=chat_bot_config.llm.model, 
+        uuid=request.state.uuid,
+        modell_name=chat_bot_config.llm.model,
         prompt_used=content,
     )
 
@@ -105,7 +111,7 @@ async def create_conversation(
     )
 
     if not created_conversation_id:
-        return {'error': 'Conversation not created'}, 400
+        return {"error": "Conversation not created"}, 400
 
     ingestible_files = []
     image_files = []
@@ -113,18 +119,20 @@ async def create_conversation(
     if upload_files:
         for f in upload_files:
             if f.content_type in [
-                'application/pdf',
-                'application/msword',
-                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-                'text/plain',
+                "application/pdf",
+                "application/msword",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                "text/plain",
             ]:
                 ingestible_files.append(f)
-            elif f.content_type.startswith('image/'):
+            elif f.content_type.startswith("image/"):
                 image_files.append(f)
             else:
-                logger.warning(f'Unrecognized file type {f.filename} with content_type {f.content_type}')
-    
+                logger.warning(
+                    f"Unrecognized file type {f.filename} with content_type {f.content_type}"
+                )
+
     vectorstore_metadata = []
     filenames = []
     if ingestible_files:
@@ -132,46 +140,41 @@ async def create_conversation(
             files=ingestible_files,
             config=chat_bot_config,
             metadata={
-                'uuid': request.state.uuid,
-                'conversation_id': str(created_conversation_id),
+                "uuid": request.state.uuid,
+                "conversation_id": str(created_conversation_id),
             },
         )
         await ConversationRepo.update_one(
-            created_conversation_id, 
-            _set={'filenames': filenames}
+            created_conversation_id, _set={"filenames": filenames}
         )
     else:
         vectorstore_metadata = [
             {
-                'uuid': request.state.uuid,
-                'conversation_id': str(created_conversation_id),
-            }            
+                "uuid": request.state.uuid,
+                "conversation_id": str(created_conversation_id),
+            }
         ]
 
     image_prompts = []
     for img_file in image_files:
         raw_bytes = await img_file.read()
-        encoded = base64.b64encode(raw_bytes).decode('utf-8')
-        subtype = img_file.content_type.split('/')[-1]
-        image_url = f'data:image/{subtype};base64,{encoded}'
+        encoded = base64.b64encode(raw_bytes).decode("utf-8")
+        subtype = img_file.content_type.split("/")[-1]
+        image_url = f"data:image/{subtype};base64,{encoded}"
 
-        image_prompts.append({
-            "type": "image_url",
-            'image_url': {'url': image_url}
-        })   
-        image_prompts.append({
-            "type": "text",
-            'text': content
-        }) 
+        image_prompts.append({"type": "image_url", "image_url": {"url": image_url}})
+        image_prompts.append({"type": "text", "text": content})
 
     try:
-        base_system_prompt = DEFAULT_IMAGE_PROMPT if len(image_prompts) > 0 else DEFAULT_PREPROMPT
+        base_system_prompt = (
+            DEFAULT_IMAGE_PROMPT if len(image_prompts) > 0 else DEFAULT_PREPROMPT
+        )
         system_prompt = system_prompt or base_system_prompt
 
         if content and image_prompts:
-            input_dict = {'input': content, 'prompt': image_prompts }
+            input_dict = {"input": content, "prompt": image_prompts}
         elif content:
-            input_dict = {'input': content }
+            input_dict = {"input": content}
 
         chat_bot_config.message_history.session_id = created_conversation_id
 
@@ -182,7 +185,11 @@ async def create_conversation(
             vector_metadata=vectorstore_metadata,
         )
 
-        return StreamingResponse(llm_stream(), media_type='text/event-stream', headers={'Content-Encoding': 'identity'})        
+        return StreamingResponse(
+            llm_stream(),
+            media_type="text/event-stream",
+            headers={"Content-Encoding": "identity"},
+        )
 
     except HfHubHTTPError as e:
         error_info = {
@@ -193,21 +200,25 @@ async def create_conversation(
         }
         logger.warning(f"Request failed error_info {error_info}")
         await ConversationRepo.delete(
-            created_conversation_id, 
-            options={request.status.uuid_name: request.status.uuid}
+            created_conversation_id,
+            options={request.status.uuid_name: request.status.uuid},
         )
         raise HTTPException(status_code=e.response.status_code, detail=error_info)
 
+
 @router.get(
-    '/{id}',
+    "/{id}",
     response_description="Get a single conversation",
     response_model=Union[ConversationSchema, dict],
     response_model_by_alias=False,
 )
 async def get_conversation(request: Request, id: str):
     """Get conversation record from configured database by id"""
-    found_conversation = await ConversationRepo.find_by_aggregate(id, options={request.state.uuid_name: request.state.uuid})
+    found_conversation = await ConversationRepo.find_by_aggregate(
+        id, options={request.state.uuid_name: request.state.uuid}
+    )
     return found_conversation or {}
+
 
 @router.put(
     "/{id}",
@@ -215,37 +226,46 @@ async def get_conversation(request: Request, id: str):
     response_model=Union[UpdateConversationSchema, dict],
     response_model_by_alias=False,
 )
-async def update_conversation(request: Request, id: str, conversation_schema: UpdateConversationSchema = Body(...)):
+async def update_conversation(
+    request: Request, id: str, conversation_schema: UpdateConversationSchema = Body(...)
+):
     """Update individual fields of an existing conversation record and return modified fields to client."""
     if (
         updated_conversation := await ConversationRepo.update_one_and_return(
-            id, 
-            schema=conversation_schema, 
-            options={ request.state.uuid_name: request.state.uuid} )
+            id,
+            schema=conversation_schema,
+            options={request.state.uuid_name: request.state.uuid},
+        )
     ) is not None:
         return UpdateConversationSchema(**updated_conversation)
     return {}
-    
+
+
 @router.delete(
-    '/{id}', 
-    response_description='Delete a conversation',
+    "/{id}",
+    response_description="Delete a conversation",
 )
 async def delete_conversation(request: Request, id: str):
     """Remove a single conversation record from the database."""
     if (
-        delete_count := await ConversationRepo.delete(id, options={request.state.uuid_name: request.state.uuid})
+        delete_count := await ConversationRepo.delete(
+            id, options={request.state.uuid_name: request.state.uuid}
+        )
     ) is not None:
-        return {'delete_count': delete_count}  
-    return {'delete_count': 0}
+        return {"delete_count": delete_count}
+    return {"delete_count": 0}
+
 
 @router.delete(
-    '/delete/all', 
-    response_description='Delete all conversations',
+    "/delete/all",
+    response_description="Delete all conversations",
 )
 async def delete_conversations(request: Request):
     """Remove all conversation records from the database for given user."""
     if (
-        delete_count := await ConversationRepo.delete_many(options={request.state.uuid_name: request.state.uuid})
+        delete_count := await ConversationRepo.delete_many(
+            options={request.state.uuid_name: request.state.uuid}
+        )
     ) is not None:
-        return {'delete_count': delete_count}  
-    return {'delete_count': 0}
+        return {"delete_count": delete_count}
+    return {"delete_count": 0}

@@ -12,11 +12,12 @@ _MAX_INPUT_TOKENS = 12582
 
 _MAX_TOTAL_TOKENS = 16777
 
+
 class HuggingFaceHub(BaseModel):
     config: ChatBotConfig
     model_types: Optional[Dict[str, Any]] = Field(default_factory={}, exclude=True)
-    
-    @model_validator(mode='after')
+
+    @model_validator(mode="after")
     def validate_environment(self) -> Self:
         from ...gwblue_huggingface import (
             HuggingFaceLLM,
@@ -30,12 +31,13 @@ class HuggingFaceHub(BaseModel):
                 credentials=self.config.llm.token,
                 provider=self.config.llm.provider,
                 model=self.config.llm.model,
-                max_tokens=_MAX_TOTAL_TOKENS-_MAX_INPUT_TOKENS,
-                temperature=self.config.llm.parameters['temperature'] or _DEFAULT_TEMPERATURE,
-                logprobs=True
+                max_tokens=_MAX_TOTAL_TOKENS - _MAX_INPUT_TOKENS,
+                temperature=self.config.llm.parameters["temperature"]
+                or _DEFAULT_TEMPERATURE,
+                logprobs=True,
             )
 
-            self.model_types['chat_model'] = HuggingFaceChatModel(llm=llm)
+            self.model_types["chat_model"] = HuggingFaceChatModel(llm=llm)
 
         if self.config.guardrails:
             llm = HuggingFaceLLM(
@@ -47,17 +49,16 @@ class HuggingFaceHub(BaseModel):
                 temperature=0,
             )
 
-            self.model_types['guardrails'] = HuggingFaceChatModel(llm=llm)
+            self.model_types["guardrails"] = HuggingFaceChatModel(llm=llm)
 
         if self.config.embeddings:
-            self.model_types['embeddings'] = HuggingFaceEmbeddings(
+            self.model_types["embeddings"] = HuggingFaceEmbeddings(
                 model=self.config.embeddings.model,
                 base_url=self.config.embeddings.endpoint,
                 credentials=self.config.embeddings.token,
                 provider=self.config.embeddings.provider,
             )
         return self
-
 
     def __call__(self, model_type: str) -> BaseChatModel | Embeddings:
         return self.model_types.get(model_type)

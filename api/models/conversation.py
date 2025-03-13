@@ -7,41 +7,61 @@ from .mongo_schema import (
     PrimaryKeyMixinSchema,
     TimestampMixinSchema,
     Field,
-    PyObjectId
+    PyObjectId,
 )
 
+
 class Conversation(AbstractModel):
-    __modelname__ = 'conversations'
+    __modelname__ = "conversations"
 
     @classmethod
     def get_model_name(cls) -> str:
         return cls.__modelname__
 
+
 class ConversationSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):
-    title: Optional[str] = Field(description='title of conversation', default='')
-    prompt_used: Optional[str] = Field(description='Prompt used for the given conversation', default='')
-    modell_name: Optional[str] = Field(alias='model_name', description='Name of model used in conversation', default='')
-    messages: List[MessageSchema] = Field(description='List of messages associated with conversation')
-    filenames: Optional[List[str]] = Field(description='List of filenames used in conversation', default_factory=list)
+    title: Optional[str] = Field(description="title of conversation", default="")
+    prompt_used: Optional[str] = Field(
+        description="Prompt used for the given conversation", default=""
+    )
+    modell_name: Optional[str] = Field(
+        alias="model_name", description="Name of model used in conversation", default=""
+    )
+    messages: List[MessageSchema] = Field(
+        description="List of messages associated with conversation"
+    )
+    filenames: Optional[List[str]] = Field(
+        description="List of filenames used in conversation", default_factory=list
+    )
+
 
 class CreateConversationSchema(PrimaryKeyMixinSchema, TimestampMixinSchema):
-    uuid: Optional[str] = Field(alias="sessionId", description='downcased alphanumeric session id', default=None)
-    title: Optional[str] = Field(description='title of conversation', default=None)
-    prompt_used: Optional[str] = Field(description='chat-ui legacy field', default='')
-    modell_name: Optional[str] = Field(alias='model_name', description='Name of model used in conversation', default='')    
-    message_ids: Optional[List[PyObjectId]] = Field(description='Messages associated with Conversation', default_factory=list)
+    uuid: Optional[str] = Field(
+        alias="sessionId", description="downcased alphanumeric session id", default=None
+    )
+    title: Optional[str] = Field(description="title of conversation", default=None)
+    prompt_used: Optional[str] = Field(description="chat-ui legacy field", default="")
+    modell_name: Optional[str] = Field(
+        alias="model_name", description="Name of model used in conversation", default=""
+    )
+    message_ids: Optional[List[PyObjectId]] = Field(
+        description="Messages associated with Conversation", default_factory=list
+    )
 
     class Config:
         from_attributes = True
         populate_by_name = True
         arbitrary_types_allowed = True
 
+
 class ConversationCollectionSchema(ChatSchema):
     conversations: List[ConversationSchema]
+
 
 class UpdateConversationSchema(ChatSchema):
     title: Optional[str] = None
     updatedAt: datetime = Field(default_factory=datetime.now)
 
+
 class ConversationIdSchema(ChatSchema):
-    id: PyObjectId = Field(alias="_id", description='bson object id')
+    id: PyObjectId = Field(alias="_id", description="bson object id")

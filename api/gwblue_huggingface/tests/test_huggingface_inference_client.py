@@ -21,6 +21,7 @@ _MAX_INPUT_TOKENS = 12582
 
 _MAX_TOTAL_TOKENS = 16777
 
+
 def _model_config(model_type: str, model_name: str) -> str:
     models = json.loads(os.environ[model_type])
     model = next((model for model in models if model["name"] == model_name), None)
@@ -28,9 +29,9 @@ def _model_config(model_type: str, model_name: str) -> str:
         raise ValueError(f"Model {model_name} does not exist in {model_type}")
 
     return {
-        'name': model['name'],
-        'url': model['endpoints'][0]['url'],
-        'provider': model['endpoints'][0]['provider'],
+        "name": model["name"],
+        "url": model["endpoints"][0]["url"],
+        "provider": model["endpoints"][0]["provider"],
     }
 
 
@@ -65,7 +66,7 @@ def _model_config(model_type: str, model_name: str) -> str:
 # @pytest.fixture
 # def tei_self_hosted_config_vision() -> HuggingFaceEmbeddingsConfig:
 #     config = _model_config("EMBEDDING_MODELS", "TIGER-Lab/VLM2Vec-Full")
-    
+
 #     return HuggingFaceEmbeddingsConfig(
 #         name=config['name'],
 #         url=config['url'],
@@ -76,16 +77,18 @@ def _model_config(model_type: str, model_name: str) -> str:
 #         auto_truncate=True
 #     )
 
+
 @pytest.fixture
 def inference_client() -> HuggingFaceInferenceClient:
     config = _model_config("MODELS", "meta-llama/Llama-3.2-11B-Vision-Instruct")
 
     return HuggingFaceInferenceClient(
-        base_url=config['url'],
-        model=config['name'],
-        provider=config['provider'],
-        credentials=os.environ['TEST_AUTH_TOKEN'],
+        base_url=config["url"],
+        model=config["name"],
+        provider=config["provider"],
+        credentials=os.environ["TEST_AUTH_TOKEN"],
     )
+
 
 # @pytest.fixture
 # def embeddings_client() -> HuggingFaceInferenceClient:
@@ -98,24 +101,28 @@ def inference_client() -> HuggingFaceInferenceClient:
 #         credentials=os.environ['TEST_AUTH_TOKEN'],
 #     )
 
+
 @pytest.fixture
 def embeddings_client() -> HuggingFaceInferenceClient:
     config = _model_config("EMBEDDING_MODELS", "TIGER-Lab/VLM2Vec-Full")
 
     return HuggingFaceInferenceClient(
-        base_url=config['url'],
-        model=config['name'],
-        provider=config['provider'],
-        credentials=os.environ['TEST_AUTH_TOKEN'],
+        base_url=config["url"],
+        model=config["name"],
+        provider=config["provider"],
+        credentials=os.environ["TEST_AUTH_TOKEN"],
     )
+
 
 @pytest.fixture
 def bge() -> BgeLargePretrainedTokenizer:
     return BgeLargePretrainedTokenizer()
 
+
 @pytest.fixture
 def vlm2vec() -> VLM2VecFullPretrainedTokenizer:
     return VLM2VecFullPretrainedTokenizer()
+
 
 @pytest.fixture
 def corpus() -> str:
@@ -126,135 +133,145 @@ def corpus() -> str:
     """
     return text
 
-def test_inference_client_feature_extraction(embeddings_client: HuggingFaceInferenceClient, corpus: str):
+
+def test_inference_client_feature_extraction(
+    embeddings_client: HuggingFaceInferenceClient, corpus: str
+):
     embeddings = embeddings_client.feature_extraction(corpus)
-    assert embeddings.dtype == 'float32'
+    assert embeddings.dtype == "float32"
+
 
 def test_inference_client_feature_extraction_trunc(
-    embeddings_client: HuggingFaceInferenceClient, 
-    corpus: str, 
-    vlm2vec: VLM2VecFullPretrainedTokenizer
+    embeddings_client: HuggingFaceInferenceClient,
+    corpus: str,
+    vlm2vec: VLM2VecFullPretrainedTokenizer,
 ):
     corpus = " ".join([corpus] * 10)
     embeddings = embeddings_client.feature_extraction(corpus, truncate=True)
 
     assert embeddings.size == vlm2vec.dimensions
 
+
 def test_inference_client_feature_extraction_not_tokens(
-    embeddings_client: HuggingFaceInferenceClient, 
-    corpus: str, 
-    bge: BgeLargePretrainedTokenizer
+    embeddings_client: HuggingFaceInferenceClient,
+    corpus: str,
+    bge: BgeLargePretrainedTokenizer,
 ):
-    tokens  = bge.tokenizer.encode(corpus, add_special_tokens=True)
+    tokens = bge.tokenizer.encode(corpus, add_special_tokens=True)
     embeddings = embeddings_client.feature_extraction(corpus, truncate=True)
     decoded = bge.tokenizer.decode(embeddings[0])
 
     assert tokens != decoded
 
+
 @pytest.mark.asyncio
-async def test_async_inference_client_feature_extraction(embeddings_client: HuggingFaceInferenceClient, corpus: str):
+async def test_async_inference_client_feature_extraction(
+    embeddings_client: HuggingFaceInferenceClient, corpus: str
+):
     embeddings = await embeddings_client.afeature_extraction(corpus)
-    assert embeddings.dtype == 'float32'
+    assert embeddings.dtype == "float32"
+
 
 def test_inference_client_feature_extraction_vision(
-    embeddings_client: HuggingFaceInferenceClient, 
+    embeddings_client: HuggingFaceInferenceClient,
     corpus: str,
 ):
     embeddings = embeddings_client.feature_extraction(corpus)
     assert len(embeddings) > 0
 
-def test_inference_client_feature_extraction_vision2(
-    embeddings_client: HuggingFaceInferenceClient, 
-):
-    image_path = Path(__file__).parent / 'assets' / 'baby.jpg'
-    with image_path.open('rb') as f:
-        base64_image = base64.b64encode(f.read()).decode('utf-8')
-    image_url = f'data:image/jpeg;base64,{base64_image}'
 
-    embeddings = embeddings_client.feature_extraction([
-        {
-            "image_url": image_url,
-            "text": "Describe the image",
-        }
-    ])
+def test_inference_client_feature_extraction_vision2(
+    embeddings_client: HuggingFaceInferenceClient,
+):
+    image_path = Path(__file__).parent / "assets" / "baby.jpg"
+    with image_path.open("rb") as f:
+        base64_image = base64.b64encode(f.read()).decode("utf-8")
+    image_url = f"data:image/jpeg;base64,{base64_image}"
+
+    embeddings = embeddings_client.feature_extraction(
+        [
+            {
+                "image_url": image_url,
+                "text": "Describe the image",
+            }
+        ]
+    )
 
     assert len(embeddings) > 0
 
+
 @pytest.mark.asyncio
 async def test_async_inference_client_feature_extraction_vision(
-    embeddings_client: HuggingFaceInferenceClient, 
+    embeddings_client: HuggingFaceInferenceClient,
     corpus: str,
 ):
     embeddings = await embeddings_client.afeature_extraction(corpus)
     assert len(embeddings) > 0
 
+
 @pytest.mark.asyncio
 async def test_async_inference_client_feature_extraction_vision2(
-    embeddings_client: HuggingFaceInferenceClient, 
+    embeddings_client: HuggingFaceInferenceClient,
 ):
-    image_path = Path(__file__).parent / 'assets' / 'baby.jpg'
-    with image_path.open('rb') as f:
-        base64_image = base64.b64encode(f.read()).decode('utf-8')
-    image_url = f'data:image/jpeg;base64,{base64_image}'
+    image_path = Path(__file__).parent / "assets" / "baby.jpg"
+    with image_path.open("rb") as f:
+        base64_image = base64.b64encode(f.read()).decode("utf-8")
+    image_url = f"data:image/jpeg;base64,{base64_image}"
 
-    embeddings = await embeddings_client.afeature_extraction([
-        {
-            "image_url": image_url,
-            "text": "Describe the image",
-        }
-    ])
+    embeddings = await embeddings_client.afeature_extraction(
+        [
+            {
+                "image_url": image_url,
+                "text": "Describe the image",
+            }
+        ]
+    )
 
     assert len(embeddings) > 0
 
+
 def test_inference_client_chat_completion(inference_client: HuggingFaceInferenceClient):
     chat_completion_output = inference_client.chat_completion(
-        messages = [
-            {
-                'role': 'user',
-                'content': 'What is Generative AI?'
-            }
-        ],
-        stream=False, # not needed, defaults to False
-        max_tokens=_MAX_TOTAL_TOKENS-_MAX_INPUT_TOKENS,
-        temperature=0.8 # add randomness
+        messages=[{"role": "user", "content": "What is Generative AI?"}],
+        stream=False,  # not needed, defaults to False
+        max_tokens=_MAX_TOTAL_TOKENS - _MAX_INPUT_TOKENS,
+        temperature=0.8,  # add randomness
     )
 
     assert len(chat_completion_output.choices) == 1
-    # finish_reason shouldn't be 'length' because we are using the available tokens 
+    # finish_reason shouldn't be 'length' because we are using the available tokens
     # we specified when configuring the tgi
-    assert chat_completion_output.choices[0].finish_reason in ('stop', 'eos_token')
-    assert chat_completion_output.choices[0].message.role == 'assistant'
+    assert chat_completion_output.choices[0].finish_reason in ("stop", "eos_token")
+    assert chat_completion_output.choices[0].message.role == "assistant"
     assert len(chat_completion_output.choices[0].message.content) > 0
 
-def test_inference_client_chat_completion_with_multiple_candidates(inference_client: HuggingFaceInferenceClient):
+
+def test_inference_client_chat_completion_with_multiple_candidates(
+    inference_client: HuggingFaceInferenceClient,
+):
     chat_completion_output = inference_client.chat_completion(
-        messages = [
-            {
-                'role': 'user',
-                'content': 'What is Generative AI?'
-            }
-        ],
-        max_tokens=_MAX_TOTAL_TOKENS-_MAX_INPUT_TOKENS,
+        messages=[{"role": "user", "content": "What is Generative AI?"}],
+        max_tokens=_MAX_TOTAL_TOKENS - _MAX_INPUT_TOKENS,
         num_generations=3,
-        temperature=0.8
+        temperature=0.8,
     )
 
     # once multiple candidate completions is supported, change below to ==
     assert len(chat_completion_output.choices) != 3
 
     for choice in chat_completion_output.choices:
-        assert choice.finish_reason in ('stop', 'eos_token')
-        assert choice.message.role == 'assistant'
+        assert choice.finish_reason in ("stop", "eos_token")
+        assert choice.message.role == "assistant"
         assert len(choice.message.content) > 0
 
+
 @pytest.mark.asyncio
-async def test_inference_client_chat_completion_with_logprobs(inference_client: HuggingFaceInferenceClient):
-    messages = [{'role': 'user', 'content': 'What is Generative AI?'}]
-    max_tokens = _MAX_TOTAL_TOKENS-_MAX_INPUT_TOKENS
-    params = [
-        {'top_p': 0.5},
-        {'top_p': 0.9}
-    ]
+async def test_inference_client_chat_completion_with_logprobs(
+    inference_client: HuggingFaceInferenceClient,
+):
+    messages = [{"role": "user", "content": "What is Generative AI?"}]
+    max_tokens = _MAX_TOTAL_TOKENS - _MAX_INPUT_TOKENS
+    params = [{"top_p": 0.5}, {"top_p": 0.9}]
 
     async def fetch_chat_completion(top_p_value):
         return inference_client.chat_completion(
@@ -262,10 +279,10 @@ async def test_inference_client_chat_completion_with_logprobs(inference_client: 
             max_tokens=max_tokens,
             temperature=0.8,
             top_p=top_p_value,
-            logprobs=True
+            logprobs=True,
         )
 
-    tasks = [fetch_chat_completion(p['top_p']) for p in params]
+    tasks = [fetch_chat_completion(p["top_p"]) for p in params]
 
     chat_completion_outputs: List[ChatCompletionOutput] = await asyncio.gather(*tasks)
 
@@ -273,16 +290,18 @@ async def test_inference_client_chat_completion_with_logprobs(inference_client: 
         for choice in output.choices:
             logprobs = [logprob.logprob for logprob in choice.logprobs.content]
             mean_logprob = np.mean(logprobs)
-            assert -2.5 <= mean_logprob <= 1.0, f'Mean logprob {mean_logprob} out of range'
+            assert (
+                -2.5 <= mean_logprob <= 1.0
+            ), f"Mean logprob {mean_logprob} out of range"
+
 
 @pytest.mark.asyncio
-async def test_inference_client_chat_completion_with_reranking(inference_client: HuggingFaceInferenceClient):
-    messages = [{'role': 'user', 'content': 'What is Generative AI?'}]
-    max_tokens = _MAX_TOTAL_TOKENS-_MAX_INPUT_TOKENS
-    params = [
-        {'top_p': 0.5},
-        {'top_p': 0.9}
-    ]
+async def test_inference_client_chat_completion_with_reranking(
+    inference_client: HuggingFaceInferenceClient,
+):
+    messages = [{"role": "user", "content": "What is Generative AI?"}]
+    max_tokens = _MAX_TOTAL_TOKENS - _MAX_INPUT_TOKENS
+    params = [{"top_p": 0.5}, {"top_p": 0.9}]
 
     async def fetch_chat_completion(top_p_value):
         return inference_client.chat_completion(
@@ -290,10 +309,10 @@ async def test_inference_client_chat_completion_with_reranking(inference_client:
             max_tokens=max_tokens,
             temperature=0.8,
             top_p=top_p_value,
-            logprobs=True
+            logprobs=True,
         )
 
-    tasks = [fetch_chat_completion(p['top_p']) for p in params]
+    tasks = [fetch_chat_completion(p["top_p"]) for p in params]
 
     chat_completion_outputs: List[ChatCompletionOutput] = await asyncio.gather(*tasks)
 
@@ -308,62 +327,71 @@ async def test_inference_client_chat_completion_with_reranking(inference_client:
 
     best_choice = logprob_scores[0][0]
 
-    assert len(best_choice.message.content) > 0 
+    assert len(best_choice.message.content) > 0
 
-def test_inference_client_chat_completion_with_image_to_text(inference_client: HuggingFaceInferenceClient):
-    image_path = Path(__file__).parent / 'assets' / 'baby.jpg'
-    with image_path.open('rb') as f:
-        base64_image = base64.b64encode(f.read()).decode('utf-8')
-    image_url = f'data:image/jpeg;base64,{base64_image}'
+
+def test_inference_client_chat_completion_with_image_to_text(
+    inference_client: HuggingFaceInferenceClient,
+):
+    image_path = Path(__file__).parent / "assets" / "baby.jpg"
+    with image_path.open("rb") as f:
+        base64_image = base64.b64encode(f.read()).decode("utf-8")
+    image_url = f"data:image/jpeg;base64,{base64_image}"
 
     chat_completion_output = inference_client.chat_completion(
-        messages = [
+        messages=[
             {
-                'role': 'user',
-                'content': [
+                "role": "user",
+                "content": [
                     {
-                        'type': 'image_url',
-                        'image_url': {'url': image_url},
+                        "type": "image_url",
+                        "image_url": {"url": image_url},
                     },
-                    {
-                        'type': 'text',
-                        'text': 'Describe this image.'
-                    }
-                ]
+                    {"type": "text", "text": "Describe this image."},
+                ],
             }
         ],
-        max_tokens=_MAX_TOTAL_TOKENS-_MAX_INPUT_TOKENS,
+        max_tokens=_MAX_TOTAL_TOKENS - _MAX_INPUT_TOKENS,
         temperature=0.8,
-        logprobs=True
+        logprobs=True,
     )
 
     for choice in chat_completion_output.choices:
-        assert choice.finish_reason in ('stop', 'eos_token')
-        assert choice.message.role == 'assistant'
+        assert choice.finish_reason in ("stop", "eos_token")
+        assert choice.message.role == "assistant"
         assert len(choice.message.content) > 0
 
-def test_inference_client_chat_completion_with_output_usage(inference_client: HuggingFaceInferenceClient):
+
+def test_inference_client_chat_completion_with_output_usage(
+    inference_client: HuggingFaceInferenceClient,
+):
     chat_completion_output = inference_client.chat_completion(
-        messages = [
-            {
-                'role': 'user',
-                'content': 'What is Generative AI?'
-            }
-        ],
-        max_tokens=_MAX_TOTAL_TOKENS-_MAX_INPUT_TOKENS,
-        temperature=0.8
+        messages=[{"role": "user", "content": "What is Generative AI?"}],
+        max_tokens=_MAX_TOTAL_TOKENS - _MAX_INPUT_TOKENS,
+        temperature=0.8,
     )
 
     assert chat_completion_output.usage.prompt_tokens > 0
     assert chat_completion_output.usage.completion_tokens > 0
     assert chat_completion_output.usage.total_tokens > 0
 
+
 @pytest.mark.skip(reason="Temporarily disabled for debugging")
-def test_inference_client_chat_completion_with_tool_calling(inference_client: HuggingFaceInferenceClient):
+def test_inference_client_chat_completion_with_tool_calling(
+    inference_client: HuggingFaceInferenceClient,
+):
     class WeatherForecastRequest(BaseModel):
-        location: str = Field(..., description="The city and state, e.g., 'San Francisco, CA'")
-        format: str = Field(..., description="Temperature unit: 'celsius' or 'fahrenheit'", enum=["celsius", "fahrenheit"])
-        num_days: int = Field(..., description="Number of days to forecast (1-7)", ge=1, le=7)
+        location: str = Field(
+            ..., description="The city and state, e.g., 'San Francisco, CA'"
+        )
+        format: str = Field(
+            ...,
+            description="Temperature unit: 'celsius' or 'fahrenheit'",
+            enum=["celsius", "fahrenheit"],
+        )
+        num_days: int = Field(
+            ..., description="Number of days to forecast (1-7)", ge=1, le=7
+        )
 
     tools = [
         {
@@ -377,58 +405,62 @@ def test_inference_client_chat_completion_with_tool_calling(inference_client: Hu
     ]
 
     chat_completion_output: ChatCompletionOutput = inference_client.chat_completion(
-        messages = [
-            {'role': 'system', 'content': 'Use the provided tools to answer user questions.'},
-            {'role': 'user', 'content': "What's the weather like in New York for the next 3 days?"}
+        messages=[
+            {
+                "role": "system",
+                "content": "Use the provided tools to answer user questions.",
+            },
+            {
+                "role": "user",
+                "content": "What's the weather like in New York for the next 3 days?",
+            },
         ],
-        max_tokens=_MAX_TOTAL_TOKENS-_MAX_INPUT_TOKENS,
+        max_tokens=_MAX_TOTAL_TOKENS - _MAX_INPUT_TOKENS,
         tools=tools,
-        tool_choice='auto',
-        temperature=0.8
-    )  
+        tool_choice="auto",
+        temperature=0.8,
+    )
 
     for tool_call in chat_completion_output.choices[0].message.tool_calls:
-        assert tool_call.type == 'function'
-        assert tool_call.function.name == 'get_weather_forecast'
-        assert tool_call.function.arguments['num_days'] == 3
-        assert tool_call.function.arguments['location'] == 'New York'
-        assert tool_call.function.arguments['format'] == 'celsius'
+        assert tool_call.type == "function"
+        assert tool_call.function.name == "get_weather_forecast"
+        assert tool_call.function.arguments["num_days"] == 3
+        assert tool_call.function.arguments["location"] == "New York"
+        assert tool_call.function.arguments["format"] == "celsius"
+
 
 @pytest.mark.asyncio
-async def test_async_inference_client_chat_completion(inference_client: HuggingFaceInferenceClient):
+async def test_async_inference_client_chat_completion(
+    inference_client: HuggingFaceInferenceClient,
+):
     chat_completion_output = await inference_client.achat_completion(
-        messages = [
-            {
-                'role': 'user',
-                'content': 'What is Generative AI?'
-            }
-        ],
-        max_tokens=_MAX_TOTAL_TOKENS-_MAX_INPUT_TOKENS,
-        temperature=0.8
+        messages=[{"role": "user", "content": "What is Generative AI?"}],
+        max_tokens=_MAX_TOTAL_TOKENS - _MAX_INPUT_TOKENS,
+        temperature=0.8,
     )
 
     assert len(chat_completion_output.choices) == 1
-    assert chat_completion_output.choices[0].finish_reason in ('stop', 'eos_token')
-    assert chat_completion_output.choices[0].message.role == 'assistant'
+    assert chat_completion_output.choices[0].finish_reason in ("stop", "eos_token")
+    assert chat_completion_output.choices[0].message.role == "assistant"
     assert len(chat_completion_output.choices[0].message.content) > 0
 
+
 @pytest.mark.asyncio
-async def test_async_streaming_inference_client_chat_completion(inference_client: HuggingFaceInferenceClient):
+async def test_async_streaming_inference_client_chat_completion(
+    inference_client: HuggingFaceInferenceClient,
+):
     chat_completion_output = await inference_client.achat_completion(
-        messages = [
-            {
-                'role': 'user',
-                'content': 'What is Generative AI?'
-            }
-        ],
-        max_tokens=_MAX_TOTAL_TOKENS-_MAX_INPUT_TOKENS,
+        messages=[{"role": "user", "content": "What is Generative AI?"}],
+        max_tokens=_MAX_TOTAL_TOKENS - _MAX_INPUT_TOKENS,
         temperature=0.8,
         stream=True,
-        logprobs=True
+        logprobs=True,
     )
 
     async for chunk in chat_completion_output:
         for choice in chunk.choices:
-            assert -10 <= choice.logprobs.content[0].logprob <= 1.0, f'logprob out of range'
-            assert choice.delta.role == 'assistant'
-            assert len(choice.delta.content) >= 0 # content represents streamed token
+            assert (
+                -10 <= choice.logprobs.content[0].logprob <= 1.0
+            ), f"logprob out of range"
+            assert choice.delta.role == "assistant"
+            assert len(choice.delta.content) >= 0  # content represents streamed token

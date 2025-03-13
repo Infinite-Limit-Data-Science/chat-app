@@ -5,19 +5,19 @@ from .settings import router as settings_router
 from .default import router as default_router
 from .chats import chat
 from .configs import (
-    refresh_model_configs, 
+    refresh_model_configs,
     get_prompt_template,
 )
 from .uploads import ingest_files
 
 __all__ = [
-    'home_router',
-    'conversations_router',
-    'messages_router',
-    'settings_router',
-    'default_router',
-    'chat',
-    'refresh_model_configs',
-    'get_prompt_template',
-    'ingest_files',
+    "home_router",
+    "conversations_router",
+    "messages_router",
+    "settings_router",
+    "default_router",
+    "chat",
+    "refresh_model_configs",
+    "get_prompt_template",
+    "ingest_files",
 ]

@@ -6,6 +6,7 @@ from huggingface_hub.inference._providers._common import (
     filter_none,
 )
 
+
 class VLLMEmbeddingTask(TaskProviderHelper):
     def __init__(self):
         super().__init__(provider="gwblue-vllm", base_url="", task="embedding")
@@ -21,10 +22,7 @@ class VLLMEmbeddingTask(TaskProviderHelper):
         return model.rstrip("/") + route
 
     def _prepare_payload_as_dict(
-        self, 
-        inputs: Any, 
-        parameters: Dict, 
-        mapped_model: str
+        self, inputs: Any, parameters: Dict, mapped_model: str
     ) -> Optional[Dict]:
         parameters = filter_none(parameters)
 
@@ -34,42 +32,36 @@ class VLLMEmbeddingTask(TaskProviderHelper):
             "mm_processor_kwargs": {},
         }
 
-        if isinstance(inputs.get("text"), list) and all(isinstance(t, str) for t in inputs["text"]):
+        if isinstance(inputs.get("text"), list) and all(
+            isinstance(t, str) for t in inputs["text"]
+        ):
             payload["input"] = inputs["text"]
             payload.update(parameters)
             return payload
 
-        payload["messages"] = [
-            {
-                "role": "user",
-                "content": []
-            }
-        ]
+        payload["messages"] = [{"role": "user", "content": []}]
 
-        content_list = inputs["text"] if isinstance(inputs["text"], list) else [inputs["text"]]
+        content_list = (
+            inputs["text"] if isinstance(inputs["text"], list) else [inputs["text"]]
+        )
 
         for item in content_list:
             if isinstance(item, dict):
                 if "image_url" in item:
-                    payload["messages"][0]["content"].append({
-                        "type": "image_url",
-                        "image_url": {"url": item["image_url"]}
-                    })
+                    payload["messages"][0]["content"].append(
+                        {"type": "image_url", "image_url": {"url": item["image_url"]}}
+                    )
                 if "text" in item:
-                    payload["messages"][0]["content"].append({
-                        "type": "text",
-                        "text": item["text"]
-                    })
+                    payload["messages"][0]["content"].append(
+                        {"type": "text", "text": item["text"]}
+                    )
             elif isinstance(item, str):
 
-                payload["messages"][0]["content"].append({
-                    "type": "text",
-                    "text": item
-                })
+                payload["messages"][0]["content"].append({"type": "text", "text": item})
 
         payload.update(parameters)
         return payload
-    
+
     def get_response(self, response: Union[bytes, Dict]) -> Any:
         resp_dict = _as_dict(response)
         all_embeddings = []

@@ -3,10 +3,9 @@ from typing import List, Callable, Dict, Any
 from langchain_text_splitters import RecursiveCharacterTextSplitter, TextSplitter
 from langchain_core.documents import Document
 
+
 def _merge_contextless_chunks(
-    text: str, 
-    token_len_func: Callable[[str], int], 
-    min_paragraph_tokens: int = 50
+    text: str, token_len_func: Callable[[str], int], min_paragraph_tokens: int = 50
 ) -> str:
     paragraphs = text.split("\n\n")
     merged_paragraphs = []
@@ -30,6 +29,7 @@ def _merge_contextless_chunks(
 
     return "\n\n".join(merged_paragraphs)
 
+
 class MixedContentTextSplitter(TextSplitter):
     def __init__(
         self,
@@ -40,16 +40,16 @@ class MixedContentTextSplitter(TextSplitter):
         metadata: Dict[str, Any] = {},
     ):
         super().__init__(
-            chunk_size=chunk_size, 
-            chunk_overlap=chunk_overlap, 
-            length_function=length_function
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            length_function=length_function,
         )
 
         self.img_regex = re.compile(img_pattern, flags=re.IGNORECASE)
         self.metadata = metadata
 
         self.text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=chunk_size, 
+            chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
             length_function=length_function,
         )
@@ -66,6 +66,7 @@ class MixedContentTextSplitter(TextSplitter):
 
             if "source" in new_meta:
                 from pathlib import Path
+
                 new_meta["source"] = Path(new_meta["source"]).name
 
             chunks = self.split_text(doc.page_content)
@@ -75,9 +76,19 @@ class MixedContentTextSplitter(TextSplitter):
                     match = re.search(r'src="([^"]+)"', chunk, flags=re.IGNORECASE)
                     if match:
                         chunk = match.group(1)
-                    output_docs.append(Document(page_content=chunk, metadata={**new_meta, "chunk_type": "image"}))
+                    output_docs.append(
+                        Document(
+                            page_content=chunk,
+                            metadata={**new_meta, "chunk_type": "image"},
+                        )
+                    )
                 else:
-                    output_docs.append(Document(page_content=chunk, metadata={**new_meta, "chunk_type": "text"}))
+                    output_docs.append(
+                        Document(
+                            page_content=chunk,
+                            metadata={**new_meta, "chunk_type": "text"},
+                        )
+                    )
         return output_docs
 
     def split_text(self, text: str) -> List[str]:

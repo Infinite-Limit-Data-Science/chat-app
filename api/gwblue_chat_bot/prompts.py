@@ -1,21 +1,24 @@
 from typing import Optional
 from langchain_core.prompts import (
-    ChatPromptTemplate, 
-    HumanMessagePromptTemplate, 
-    MessagesPlaceholder, 
+    ChatPromptTemplate,
+    HumanMessagePromptTemplate,
+    MessagesPlaceholder,
     PromptTemplate,
 )
 from langchain_core.messages import HumanMessage
 
 registry = {}
 
+
 def register(name):
     def decorator(func):
         registry[name] = func
         return func
+
     return decorator
 
-BASE_TEMPLATE="""
+
+BASE_TEMPLATE = """
     Given the conversation history below, generate a search query that is more explicit and detailed.
 
     Conversation History:
@@ -26,11 +29,14 @@ BASE_TEMPLATE="""
 
     Search Query:
     """
-@register('base_runnable')
+
+
+@register("base_runnable")
 def base_runnable():
-    return ChatPromptTemplate.from_messages([
-        HumanMessagePromptTemplate.from_template(BASE_TEMPLATE)
-    ])
+    return ChatPromptTemplate.from_messages(
+        [HumanMessagePromptTemplate.from_template(BASE_TEMPLATE)]
+    )
+
 
 CONTEXTUALIZED_TEMPLATE = """
     Given a chat history and the latest user question
@@ -38,21 +44,28 @@ CONTEXTUALIZED_TEMPLATE = """
     which can be understood without the chat history. Do NOT answer the question,
     just reformulate it if needed and otherwise return it as is.
 """
-@register('contextualized_template')
+
+
+@register("contextualized_template")
 def contextualized_template():
-    return ChatPromptTemplate.from_messages([
-        ('system', CONTEXTUALIZED_TEMPLATE),
-        MessagesPlaceholder('chat_history'),
-        ('human', "{input}"),
-    ])
+    return ChatPromptTemplate.from_messages(
+        [
+            ("system", CONTEXTUALIZED_TEMPLATE),
+            MessagesPlaceholder("chat_history"),
+            ("human", "{input}"),
+        ]
+    )
+
 
 MY_CHAT_TEMPLATE = """
 You are an assistant for question-answering tasks.
 """
-@register('qa_template')
+
+
+@register("qa_template")
 def qa_template(preprompt: Optional[str] = None) -> ChatPromptTemplate:
     preprompt_text = preprompt or MY_CHAT_TEMPLATE
-    
+
     system_template = f"""
         {preprompt_text}
         Use the following pieces of retrieved context to answer the question.
@@ -61,35 +74,41 @@ def qa_template(preprompt: Optional[str] = None) -> ChatPromptTemplate:
 
         {{context}}
     """
-    
-    return ChatPromptTemplate.from_messages([
-        ('system', system_template),
-        MessagesPlaceholder('chat_history'),
-        ('human', "{input}"),
-    ])
 
-@register('chat_prompt_with_history')
+    return ChatPromptTemplate.from_messages(
+        [
+            ("system", system_template),
+            MessagesPlaceholder("chat_history"),
+            ("human", "{input}"),
+        ]
+    )
+
+
+@register("chat_prompt_with_history")
 def chat_prompt_with_history(system_prompt: Optional[str] = None) -> ChatPromptTemplate:
     system_prompt = system_prompt or MY_CHAT_TEMPLATE
-    return ChatPromptTemplate.from_messages([
-        ("system",system_prompt),
-        MessagesPlaceholder('chat_history'),
-        ('human', "{input}"),
-    ])
+    return ChatPromptTemplate.from_messages(
+        [
+            ("system", system_prompt),
+            MessagesPlaceholder("chat_history"),
+            ("human", "{input}"),
+        ]
+    )
 
-@register('multimodal_prompt_with_history')
-def multimodal_prompt_with_history(system_prompt: Optional[str] = None) -> ChatPromptTemplate:
+
+@register("multimodal_prompt_with_history")
+def multimodal_prompt_with_history(
+    system_prompt: Optional[str] = None,
+) -> ChatPromptTemplate:
     system_prompt = system_prompt or MY_CHAT_TEMPLATE
-    return ChatPromptTemplate.from_messages([
-        ("system",system_prompt),
-        MessagesPlaceholder('chat_history'),
-        ('human', 
-            [
-                {'image_url': {'url': "{image_url}"}},
-                '{input}'
-            ]
-        ),
-    ])    
+    return ChatPromptTemplate.from_messages(
+        [
+            ("system", system_prompt),
+            MessagesPlaceholder("chat_history"),
+            ("human", [{"image_url": {"url": "{image_url}"}}, "{input}"]),
+        ]
+    )
+
 
 SUMMARIZATION_TEMPLATE = """Provide a concise summary in a few words, and prefix the summary with an emoji that reflects the tone of the summary:
 
@@ -97,10 +116,13 @@ Text:
 {input}
 
 Summary:"""
-@register('summarization_template')
+
+
+@register("summarization_template")
 def summarization_template():
-     """Returns runnable"""
-     return ChatPromptTemplate.from_template(SUMMARIZATION_TEMPLATE)
+    """Returns runnable"""
+    return ChatPromptTemplate.from_template(SUMMARIZATION_TEMPLATE)
+
 
 """
 Note the actual "context" of this ChatPromptTemplate are dynamically generated
@@ -112,13 +134,18 @@ Please compare and analyze the information from different documents.
 
 {context}
 """
-@register('history_compare_template')
+
+
+@register("history_compare_template")
 def history_compare_template():
-    return ChatPromptTemplate.from_messages([
-        ("system",HISTORY_COMPARE_TEMPLATE),
-        MessagesPlaceholder('chat_history'),
-        ('human', "{input}"),
-    ])
+    return ChatPromptTemplate.from_messages(
+        [
+            ("system", HISTORY_COMPARE_TEMPLATE),
+            MessagesPlaceholder("chat_history"),
+            ("human", "{input}"),
+        ]
+    )
+
 
 CONTENT_SAFETY_TEMPLATE = """
 <|begin_of_text|><|start_header_id|>{agent_type}<|end_header_id|>
@@ -152,9 +179,10 @@ Provide your safety assessment for ONLY THE LAST user message in the above conve
 - First line must read 'safe' or 'unsafe'.
 - If unsafe, a second line must include a comma-separated list of violated categories.<|eot_id|><|start_header_id|>assistant<|end_header_id|>
 """
-@register('guardrails_template')
+
+
+@register("guardrails_template")
 def guardrails_template():
     return PromptTemplate(
-        input_variables=['input', 'agent_type'],
-        template=CONTENT_SAFETY_TEMPLATE
+        input_variables=["input", "agent_type"], template=CONTENT_SAFETY_TEMPLATE
     )

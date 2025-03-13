@@ -1,21 +1,22 @@
 from pydantic import BaseModel
 
-_INDEX_NAME = 'user_conversations'
+_INDEX_NAME = "user_conversations"
 
-_DISTANCE_METRIC = 'COSINE'
+_DISTANCE_METRIC = "COSINE"
 
-_INDEXING_ALGORITHM = 'FLAT'
+_INDEXING_ALGORITHM = "FLAT"
 
-_VECTOR_DATATYPE = 'FLOAT32'
+_VECTOR_DATATYPE = "FLOAT32"
 
-_STORAGE_TYPE = 'hash'
+_STORAGE_TYPE = "hash"
 
-_CONTENT_FIELD_NAME = 'text'
+_CONTENT_FIELD_NAME = "text"
 
-_EMBEDDING_VECTOR_FIELD_NAME = 'embedding'
+_EMBEDDING_VECTOR_FIELD_NAME = "embedding"
+
 
 class VectorStoreSchema(BaseModel):
-    """    
+    """
     Example supported index:
     {
         "index": {
@@ -47,8 +48,9 @@ class VectorStoreSchema(BaseModel):
                 "type": "tag",
             },
         ],
-    }    
+    }
     """
+
     index_name: str = _INDEX_NAME
     distance_metric: str = _DISTANCE_METRIC
     indexing_algorithm: str = _INDEXING_ALGORITHM

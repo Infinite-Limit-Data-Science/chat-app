@@ -3,7 +3,7 @@ from .power_point_loader import PowerPointLoader
 from .word_loader import WordLoader
 
 __all__ = [
-    'BaseLoader', 
-    'PowerPointLoader', 
-    'WordLoader',
+    "BaseLoader",
+    "PowerPointLoader",
+    "WordLoader",
 ]

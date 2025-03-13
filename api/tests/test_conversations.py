@@ -3,35 +3,26 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 from ..main import app
 
+
 def test_create_conversation_with_pdf():
     with TestClient(app) as client:
-        file_path = Path(__file__).parent / 'assets' / 'NVIDIAAn.pdf'
-        
-        data = {
-            'content': 'Summarize the document.'
-        }
-        
+        file_path = Path(__file__).parent / "assets" / "NVIDIAAn.pdf"
+
+        data = {"content": "Summarize the document."}
+
         files = {
-            'upload_files': (
-                'NVIDIAAn.pdf',
-                open(file_path, 'rb'),
-                'application/pdf'
-            )
+            "upload_files": ("NVIDIAAn.pdf", open(file_path, "rb"), "application/pdf")
         }
 
-        token = os.getenv('TEST_AUTH_TOKEN')
-        headers = {
-            "Authorization": f"Bearer {token}"
-        }
+        token = os.getenv("TEST_AUTH_TOKEN")
+        headers = {"Authorization": f"Bearer {token}"}
 
         response = client.post(
-            '/api/conversations/', 
-            data=data, 
-            files=files, 
-            headers=headers
+            "/api/conversations/", data=data, files=files, headers=headers
         )
         print(response.text)
         assert response.status_code == 200
+
 
 # def test_create_conversation_with_image():
 #     with TestClient(app) as client:
@@ -41,7 +32,7 @@ def test_create_conversation_with_pdf():
 #         data = {
 #             'content': 'Compare and contrast the images.'
 #         }
-        
+
 #         files = [
 #             (
 #                 "upload_files",
@@ -64,6 +55,6 @@ def test_create_conversation_with_pdf():
 #             files=files,
 #             headers=headers
 #         )
-        
+
 #         print(response.text)
 #         assert response.status_code == 200

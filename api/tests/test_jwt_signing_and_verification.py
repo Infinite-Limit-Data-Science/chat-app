@@ -6,19 +6,33 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
 from tempfile import NamedTemporaryFile
 
-JWTPayload = namedtuple("JWTPayload", [
-    "app", "sub", "mail", "src", "roles", "iss", "attributes", "aud", 
-    "givenname", "displayname", "sn", "idm_picture_url", "exp", "iat", 
-    "session_id", "jti"
-])
+JWTPayload = namedtuple(
+    "JWTPayload",
+    [
+        "app",
+        "sub",
+        "mail",
+        "src",
+        "roles",
+        "iss",
+        "attributes",
+        "aud",
+        "givenname",
+        "displayname",
+        "sn",
+        "idm_picture_url",
+        "exp",
+        "iat",
+        "session_id",
+        "jti",
+    ],
+)
+
 
 @pytest.fixture
 def rsa_key_pair():
-    private_key = rsa.generate_private_key(
-        public_exponent=65537,
-        key_size=2048
-    )
-    
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
     public_key = private_key.public_key()
 
     private_key_file = NamedTemporaryFile(delete=False, suffix=".pem")
@@ -28,14 +42,14 @@ def rsa_key_pair():
         private_pem = private_key.private_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PrivateFormat.PKCS8,
-            encryption_algorithm=serialization.NoEncryption()
+            encryption_algorithm=serialization.NoEncryption(),
         )
         private_key_file.write(private_pem)
         private_key_file.close()
 
         public_pem = public_key.public_bytes(
             encoding=serialization.Encoding.PEM,
-            format=serialization.PublicFormat.SubjectPublicKeyInfo
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
         )
         public_key_file.write(public_pem)
         public_key_file.close()
@@ -44,6 +58,7 @@ def rsa_key_pair():
     finally:
         os.unlink(private_key_file.name)
         os.unlink(public_key_file.name)
+
 
 @pytest.fixture
 def jwt_payload():
@@ -59,7 +74,7 @@ def jwt_payload():
             {"sn": "JDoe"},
             {"mail": "john.doe@bcbsfl.com"},
             {"displayname": "JDoe, John"},
-            {"bcbsfl-idmPictureURL": ""}
+            {"bcbsfl-idmPictureURL": ""},
         ],
         aud="chatapp-tsta.throtl.com",
         givenname="John",
@@ -69,15 +84,16 @@ def jwt_payload():
         exp=1893456000,
         iat=1714144841,
         session_id="",
-        jti=""
+        jti="",
     )
 
     return payload._asdict()
 
+
 def test_jwt_signing_and_verification(rsa_key_pair, jwt_payload):
     """
-    In JWT signing with asymmetric cryptography, such as RS256, 
-    you use the private key to sign the JWT and the public key to 
+    In JWT signing with asymmetric cryptography, such as RS256,
+    you use the private key to sign the JWT and the public key to
     verify it.
     """
     private_key_path, public_key_path = rsa_key_pair
@@ -90,6 +106,8 @@ def test_jwt_signing_and_verification(rsa_key_pair, jwt_payload):
     with open(public_key_path, "rb") as f:
         public_key = f.read()
 
-    decoded_payload = jwt.decode(token, public_key, algorithms=["RS256"], audience=jwt_payload["aud"])
+    decoded_payload = jwt.decode(
+        token, public_key, algorithms=["RS256"], audience=jwt_payload["aud"]
+    )
 
     assert decoded_payload == jwt_payload

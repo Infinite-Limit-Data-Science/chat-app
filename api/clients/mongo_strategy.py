@@ -4,15 +4,16 @@ from motor import motor_asyncio
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from .database_strategy import DatabaseStrategy
 
-logging.getLogger('pymongo').setLevel(logging.WARNING)
+logging.getLogger("pymongo").setLevel(logging.WARNING)
 
-_MESSAGE_HISTORY_COLLECTION = 'messages'
-_MESSAGE_HISTORY_KEY = 'conversation_id'
+_MESSAGE_HISTORY_COLLECTION = "messages"
+_MESSAGE_HISTORY_KEY = "conversation_id"
+
 
 class MongoStrategy(DatabaseStrategy):
     def __init__(self, url: str):
         self._client = None
-        self._database_name = os.environ['DATABASE_NAME']
+        self._database_name = os.environ["DATABASE_NAME"]
         self._message_history_collection = _MESSAGE_HISTORY_COLLECTION
         self._message_history_key = _MESSAGE_HISTORY_KEY
         self._url = url
@@ -29,15 +30,15 @@ class MongoStrategy(DatabaseStrategy):
     def get_database(self) -> AsyncIOMotorDatabase:
         """Return Mongo database"""
         return self._client.get_database(self._database_name)
-    
+
     @property
     def name(self):
         return self._database_name
-    
+
     @property
     def message_history_collection(self):
         return self._message_history_collection
-    
+
     @property
     def message_history_key(self):
         return self._message_history_key
@@ -46,9 +47,14 @@ class MongoStrategy(DatabaseStrategy):
     def connection_string(self):
         return self._url
 
-if not os.getenv('DATABASE_NAME'):
-    raise RuntimeError('Missing `DATABASE_NAME` in environment, therefore, not trying to connect')
 
-if not os.getenv('MONGODB_URL'):
-    raise RuntimeError('Missing `MONGODB_URL` in environment, therefore, not trying to connect')
-mongo_instance = MongoStrategy(os.environ['MONGODB_URL'])
+if not os.getenv("DATABASE_NAME"):
+    raise RuntimeError(
+        "Missing `DATABASE_NAME` in environment, therefore, not trying to connect"
+    )
+
+if not os.getenv("MONGODB_URL"):
+    raise RuntimeError(
+        "Missing `MONGODB_URL` in environment, therefore, not trying to connect"
+    )
+mongo_instance = MongoStrategy(os.environ["MONGODB_URL"])

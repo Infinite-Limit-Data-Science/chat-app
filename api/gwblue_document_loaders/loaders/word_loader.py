@@ -6,6 +6,7 @@ from docx.section import Section
 from langchain_core.documents import Document
 from .base_loader import BaseLoader
 
+
 class WordLoader(BaseLoader):
     """
     Recursively extract all text from all paragraphs, tables, headers, and footers of document
@@ -14,6 +15,7 @@ class WordLoader(BaseLoader):
     The text property of a cell only extracts text from the cell's paragraphs and not tables
     Hence, recursion is required for tables within cells as well
     """
+
     def __init__(self, file_path: Union[str, Path]):
         self._file_path = file_path
         self.doc = docx.Document(self._file_path)
@@ -23,18 +25,19 @@ class WordLoader(BaseLoader):
         full_text = []
 
         for element in self.doc.element.body:
-            if element.tag.endswith('p'):
+            if element.tag.endswith("p"):
                 paragraph = docx.text.paragraph.Paragraph(element, self.doc)
                 full_text.append(paragraph.text)
-            elif element.tag.endswith('tbl'):
+            elif element.tag.endswith("tbl"):
                 table = docx.table.Table(element, self.doc)
                 full_text.append(self.extract_table_text(table))
 
         for section in self.doc.sections:
             full_text.append(self.extract_header_footer_text(section))
 
-        metadata = {'source': self.sourcify(self._file_path)}
+        metadata = {"source": self.sourcify(self._file_path)}
         yield Document(page_content="\n".join(full_text), metadata=metadata)
+
     load = lazy_load
 
     def extract_table_text(self, table: Table) -> str:

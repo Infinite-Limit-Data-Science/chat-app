@@ -8,66 +8,83 @@ from nltk import Tree
 from .task import BaseTask
 from .nlp_functools import ngram_freqs
 
-_task_type = 'naturallang'
+_task_type = "naturallang"
+
 
 class LanguageType(Enum):
-    CODE = 'code'
-    NATURAL = 'natural'
+    CODE = "code"
+    NATURAL = "natural"
 
-code_tree = Tree('CodePatterns', [
-    Tree('FunctionDefinitions', [
-        ('(', ')', 'FunctionCall'),
-        ('function', '(', 'FunctionDefinition_JS'),
-        ('def', '(', 'FunctionDefinition_Python'),
-        ('fn', '(', 'FunctionDefinition_Rust'),
-        ('func', '(', 'FunctionDefinition_Go'),
-        ('class', '{', 'ClassDefinition_Generic'),
-        ('public', 'class', 'ClassDefinition_Public'),
-        ('private', 'class', 'ClassDefinition_Private')
-    ]),
-    
-    Tree('ConditionalsAndLoops', [
-        ('if', '(', 'IfStatement'),
-        ('else', '{', 'ElseStatement_Block'),
-        ('for', '(', 'ForLoop'),
-        ('while', '(', 'WhileLoop'),
-        ('elif', '(', 'ElifStatement_Python'),
-        ('else', ':', 'ElseStatement_Python')
-    ]),
-    
-    Tree('ComparisonAndAssignmentOperators', [
-        ('=', '=', 'Assignment_Equality'),
-        ('==', 'True', 'EqualityCheck_Boolean'),
-        ('===', 'true', 'StrictEqualityCheck_JS'),
-        ('!=', 'false', 'NotEqualityCheck_Boolean'),
-        ('let', '=', 'VariableDeclaration_JS'),
-        ('const', '=', 'ConstantDeclaration_JS'),
-        ('var', '=', 'VariableDeclaration_Generic'),
-        (':=', '=', 'WalrusOperator_Python')
-    ]),
-    
-    Tree('BlockDelimitersAndBraces', [
-        ('{', '}', 'BlockDelimiters'),
-        ('[', ']', 'ArrayDelimiters'),
-        ('=>', '{', 'ArrowFunction_Block_JS')
-    ]),
-    
-    Tree('LogicalAndArithmeticOperators', [
-        ('+', '=', 'AdditionAssignment'),
-        ('-', '=', 'SubtractionAssignment'),
-        ('*', '=', 'MultiplicationAssignment'),
-        ('/', '=', 'DivisionAssignment'),
-        ('&&', '||', 'LogicalOperators_AndOr'),
-        ('&', '&', 'BitwiseAndOperator'),
-        ('|', '|', 'BitwiseOrOperator')
-    ])
-])
+
+code_tree = Tree(
+    "CodePatterns",
+    [
+        Tree(
+            "FunctionDefinitions",
+            [
+                ("(", ")", "FunctionCall"),
+                ("function", "(", "FunctionDefinition_JS"),
+                ("def", "(", "FunctionDefinition_Python"),
+                ("fn", "(", "FunctionDefinition_Rust"),
+                ("func", "(", "FunctionDefinition_Go"),
+                ("class", "{", "ClassDefinition_Generic"),
+                ("public", "class", "ClassDefinition_Public"),
+                ("private", "class", "ClassDefinition_Private"),
+            ],
+        ),
+        Tree(
+            "ConditionalsAndLoops",
+            [
+                ("if", "(", "IfStatement"),
+                ("else", "{", "ElseStatement_Block"),
+                ("for", "(", "ForLoop"),
+                ("while", "(", "WhileLoop"),
+                ("elif", "(", "ElifStatement_Python"),
+                ("else", ":", "ElseStatement_Python"),
+            ],
+        ),
+        Tree(
+            "ComparisonAndAssignmentOperators",
+            [
+                ("=", "=", "Assignment_Equality"),
+                ("==", "True", "EqualityCheck_Boolean"),
+                ("===", "true", "StrictEqualityCheck_JS"),
+                ("!=", "false", "NotEqualityCheck_Boolean"),
+                ("let", "=", "VariableDeclaration_JS"),
+                ("const", "=", "ConstantDeclaration_JS"),
+                ("var", "=", "VariableDeclaration_Generic"),
+                (":=", "=", "WalrusOperator_Python"),
+            ],
+        ),
+        Tree(
+            "BlockDelimitersAndBraces",
+            [
+                ("{", "}", "BlockDelimiters"),
+                ("[", "]", "ArrayDelimiters"),
+                ("=>", "{", "ArrowFunction_Block_JS"),
+            ],
+        ),
+        Tree(
+            "LogicalAndArithmeticOperators",
+            [
+                ("+", "=", "AdditionAssignment"),
+                ("-", "=", "SubtractionAssignment"),
+                ("*", "=", "MultiplicationAssignment"),
+                ("/", "=", "DivisionAssignment"),
+                ("&&", "||", "LogicalOperators_AndOr"),
+                ("&", "&", "BitwiseAndOperator"),
+                ("|", "|", "BitwiseOrOperator"),
+            ],
+        ),
+    ],
+)
+
 
 class NaturalHeuristicsTask(BaseTask):
     temperature_range = (0.7, 1.0)
     task_type = _task_type
 
-    def perform(self, corpus: str) -> Literal['code', 'natural']:
+    def perform(self, corpus: str) -> Literal["code", "natural"]:
         en_words = set(words.words())
         tokens = word_tokenize(corpus)
 
@@ -76,13 +93,13 @@ class NaturalHeuristicsTask(BaseTask):
 
         if non_en_count > en_word_count:
             return LanguageType.CODE.value
-        
+
         return self.statistical_freq(corpus, tokens)
 
-    def statistical_freq(self, corpus: str) -> Literal['code', 'natural']:
+    def statistical_freq(self, corpus: str) -> Literal["code", "natural"]:
         char_counts = Counter(corpus)
         total_chars = sum(char_counts.values())
-        symbol_chars = set('{}[]()<>;=+-*/')
+        symbol_chars = set("{}[]()<>;=+-*/")
 
         symbol_count = sum(char_counts[char] for char in symbol_chars)
         alphabetic_count = sum(char_counts[char] for char in string.ascii_letters)
@@ -95,22 +112,23 @@ class NaturalHeuristicsTask(BaseTask):
         else:
             return LanguageType.NATURAL.value
 
+
 class NaturalNLPTask(BaseTask):
     temperature_range = (0.3, 0.69)
     task_type = _task_type
 
-    def perform(self, corpus: str) -> Literal['code', 'natural']:
+    def perform(self, corpus: str) -> Literal["code", "natural"]:
         tokens = word_tokenize(corpus)
         bigram_freqs = ngram_freqs(tokens)
         heuristic_weight = 5
         weighted_sum = 0
 
         category_weights = {
-            'FunctionDefinitions': 1.5,
-            'ConditionalsAndLoops': 1.5,
-            'ComparisonAndAssignmentOperators': 1.5,
-            'BlockDelimitersAndBraces': 1.0,
-            'LogicalAndArithmeticOperators': 1.0,
+            "FunctionDefinitions": 1.5,
+            "ConditionalsAndLoops": 1.5,
+            "ComparisonAndAssignmentOperators": 1.5,
+            "BlockDelimitersAndBraces": 1.0,
+            "LogicalAndArithmeticOperators": 1.0,
         }
 
         for bigram, count in bigram_freqs.items():
@@ -130,10 +148,11 @@ class NaturalNLPTask(BaseTask):
                     return category.label()
         return None
 
+
 class NaturalMLTask(BaseTask):
     temperature_range = (0.0, 0.29)
     task_type = _task_type
 
-    def perform(self, corpus: str) -> Literal['code', 'natural']:
+    def perform(self, corpus: str) -> Literal["code", "natural"]:
         """Implementation coming soon"""
         pass

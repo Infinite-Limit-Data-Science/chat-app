@@ -8,6 +8,7 @@ from pptx.enum.shapes import MSO_SHAPE_TYPE
 from langchain_core.documents import Document
 from .base_loader import BaseLoader
 
+
 class PowerPointLoader(BaseLoader):
     """
     Recursively extract all text from all slides in presentation, including:
@@ -19,6 +20,7 @@ class PowerPointLoader(BaseLoader):
     Note tables, pictures, and group shapes do not directly have textframes.
     Recursive scans on shapetree are handled appropriately to capture text
     """
+
     def __init__(self, file_path: Union[str, Path]):
         self._file_path = file_path
         self.doc = Presentation(self._file_path)
@@ -29,9 +31,10 @@ class PowerPointLoader(BaseLoader):
 
         for slide in self.doc.slides:
             full_text.extend(self._extract_text_from_shapes(slide.shapes))
-        
-        metadata = {'source': self.sourcify(self._file_path)}
+
+        metadata = {"source": self.sourcify(self._file_path)}
         yield Document(page_content="\n".join(full_text), metadata=metadata)
+
     load = lazy_load
 
     def _extract_text_from_shapes(self, shapes: SlideShapes) -> List[str]:
@@ -43,7 +46,7 @@ class PowerPointLoader(BaseLoader):
             if shape.has_table:
                 text_parts.append(self._extract_text_from_table(shape.table))
             if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
-                text_parts.append(self._extract_text_from_image(shape)) 
+                text_parts.append(self._extract_text_from_image(shape))
             if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
                 text_parts.extend(self._extract_text_from_shapes(shape.shapes))
         return text_parts
@@ -61,4 +64,4 @@ class PowerPointLoader(BaseLoader):
         return "\n".join(table_text)
 
     def _extract_text_from_image(self, _) -> str:
-        return ''
+        return ""

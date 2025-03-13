@@ -1,5 +1,9 @@
 import pandas as pd
-from langchain.prompts import ChatPromptTemplate, MessagesPlaceholder, FewShotChatMessagePromptTemplate
+from langchain.prompts import (
+    ChatPromptTemplate,
+    MessagesPlaceholder,
+    FewShotChatMessagePromptTemplate,
+)
 from langchain_core.example_selectors import SemanticSimilarityExampleSelector
 from .prompt_examples import examples
 from ..langchain_doc.vector_stores import STORE_FACTORIES
@@ -18,11 +22,14 @@ FUNCTIONS_WITH_MULTI_DF = """
     {dfs_head}
 """
 
-def few_shot_chat_prompt(dfs: pd.DataFrame, prefix: str | None = None, suffix: str | None = None) -> ChatPromptTemplate:
+
+def few_shot_chat_prompt(
+    dfs: pd.DataFrame, prefix: str | None = None, suffix: str | None = None
+) -> ChatPromptTemplate:
     # you need to check if data is already vectorized, otherwise you will vectorize the example data each time you run the tool
     # therefore this example data must contain metadata
-    to_vectorize = [' '.join(example.values()) for example in examples]
-    vectorstore = STORE_FACTORIES['redis']()
+    to_vectorize = [" ".join(example.values()) for example in examples]
+    vectorstore = STORE_FACTORIES["redis"]()
     vectorstore.from_texts(to_vectorize, vectorstore.embeddings, metadatas=examples)
     example_selector = SemanticSimilarityExampleSelector(
         vectorstore=vectorstore,
@@ -40,7 +47,7 @@ def few_shot_chat_prompt(dfs: pd.DataFrame, prefix: str | None = None, suffix: s
     system = prefix or PREFIX_FUNCTIONS
     system += suffix or FUNCTIONS_WITH_MULTI_DF if len(dfs) > 1 else FUNCTIONS_WITH_DF
 
-    chat_prompt_template =  ChatPromptTemplate.from_messages(
+    chat_prompt_template = ChatPromptTemplate.from_messages(
         [
             ("system", system),
             few_shot_prompt,

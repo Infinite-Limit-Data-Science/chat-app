@@ -1,9 +1,9 @@
 from typing import (
-    List, 
-    Iterator, 
-    Dict, 
-    Any, 
-    TypeAlias, 
+    List,
+    Iterator,
+    Dict,
+    Any,
+    TypeAlias,
     Union,
     Optional,
     TypedDict,
@@ -19,7 +19,7 @@ from ..gwblue_text_splitters.mixed_content_text_splitter import MixedContentText
 from ..gwblue_vectorstores.redis.config import VectorStoreSchema
 from ..gwblue_vectorstores.redis.multimodal_vectorstore import MultiModalVectorStore
 from ..gwblue_huggingface.huggingface_transformer_tokenizers import (
-    get_tokenizer_class_by_prefix
+    get_tokenizer_class_by_prefix,
 )
 
 _VECTOR_TTL_30_DAYS = 3600 * 24 * 30
@@ -34,6 +34,7 @@ _MAX_TOKENS_PER_INPUT = 2000
 
 VectorStoreClient: TypeAlias = Union[Redis]
 
+
 class VectorStoreConfig(BaseModel):
     client: Optional[VectorStoreClient] = None
     url: Optional[str] = None
@@ -43,6 +44,7 @@ class VectorStoreConfig(BaseModel):
         arbitrary_types_allowed=True,
     )
 
+
 class EmbeddingsConfig(TypedDict):
     model: str
     endpoint: str
@@ -50,9 +52,10 @@ class EmbeddingsConfig(TypedDict):
     provider: str
     max_batch_tokens: int
 
+
 class DocumentIngestor(ABC):
     def __init__(
-        self, 
+        self,
         file: str,
         *,
         embeddings: Embeddings,
@@ -64,18 +67,17 @@ class DocumentIngestor(ABC):
         self.embeddings = embeddings
         self.metadata = metadata
         self.local_tokenizer = get_tokenizer_class_by_prefix(embeddings_config.model)()
-        
-        config = RedisConfig(**{
-            'redis_client': vector_config.client,
-            'metadata_schema': vector_config.metadata_schema,
-            'embedding_dimensions': self.local_tokenizer.dimensions,
-            **VectorStoreSchema().model_dump()
-        })
-            
-        self.vector_store = MultiModalVectorStore(
-            self.embeddings, 
-            config=config
+
+        config = RedisConfig(
+            **{
+                "redis_client": vector_config.client,
+                "metadata_schema": vector_config.metadata_schema,
+                "embedding_dimensions": self.local_tokenizer.dimensions,
+                **VectorStoreSchema().model_dump(),
+            }
         )
+
+        self.vector_store = MultiModalVectorStore(self.embeddings, config=config)
 
     def inspect(documents: Iterator[Document]):
         import itertools
@@ -85,16 +87,21 @@ class DocumentIngestor(ABC):
         print(next(c2))
 
     @abstractmethod
-    def load(self) -> Iterator[Document]:
-        ...
+    def load(self) -> Iterator[Document]: ...
 
     def chunk(
-        self, 
+        self,
         docs: Iterator[Document],
     ) -> Iterator[Document]:
-        overlap_sampler = list(map(pow, itertools.repeat(0.05,times=4), itertools.count()))
+        overlap_sampler = list(
+            map(pow, itertools.repeat(0.05, times=4), itertools.count())
+        )
 
-        sequence_length = _MAX_TOKENS_PER_INPUT if self.local_tokenizer.empirical_sequence_length > _MAX_TOKENS_PER_INPUT else self.local_tokenizer.empirical_sequence_length
+        sequence_length = (
+            _MAX_TOKENS_PER_INPUT
+            if self.local_tokenizer.empirical_sequence_length > _MAX_TOKENS_PER_INPUT
+            else self.local_tokenizer.empirical_sequence_length
+        )
         overlap = int(sequence_length * overlap_sampler[1])
         len_function = lambda text: len(self.local_tokenizer.tokenizer.encode(text))
 
@@ -110,11 +117,9 @@ class DocumentIngestor(ABC):
             yield chunk
 
     async def embed(self, chunks: Iterator[Document]) -> List[str]:
-        requests = self.local_tokenizer.recommended_token_batch // _MAX_TOKENS_PER_INPUT   
+        requests = self.local_tokenizer.recommended_token_batch // _MAX_TOKENS_PER_INPUT
         return await self.vector_store.aadd_documents_with_ttl(
-            chunks,
-            ttl_seconds=_VECTOR_TTL_30_DAYS,
-            max_requests=requests
+            chunks, ttl_seconds=_VECTOR_TTL_30_DAYS, max_requests=requests
         )
 
     async def ingest(self) -> List[str]:

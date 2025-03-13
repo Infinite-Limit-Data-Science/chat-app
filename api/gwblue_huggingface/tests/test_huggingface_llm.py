@@ -20,12 +20,8 @@ from langchain.schema import LLMResult
 from langchain_core.runnables.utils import ConfigurableField
 from ..huggingface_llm import HuggingFaceLLM
 from ..huggingface_embeddings import HuggingFaceEmbeddings
-from ..huggingface_transformer_tokenizers import (
-    VLM2VecFullPretrainedTokenizer
-)
-from ...gwblue_vectorstores.redis.multimodal_vectorstore import (
-    MultiModalVectorStore
-)
+from ..huggingface_transformer_tokenizers import VLM2VecFullPretrainedTokenizer
+from ...gwblue_vectorstores.redis.multimodal_vectorstore import MultiModalVectorStore
 from .corpus import examples
 
 load_dotenv()
@@ -34,6 +30,7 @@ _MAX_INPUT_TOKENS = 12582
 
 _MAX_TOTAL_TOKENS = 16777
 
+
 def _model_config(model_type: str, model_name: str) -> str:
     models = json.loads(os.environ[model_type])
     model = next((model for model in models if model["name"] == model_name), None)
@@ -41,52 +38,55 @@ def _model_config(model_type: str, model_name: str) -> str:
         raise ValueError(f"Model {model_name} does not exist in {model_type}")
 
     return {
-        'name': model['name'],
-        'url': model['endpoints'][0]['url'],
-        'provider': model['endpoints'][0]['provider'],
+        "name": model["name"],
+        "url": model["endpoints"][0]["url"],
+        "provider": model["endpoints"][0]["provider"],
     }
+
 
 @pytest.fixture
 def llm() -> HuggingFaceLLM:
     config = _model_config("MODELS", "meta-llama/Llama-3.2-11B-Vision-Instruct")
 
     return HuggingFaceLLM(
-        base_url=config['url'],
-        credentials=os.environ['TEST_AUTH_TOKEN'],
-        max_tokens=_MAX_TOTAL_TOKENS-_MAX_INPUT_TOKENS,
+        base_url=config["url"],
+        credentials=os.environ["TEST_AUTH_TOKEN"],
+        max_tokens=_MAX_TOTAL_TOKENS - _MAX_INPUT_TOKENS,
         temperature=0.8,
-        provider=config['provider'],
-        model=config['name'],
+        provider=config["provider"],
+        model=config["name"],
     )
+
 
 @pytest.fixture
 def embeddings() -> HuggingFaceEmbeddings:
     config = _model_config("EMBEDDING_MODELS", "TIGER-Lab/VLM2Vec-Full")
 
     return HuggingFaceEmbeddings(
-        base_url=config['url'],
-        credentials=os.environ['TEST_AUTH_TOKEN'],
-        provider=config['provider'],
-        model=config['name'],
+        base_url=config["url"],
+        credentials=os.environ["TEST_AUTH_TOKEN"],
+        provider=config["provider"],
+        model=config["name"],
     )
+
 
 @pytest.fixture
 def vlm_tokenizer() -> VLM2VecFullPretrainedTokenizer:
     return VLM2VecFullPretrainedTokenizer()
 
+
 @pytest.fixture
 def vectorstore(
-    embeddings: HuggingFaceEmbeddings, 
-    vlm_tokenizer: VLM2VecFullPretrainedTokenizer
+    embeddings: HuggingFaceEmbeddings, vlm_tokenizer: VLM2VecFullPretrainedTokenizer
 ) -> Iterator[MultiModalVectorStore]:
     config = RedisConfig(
         index_name="test1",
-        redis_url=os.environ['REDIS_URL'],
+        redis_url=os.environ["REDIS_URL"],
         metadata_schema=[
             {"name": "input", "type": "text"},
             {"name": "output", "type": "text"},
         ],
-        embedding_dimensions=vlm_tokenizer.dimensions
+        embedding_dimensions=vlm_tokenizer.dimensions,
     )
 
     store = MultiModalVectorStore(embeddings, config=config)
@@ -96,16 +96,18 @@ def vectorstore(
     store.index.clear()
     store.index.delete(drop=True)
 
+
 @pytest.fixture
 def sample_population() -> List[str]:
     fake = Faker("en_GB")
     return [fake.name() for _ in range(100)]
 
+
 class MovieSummary(BaseModel):
-    title: str = Field(description='Title of the movie')
-    release_year: int = Field(description='Year the movie was released')
-    director: str = Field(description='Director of the movie')
-    plot_summary: str = Field(description='Brief summary of the movie plot')
+    title: str = Field(description="Title of the movie")
+    release_year: int = Field(description="Year the movie was released")
+    director: str = Field(description="Director of the movie")
+    plot_summary: str = Field(description="Brief summary of the movie plot")
 
     @field_validator("release_year")
     @classmethod
@@ -118,8 +120,11 @@ class MovieSummary(BaseModel):
     @classmethod
     def validate_director_name(cls, name: str) -> str:
         if not re.match(r"^[a-zA-Z\s.]+$", name):
-            raise ValueError("Invalid director name. Must contain only letters and spaces.")
+            raise ValueError(
+                "Invalid director name. Must contain only letters and spaces."
+            )
         return name
+
 
 class MockCallbackHandler(BaseCallbackHandler):
     def __init__(self):
@@ -131,16 +136,20 @@ class MockCallbackHandler(BaseCallbackHandler):
         self.llm_end_called = True
         self.llm_end_data = response
 
+
 class SpyHuggingFaceLLM(HuggingFaceLLM):
     last_used_temperature: float | None = Field(None, exclude=True)
-    
+
     def _generate(self, prompts, stop=None, run_manager=None, **kwargs):
-        llm_result = super()._generate(prompts, stop=stop, run_manager=run_manager, **kwargs)
+        llm_result = super()._generate(
+            prompts, stop=stop, run_manager=run_manager, **kwargs
+        )
         if not llm_result.llm_output:
             llm_result.llm_output = {}
-        llm_result.llm_output['final_temp'] = self.temperature
+        llm_result.llm_output["final_temp"] = self.temperature
 
         return llm_result
+
 
 class UsageCollectorWithChainID(BaseCallbackHandler):
     def __init__(self):
@@ -164,9 +173,10 @@ class UsageCollectorWithChainID(BaseCallbackHandler):
         run_id: Optional[UUID] = None,
         **kwargs: any,
     ):
-        usage = response.llm_output.get('token_usage')
+        usage = response.llm_output.get("token_usage")
         for run_id in self.chain_run_ids:
             self.usage_by_run_id[run_id] = usage
+
 
 class ConfigurableCaptureCallbackHandler(BaseCallbackHandler):
     def __init__(self):
@@ -175,40 +185,48 @@ class ConfigurableCaptureCallbackHandler(BaseCallbackHandler):
 
     def on_llm_end(self, response: LLMResult, run_id=None, **kwargs):
         if response.llm_output is not None:
-            self.captured_temp = response.llm_output.get('final_temp')
+            self.captured_temp = response.llm_output.get("final_temp")
+
 
 @pytest.fixture
 def spy_llm() -> SpyHuggingFaceLLM:
     config = _model_config("MODELS", "meta-llama/Llama-3.2-11B-Vision-Instruct")
 
     return SpyHuggingFaceLLM(
-        base_url=config['url'],
-        credentials=os.environ['TEST_AUTH_TOKEN'],
-        max_tokens=_MAX_TOTAL_TOKENS-_MAX_INPUT_TOKENS,
+        base_url=config["url"],
+        credentials=os.environ["TEST_AUTH_TOKEN"],
+        max_tokens=_MAX_TOTAL_TOKENS - _MAX_INPUT_TOKENS,
         temperature=0.8,
-        provider=config['provider'],
-        model=config['name'],
+        provider=config["provider"],
+        model=config["name"],
     )
 
+
 def test_llm_type(llm: HuggingFaceLLM):
-    assert getattr(llm, '_llm_type') == 'huggingface_llm'
+    assert getattr(llm, "_llm_type") == "huggingface_llm"
+
 
 def test_identifying_params(llm: HuggingFaceLLM):
-    assert getattr(llm, '_identifying_params') == {'endpoint_url': llm.base_url, 'model_kwargs': {}}
+    assert getattr(llm, "_identifying_params") == {
+        "endpoint_url": llm.base_url,
+        "model_kwargs": {},
+    }
+
 
 def test_llm_invoke(llm: HuggingFaceLLM):
-    ai_message = llm.invoke('What is Generative AI?')
+    ai_message = llm.invoke("What is Generative AI?")
     assert len(ai_message) > 0
+
 
 def test_llm_invoke_with_prompt_template(llm: HuggingFaceLLM):
     prompt = PromptTemplate(
-        input_variables=['input'],
-        template="Tell me about the movie {input}."
+        input_variables=["input"], template="Tell me about the movie {input}."
     )
 
     chain = prompt | llm
-    ai_message = chain.invoke({'input': 'Memento'})
+    ai_message = chain.invoke({"input": "Memento"})
     assert len(ai_message) > 0
+
 
 def test_llm_invoke_with_output_parser(llm: HuggingFaceLLM):
     output_parser = PydanticOutputParser(pydantic_object=MovieSummary)
@@ -216,24 +234,27 @@ def test_llm_invoke_with_output_parser(llm: HuggingFaceLLM):
     prompt = PromptTemplate(
         template="Tell me about the movie {input}.\nReturn ONLY a single valid JSON object.\n{format_instructions}\n",
         input_variables=["input"],
-        partial_variables={"format_instructions": output_parser.get_format_instructions()},
+        partial_variables={
+            "format_instructions": output_parser.get_format_instructions()
+        },
     )
-    print(prompt.format(input='Memento'))
+    print(prompt.format(input="Memento"))
 
     chain = prompt | llm | output_parser
-    ai_message = chain.invoke({'input': 'Memento'})
+    ai_message = chain.invoke({"input": "Memento"})
     assert isinstance(ai_message, MovieSummary)
     assert ai_message.release_year == 2000
-    assert ai_message.director == 'Christopher Nolan'
+    assert ai_message.director == "Christopher Nolan"
     assert len(ai_message.plot_summary) > 1
 
+
 def test_llm_invoke_with_few_shot_prompt(
-    llm: HuggingFaceLLM, 
+    llm: HuggingFaceLLM,
     vectorstore: Iterator[MultiModalVectorStore],
-    sample_population: List[str]
+    sample_population: List[str],
 ):
     def example_to_text(
-        example: dict[str, str], 
+        example: dict[str, str],
     ) -> str:
         sorted_keys = sorted(example.keys())
         return " ".join(example[k] for k in sorted_keys)
@@ -243,14 +264,13 @@ def test_llm_invoke_with_few_shot_prompt(
     index_ids = vectorstore.add_texts(string_examples, metadatas=examples)
     print(index_ids)
 
-    example_selector = MaxMarginalRelevanceExampleSelector(
-        vectorstore=vectorstore,
-        k=3
-    )
+    example_selector = MaxMarginalRelevanceExampleSelector(vectorstore=vectorstore, k=3)
 
-    selector_output = example_selector.select_examples({'input': 'Which names have the highest salaries?'})
+    selector_output = example_selector.select_examples(
+        {"input": "Which names have the highest salaries?"}
+    )
     print(selector_output)
-    
+
     # Once we have the selected examples example selector returned, then we format them for the eventual prompt sent to the model
     example_prompt = PromptTemplate(
         input_variables=["input", "output"],
@@ -260,7 +280,7 @@ def test_llm_invoke_with_few_shot_prompt(
     salaries = itertools.count(start=10_000, step=10_000)
     ages = itertools.count(start=25, step=5)
     data = zip(sample_population, ages, salaries)
-    df = pd.DataFrame(data, columns=['Name', 'Age', 'Salary'])
+    df = pd.DataFrame(data, columns=["Name", "Age", "Salary"])
 
     prefix = f"""
     You are working with a pandas dataframe in Python. The name of the dataframe is `df`.
@@ -282,7 +302,9 @@ def test_llm_invoke_with_few_shot_prompt(
         input_variables=["input"],
     )
 
-    mmr_prompt_output = mmr_prompt.format(input='Which names have the highest salaries?')
+    mmr_prompt_output = mmr_prompt.format(
+        input="Which names have the highest salaries?"
+    )
     print(mmr_prompt_output)
 
     # another option is to add a PandasOutputParser to determine if response is valid pandas
@@ -291,85 +313,85 @@ def test_llm_invoke_with_few_shot_prompt(
     # then OutputParser will generate error and in a langgraph we can send the prompt
     # back to the language model with additional context to correct the mistake.
     chain = mmr_prompt | llm
-    ai_message = chain.invoke({ 'input': 'Which names have the highest salaries?' })
-    
-    df_content = eval(ai_message, {'df': df})
+    ai_message = chain.invoke({"input": "Which names have the highest salaries?"})
+
+    df_content = eval(ai_message, {"df": df})
 
     assert len(df_content) > 0
+
 
 def test_llm_invoke_with_callbacks(llm: HuggingFaceLLM):
     mock_handler = MockCallbackHandler()
     config = RunnableConfig(callbacks=[mock_handler])
     prompt = PromptTemplate(
-        input_variables=['input'],
-        template="Tell me about the movie {input}."
+        input_variables=["input"], template="Tell me about the movie {input}."
     )
 
     chain = prompt | llm
-    chain.invoke({'input': 'Memento'}, config=config)
+    chain.invoke({"input": "Memento"}, config=config)
 
     assert mock_handler.llm_end_data is not None
+
 
 def test_llm_invoke_with_run_information(spy_llm: SpyHuggingFaceLLM):
     llm = spy_llm.configurable_fields(
         temperature=ConfigurableField(
-            id='temperature',
-            name='LLM Temperature',
-            description='The temperature of the LLM'
+            id="temperature",
+            name="LLM Temperature",
+            description="The temperature of the LLM",
         )
     )
 
     handler = ConfigurableCaptureCallbackHandler()
-    
+
     run_uuid = uuid.uuid4()
     config = RunnableConfig(
-        tags=['huggingface_llm', 'llm_123'],
-        metadata={'user_uuid': '12345', 'model': 'meta/llama-3.2-90b-vision-instruct'},
-        run_name='huggingface_llm_invoke_role',
-        max_concurrency=1, # more applicable when batching or using composite chains
-        configurable={'temperature': 0.3}, # more applicable when you have multiple models in chain and want some to have configurable attribute like temperature but not others
+        tags=["huggingface_llm", "llm_123"],
+        metadata={"user_uuid": "12345", "model": "meta/llama-3.2-90b-vision-instruct"},
+        run_name="huggingface_llm_invoke_role",
+        max_concurrency=1,  # more applicable when batching or using composite chains
+        configurable={
+            "temperature": 0.3
+        },  # more applicable when you have multiple models in chain and want some to have configurable attribute like temperature but not others
         run_id=run_uuid,
-        callbacks=[handler], 
+        callbacks=[handler],
     )
     prompt = PromptTemplate(
-        input_variables=['input'],
-        template="Tell me about the movie {input}."
+        input_variables=["input"], template="Tell me about the movie {input}."
     )
 
     chain = prompt | llm
-    chain.invoke({'input': 'Memento'}, config=config)
+    chain.invoke({"input": "Memento"}, config=config)
 
-    assert handler.captured_temp == 0.3, (
-        f"Expected temperature to be 0.3, got {spy_llm.last_used_temperature}"
-    )
+    assert (
+        handler.captured_temp == 0.3
+    ), f"Expected temperature to be 0.3, got {spy_llm.last_used_temperature}"
+
 
 def test_llm_invoke_with_token_usage_in_response(llm: HuggingFaceLLM):
     usage_collector = UsageCollectorWithChainID()
     run_uuid = uuid.uuid4()
     config = RunnableConfig(
-        run_id=run_uuid, 
-        tags=['huggingface_llm_role'], 
-        callbacks=[usage_collector]
+        run_id=run_uuid, tags=["huggingface_llm_role"], callbacks=[usage_collector]
     )
-    
+
     prompt = PromptTemplate(
-        input_variables=['input'],
-        template="Tell me about the movie {input}."
+        input_variables=["input"], template="Tell me about the movie {input}."
     )
 
     chain = prompt | llm
-    ai_message = chain.invoke({'input': 'Memento'}, config=config)
+    ai_message = chain.invoke({"input": "Memento"}, config=config)
 
     usage_info = usage_collector.usage_by_run_id.get(run_uuid)
 
-    structured_output = {
-        'answer': ai_message,
-        'token_usage': usage_info
-    }
+    structured_output = {"answer": ai_message, "token_usage": usage_info}
 
-    assert all(structured_output['token_usage'].values())
+    assert all(structured_output["token_usage"].values())
 
-@pytest.mark.skip(reason='LLM model only supports text inputs, image-to-text is not implemented.')
+
+@pytest.mark.skip(
+    reason="LLM model only supports text inputs, image-to-text is not implemented."
+)
 def test_llm_invoke_with_image_to_text():
     """
     `HuggingFaceLLM` only supports text input.
@@ -378,7 +400,10 @@ def test_llm_invoke_with_image_to_text():
     """
     pass
 
-@pytest.mark.skip(reason='LLM model only supports text inputs, tool calling is not implemented.')
+
+@pytest.mark.skip(
+    reason="LLM model only supports text inputs, tool calling is not implemented."
+)
 def test_llm_invoke_with_tool_calling():
     """
     `HuggingFaceLLM` only supports text input.
@@ -387,44 +412,45 @@ def test_llm_invoke_with_tool_calling():
     """
     pass
 
+
 @pytest.mark.asyncio
 async def test_llm_ainvoke(llm: HuggingFaceLLM):
     prompt = PromptTemplate(
-        input_variables=['input'],
-        template="Tell me about the movie {input}."
+        input_variables=["input"], template="Tell me about the movie {input}."
     )
 
     chain = prompt | llm
-    ai_message = await chain.ainvoke({'input': 'Memento'})
+    ai_message = await chain.ainvoke({"input": "Memento"})
     assert len(ai_message) > 0
+
 
 def test_llm_stream(llm: HuggingFaceLLM):
     prompt = PromptTemplate(
-        input_variables=['input'],
-        template="Tell me about the movie {input}."
+        input_variables=["input"], template="Tell me about the movie {input}."
     )
 
     chain = prompt | llm
 
-    ai_message = ''
-    for chunk in chain.stream({'input': 'Memento'}):
+    ai_message = ""
+    for chunk in chain.stream({"input": "Memento"}):
         ai_message += chunk
 
-    assert len(ai_message) > 0    
+    assert len(ai_message) > 0
+
 
 @pytest.mark.asyncio
 async def test_llm_astream(llm: HuggingFaceLLM):
     prompt = PromptTemplate(
-        input_variables=['input'],
-        template="Tell me about the movie {input}."
+        input_variables=["input"], template="Tell me about the movie {input}."
     )
 
     chain = prompt | llm
-    ai_message = ''
-    async for chunk in chain.astream({'input': 'Memento'}):
+    ai_message = ""
+    async for chunk in chain.astream({"input": "Memento"}):
         ai_message += chunk
-    
+
     assert len(ai_message) > 0
+
 
 def test_llm_batch(llm: HuggingFaceLLM):
     """
@@ -432,8 +458,11 @@ def test_llm_batch(llm: HuggingFaceLLM):
 
     More features coming soon
     """
-    ai_messages = llm.batch(['Tell me about the movie Memento', 'Tell me about the movie Reservoir Dogs'])
+    ai_messages = llm.batch(
+        ["Tell me about the movie Memento", "Tell me about the movie Reservoir Dogs"]
+    )
     assert len(ai_messages) > 0
+
 
 @pytest.mark.asyncio
 async def test_llm_abatch(llm: HuggingFaceLLM):
@@ -442,5 +471,7 @@ async def test_llm_abatch(llm: HuggingFaceLLM):
 
     More features coming soon
     """
-    ai_messages = await llm.abatch(['Tell me about the movie Memento', 'Tell me about the movie Reservoir Dogs'])
+    ai_messages = await llm.abatch(
+        ["Tell me about the movie Memento", "Tell me about the movie Reservoir Dogs"]
+    )
     assert len(ai_messages) > 0

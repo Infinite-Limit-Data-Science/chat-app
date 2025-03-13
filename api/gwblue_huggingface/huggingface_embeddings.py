@@ -8,8 +8,12 @@ from .inference_schema import HuggingFaceInferenceServerMixin
 from .huggingface_inference_server_config import HuggingFaceEmbeddingsConfig
 from .huggingface_inference_client import HuggingFaceInferenceClient
 
+
 class HuggingFaceBaseEmbeddings(HuggingFaceInferenceServerMixin, Embeddings):
-    client: Optional[HuggingFaceInferenceClient] = Field(description='Low-level Inference Client to interface to the self-hosted HF TEI Server', default=None)
+    client: Optional[HuggingFaceInferenceClient] = Field(
+        description="Low-level Inference Client to interface to the self-hosted HF TEI Server",
+        default=None,
+    )
 
     model_config = ConfigDict(
         extra="forbid",
@@ -17,13 +21,16 @@ class HuggingFaceBaseEmbeddings(HuggingFaceInferenceServerMixin, Embeddings):
         arbitrary_types_allowed=True,
     )
 
-    @field_validator('base_url')
+    @field_validator("base_url")
     @classmethod
     def validate_base_url(cls, value: str) -> str:
         parsed_url = urlparse(value)
-        if parsed_url.path not in ('', '/'):
-            raise ValueError(f'Invalid base_url: {value}. Must not contain extra path segments.')
+        if parsed_url.path not in ("", "/"):
+            raise ValueError(
+                f"Invalid base_url: {value}. Must not contain extra path segments."
+            )
         return value
+
 
 class HuggingFaceEmbeddings(HuggingFaceBaseEmbeddings):
 
@@ -35,80 +42,86 @@ class HuggingFaceEmbeddings(HuggingFaceBaseEmbeddings):
             provider=self.provider,
             model=self.model,
             timeout=self.timeout,
-            headers=self.headers
+            headers=self.headers,
         )
         self.client = client
 
         return self
 
-    def embed_documents(self, texts: List[str], **feat_extract_kwargs) -> List[List[float]]:
+    def embed_documents(
+        self, texts: List[str], **feat_extract_kwargs
+    ) -> List[List[float]]:
         #  Replace newlines, which can negatively affect performance.
         texts = [text.replace("\n", " ") for text in texts]
         texts = texts[0] if len(texts) == 1 else texts
-        embeddings = self.client.feature_extraction(texts, **feat_extract_kwargs).tolist() 
-        return embeddings    
+        embeddings = self.client.feature_extraction(
+            texts, **feat_extract_kwargs
+        ).tolist()
+        return embeddings
 
     def embed_query(self, text: str) -> List[float]:
         embedding = self.embed_documents([text])[0]
         return embedding
-    
-    async def aembed_documents(self, texts: List[str], **feat_extract_kwargs) -> List[List[float]]:
+
+    async def aembed_documents(
+        self, texts: List[str], **feat_extract_kwargs
+    ) -> List[List[float]]:
         #  Replace newlines, which can negatively affect performance.
         texts = [text.replace("\n", " ") for text in texts]
         texts = texts[0] if len(texts) == 1 else texts
-        embeddings = (await self.client.afeature_extraction(texts, **feat_extract_kwargs)).tolist()
+        embeddings = (
+            await self.client.afeature_extraction(texts, **feat_extract_kwargs)
+        ).tolist()
         return embeddings
-    
+
     async def aembed_query(self, text: str) -> List[float]:
         embedding = (await self.aembed_documents([text]))[0]
         return embedding
-    
-    def embed_images(self, base64_images: List[str], **feat_extract_kwargs) -> List[List[float]]:
-        base64_images = [base64_image.replace("\n", " ") for base64_image in base64_images]
+
+    def embed_images(
+        self, base64_images: List[str], **feat_extract_kwargs
+    ) -> List[List[float]]:
+        base64_images = [
+            base64_image.replace("\n", " ") for base64_image in base64_images
+        ]
         messages = []
 
         # VERIFY VLLM supports batching multiple image embeddings like this
         for image_url in base64_images:
-            messages.append({
-                'role': 'user',
-                'content': [
-                    {
-                        'type': 'image_url',
-                        'image_url': {
-                            'url': image_url
-                        }
-                    },
-                    {
-                        'type': 'text',
-                        'text': 'Represent the given image.'
-                    }
-                ]
-            })
+            messages.append(
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image_url", "image_url": {"url": image_url}},
+                        {"type": "text", "text": "Represent the given image."},
+                    ],
+                }
+            )
 
-        embeddings = self.client.feature_extraction(messages, **feat_extract_kwargs).tolist() 
-    
+        embeddings = self.client.feature_extraction(
+            messages, **feat_extract_kwargs
+        ).tolist()
+
         return embeddings
-    
-    async def aembed_images(self, base64_images: List[str], **feat_extract_kwargs) -> List[List[float]]:
-        base64_images = [base64_image.replace("\n", " ") for base64_image in base64_images]
+
+    async def aembed_images(
+        self, base64_images: List[str], **feat_extract_kwargs
+    ) -> List[List[float]]:
+        base64_images = [
+            base64_image.replace("\n", " ") for base64_image in base64_images
+        ]
         messages = []
 
         for image_url in base64_images:
-            messages.append({
-                'role': 'user',
-                'content': [
-                    {
-                        'type': 'image_url',
-                        'image_url': {
-                            'url': image_url
-                        }
-                    },
-                    {
-                        'type': 'text',
-                        'text': 'Represent the given image.'
-                    }
-                ]
-            })
+            messages.append(
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "image_url", "image_url": {"url": image_url}},
+                        {"type": "text", "text": "Represent the given image."},
+                    ],
+                }
+            )
 
         resp = await self.client.afeature_extraction(messages, **feat_extract_kwargs)
         embeddings = resp.tolist()

@@ -4,27 +4,32 @@ from bson import ObjectId
 
 from langchain_core.messages import BaseMessage, SystemMessage, HumanMessage, AIMessage
 from langchain_core.runnables.history import (
-    RunnableWithMessageHistory, 
-    Runnable, 
-    MessagesOrDictWithMessages
+    RunnableWithMessageHistory,
+    Runnable,
+    MessagesOrDictWithMessages,
 )
 
 from .my_mongodb_chat_message_history import MyMongoDBChatMessageHistory
 
+
 @dataclass(kw_only=True, slots=True)
 class BaseMessageHistorySchema:
     """Base Schema for a data store like Redis, MongoDB, PostgreSQL, ChromaDB, etc"""
+
     connection_string: str
     database_name: str
     history_size: int = 1000
     session_id_key: str
 
+
 @dataclass(kw_only=True, slots=True)
 class MongoMessageHistorySchema(BaseMessageHistorySchema):
-    """Schema for MongoDB data store"""    
+    """Schema for MongoDB data store"""
+
     collection_name: str
     create_index: bool = True
     session_id: ObjectId
+
 
 class MongoMessageHistory:
     def __init__(self, schema: MongoMessageHistorySchema):
@@ -34,7 +39,7 @@ class MongoMessageHistory:
     @property
     def messages(self) -> list[BaseMessage]:
         return self.chat_message_history.messages
-    
+
     @property
     def has_no_messages(self) -> bool:
         return not self.messages
@@ -64,7 +69,7 @@ class MongoMessageHistory:
         human_message = HumanMessage(**message)
         await self.aadd_messages([human_message])
         return human_message
-    
+
     async def aai(self, message_schema: dict) -> AIMessage:
         """Add ai message to store"""
         ai_message = AIMessage(message_schema)
@@ -79,16 +84,19 @@ class MongoMessageHistory:
     def get_session_history(self):
         return self.chat_message_history
 
-    def get(self, chain: Runnable[MessagesOrDictWithMessages, MessagesOrDictWithMessages | str | BaseMessage]) -> RunnableWithMessageHistory:
+    def get(
+        self,
+        chain: Runnable[
+            MessagesOrDictWithMessages, MessagesOrDictWithMessages | str | BaseMessage
+        ],
+    ) -> RunnableWithMessageHistory:
         """Wraps a Runnable with a Chat History Runnable"""
         keys = {
-            'input_messages_key': 'input',
-            'history_messages_key': 'chat_history',
-            'output_messages_key': 'answer',
+            "input_messages_key": "input",
+            "history_messages_key": "chat_history",
+            "output_messages_key": "answer",
         }
 
         return RunnableWithMessageHistory(
-            chain,
-            self.get_session_history,
-            **keys
-        ).with_config(run_name='mongo_message_history')
+            chain, self.get_session_history, **keys
+        ).with_config(run_name="mongo_message_history")
