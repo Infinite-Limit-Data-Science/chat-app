@@ -35,49 +35,6 @@ def _model_config(model_type: str, model_name: str) -> str:
     }
 
 
-# @pytest.fixture
-# def tgi_self_hosted_config() -> HuggingFaceInferenceConfig:
-#     config = _model_config("MODELS", "meta-llama/Llama-3.2-11B-Vision-Instruct")
-
-#     return HuggingFaceInferenceConfig(
-#         name=config['name'],
-#         url=config['url'],
-#         auth_token=os.environ['TEST_AUTH_TOKEN'],
-#         max_input_tokens=12582,
-#         max_total_tokens=16777,
-#         max_batch_prefill_tokens=12582+50,
-#         payload_limit=5_000_000
-#     )
-
-# @pytest.fixture
-# def tei_self_hosted_config() -> HuggingFaceInferenceConfig:
-#     config = _model_config("EMBEDDING_MODELS", "BAAI/bge-large-en-v1.5")
-
-#     return HuggingFaceInferenceConfig(
-#         name=config['name'],
-#         url=config['url'],
-#         auth_token=os.environ['TEST_AUTH_TOKEN'],
-#         max_batch_tokens=32768,
-#         max_client_batch_size=128,
-#         max_batch_requests=64,
-#         auto_truncate=True
-#     )
-
-# @pytest.fixture
-# def tei_self_hosted_config_vision() -> HuggingFaceEmbeddingsConfig:
-#     config = _model_config("EMBEDDING_MODELS", "TIGER-Lab/VLM2Vec-Full")
-
-#     return HuggingFaceEmbeddingsConfig(
-#         name=config['name'],
-#         url=config['url'],
-#         auth_token=os.environ['TEST_AUTH_TOKEN'],
-#         max_batch_tokens=32768,
-#         max_client_batch_size=128,
-#         max_batch_requests=64,
-#         auto_truncate=True
-#     )
-
-
 @pytest.fixture
 def inference_client() -> HuggingFaceInferenceClient:
     config = _model_config("MODELS", "meta-llama/Llama-3.2-11B-Vision-Instruct")
@@ -88,18 +45,6 @@ def inference_client() -> HuggingFaceInferenceClient:
         provider=config["provider"],
         credentials=os.environ["TEST_AUTH_TOKEN"],
     )
-
-
-# @pytest.fixture
-# def embeddings_client() -> HuggingFaceInferenceClient:
-#     config = _model_config("EMBEDDING_MODELS", "BAAI/bge-large-en-v1.5")
-
-#     return HuggingFaceInferenceClient(
-#         base_url=config['url'],
-#         model=config['name'],
-#         provider=config['provider'],
-#         credentials=os.environ['TEST_AUTH_TOKEN'],
-#     )
 
 
 @pytest.fixture

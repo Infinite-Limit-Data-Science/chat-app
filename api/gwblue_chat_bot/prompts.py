@@ -70,7 +70,7 @@ def qa_template(preprompt: Optional[str] = None) -> ChatPromptTemplate:
         {preprompt_text}
         Use the following pieces of retrieved context to answer the question.
         If you don't know the answer, just say that you don't know.
-        Use three sentences maximum and keep the answer concise.
+        Use five sentences maximum and keep the answer concise.
 
         {{context}}
     """
