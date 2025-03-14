@@ -38,7 +38,7 @@ def test_create_conversation_with_image():
             ),
             (
                 "upload_files",
-                ("persob.jpg", open(file_path2, "rb"), "image/jpeg"),
+                ("guitar.jpg", open(file_path2, "rb"), "image/jpeg"),
             ),
         ]
 
