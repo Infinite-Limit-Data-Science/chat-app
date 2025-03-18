@@ -175,6 +175,9 @@ def guitar_jpg_path() -> Path:
 def baby_jpg_path() -> Path:
     return assets_dir / "baby.jpg"
 
+@pytest.fixture
+def jpeg_pdf_path() -> Path:
+    return assets_dir / "jpeg.pdf"
 
 @pytest.fixture
 def messages_db(chat_bot_config: ChatBotConfig) -> Database:
@@ -321,7 +324,6 @@ async def test_teams_to_consider_doc_prompt(
 
     assert len(ai_content) > 0
 
-
 @pytest.mark.asyncio
 async def test_multi_doc_prompt(
     embeddings: HuggingFaceEmbeddings,
@@ -435,7 +437,8 @@ async def test_pretrained_corpus_prompt(
     assert len(ai_content) > 0
 
 
-# TODO: Need to store images as vectors as part of ingestion pipeline:
+# TODO: when users upload images, it should store images as vectors rather
+# than process them all and load them all into single prompt
 @pytest.mark.asyncio
 async def test_multimodal_image(
     chat_bot_config: ChatBotConfig,
@@ -564,6 +567,87 @@ async def test_message_history(
 
     assert len(ai_content) > 0
 
+@pytest.mark.asyncio
+async def test_message_history2(
+    chat_bot_config: ChatBotConfig,
+    embeddings: HuggingFaceEmbeddings,
+    message_metadata: Dict[str, Any],
+    conversation_doc: Dict[str, Any],
+    teams_to_consider_word_path: Path,
+):
+    chat_bot_config.message_history.session_id = conversation_doc["_id"]
+
+    metadata = {
+        **message_metadata,
+        "conversation_id": str(message_metadata["conversation_id"]),
+        "source": "Teams to Consider.docx",
+    }
+
+    ingestor = LazyWordIngestor(
+        teams_to_consider_word_path,
+        embeddings=embeddings,
+        metadata=metadata,
+        vector_config=chat_bot_config.vectorstore,
+        embeddings_config=chat_bot_config.embeddings,
+    )
+    ids = await ingestor.ingest()
+    print(ids)
+
+    chat_prompt = ChatPromptTemplate.from_messages(
+        [("system", "You're a helpful assistant"), ("human", "{input}")]
+    )
+    chat_bot = ChatBot(config=chat_bot_config)
+    chain = chat_prompt | chat_bot
+
+    config = RunnableConfig(
+        tags=[
+            "chat_bot_run_test",
+            f"uuid_${message_metadata['uuid']}",
+            f"conversation_id_${message_metadata['uuid']}",
+        ],
+        metadata={"vector_metadata": [metadata]},
+        configurable={"retrieval_mode": "mmr"},
+    )
+
+    ai_content = ""
+    streaming_resp = []
+    async for chunk in chain.astream(
+        {
+            "input": "Review the attached MS Word document throughly and list out all the teams listed under the Mandatory Teams section"
+        },
+        config=config,
+    ):
+        print(f"Custom event ${chunk.content}")
+        ai_content += chunk.content
+        streaming_resp.append(chunk)
+
+    # follow up Q&A
+    chat_prompt = ChatPromptTemplate.from_messages(
+        [("system", "You're a helpful assistant"), ("human", "{input}")]
+    )
+    chat_bot = ChatBot(config=chat_bot_config)
+    chain = chat_prompt | chat_bot
+
+    config = RunnableConfig(
+        tags=[
+            "chat_bot_run_test",
+            f"uuid_${message_metadata['uuid']}",
+            f"conversation_id_${message_metadata['uuid']}",
+        ],
+        metadata={"vector_metadata": [message_metadata]},  # without 'source' key now
+        configurable={"retrieval_mode": "mmr"},
+    )
+
+    ai_content = ""
+    streaming_resp = []
+    async for chunk in chain.astream(
+        {"input": "how many teams are listed under Teams to Consider"}, config=config
+    ):
+        print(f"Custom event ${chunk.content}")
+        ai_content += chunk.content
+        streaming_resp.append(chunk)
+
+    assert len(ai_content) > 0    
 
 @pytest.mark.asyncio
 async def test_unsafe_content(
@@ -734,8 +818,121 @@ async def test_vector_history_from_multiple_docs(
 
     assert len(ai_content) > 0
 
+@pytest.mark.asyncio
+async def test_images_embedded_in_pdfs(
+    chat_bot_config: ChatBotConfig,
+    embeddings: HuggingFaceEmbeddings,
+    message_metadata: Dict[str, Any],
+    conversation_doc: Dict[str, Any],
+    jpeg_pdf_path: Path,
+):
+    chat_bot_config.message_history.session_id = conversation_doc["_id"]
 
-# async def test_image_and_pdfs_uploads()
+    metadata = {
+        **message_metadata,
+        "conversation_id": str(message_metadata["conversation_id"]),
+        "source": "jpeg.pdf",
+    }
+
+    ingestor = LazyPdfIngestor(
+        jpeg_pdf_path,
+        embeddings=embeddings,
+        metadata=metadata,
+        vector_config=chat_bot_config.vectorstore,
+        embeddings_config=chat_bot_config.embeddings,
+    )
+    ids = await ingestor.ingest()
+    print(ids)
+
+    chat_prompt = ChatPromptTemplate.from_messages(
+        [("system", "You're a helpful assistant"), ("human", "{input}")]
+    )
+    chat_bot = ChatBot(config=chat_bot_config)
+    chain = chat_prompt | chat_bot
+
+    config = RunnableConfig(
+        tags=[
+            "chat_bot_run_test",
+            f"uuid_${message_metadata['uuid']}",
+            f"conversation_id_${message_metadata['uuid']}",
+        ],
+        metadata={"vector_metadata": [metadata]},
+        configurable={"retrieval_mode": "mmr"},
+    )
+
+    ai_content = ""
+    streaming_resp = []
+    async for chunk in chain.astream(
+        {"input": "Summarize the document"}, config=config
+    ):
+        print(f"Custom event ${chunk.content}")
+        ai_content += chunk.content
+        streaming_resp.append(chunk)
+
+    assert len(ai_content) > 0
+
+@pytest.mark.asyncio
+async def test_compare_doc_by_page_numbers(
+    chat_bot_config: ChatBotConfig,
+    embeddings: HuggingFaceEmbeddings,
+    message_metadata: Dict[str, Any],
+    conversation_doc: Dict[str, Any],
+    nvidiaan_pdf_path: Path,
+):
+    chat_bot_config.message_history.session_id = conversation_doc["_id"]
+
+    metadata = {
+        **message_metadata,
+        "conversation_id": str(message_metadata["conversation_id"]),
+        "source": "NVIDIAAn.pdf",
+    }
+
+    ingestor = LazyPdfIngestor(
+        nvidiaan_pdf_path,
+        embeddings=embeddings,
+        metadata=metadata,
+        vector_config=chat_bot_config.vectorstore,
+        embeddings_config=chat_bot_config.embeddings,
+    )
+    ids = await ingestor.ingest()
+    print(ids)
+
+    chat_prompt = ChatPromptTemplate.from_messages(
+        [("system", "You're a helpful assistant"), ("human", "{input}")]
+    )
+    chat_bot = ChatBot(config=chat_bot_config)
+    chain = chat_prompt | chat_bot
+
+    config = RunnableConfig(
+        tags=[
+            "chat_bot_run_test",
+            f"uuid_${message_metadata['uuid']}",
+            f"conversation_id_${message_metadata['uuid']}",
+        ],
+        metadata={"vector_metadata": [metadata]},
+        configurable={"retrieval_mode": "mmr"},
+    )
+
+    ai_content = ""
+    streaming_resp = []
+    async for chunk in chain.astream(
+        {"input": "Compare page 1 and page 2"}, config=config
+    ):
+        print(f"Custom event ${chunk.content}")
+        ai_content += chunk.content
+        streaming_resp.append(chunk)
+
+    assert len(ai_content) > 0
+
+
+# async def test_usage_tokens_with_callback
+
+# test chat history trimmer
+
+# async def test_images_embedded_in_word
+
+# async def test_images_embedded_in_powerpoint
+
 
 # openai requires cycles of human, ai, human, ai, so multiple
 # candidate completions must account for that
@@ -755,9 +952,5 @@ async def test_vector_history_from_multiple_docs(
 #     compare_documents: List[UploadFile],
 # ):
 #     ...
-
-# async def test_images_embedded_in_docs
-
-# async def test_usage_tokens_with_callback
 
 # async def test_tool_calling_with_dataframe_tool

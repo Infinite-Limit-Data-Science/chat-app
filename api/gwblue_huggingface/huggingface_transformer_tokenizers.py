@@ -104,6 +104,15 @@ class BaseLocalTokenizer(ABC):
 
     @property
     def sequence_length(self) -> int:
+        """
+         sequence length refers to the maximum number of tokens (or positions) 
+         a model can handle in one forward pass of the neural network, where
+         the input (sequence of tokens) flows through the input layer, then all
+         the hidden layers, and finally the final output layer. The output being
+         next-token preditions.
+
+
+        """
         self._initialize_if_needed()
         return self._sequence_length
 

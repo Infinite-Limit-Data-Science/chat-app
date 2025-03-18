@@ -65,12 +65,12 @@ You are an assistant for question-answering tasks.
 @register("qa_template")
 def qa_template(preprompt: Optional[str] = None) -> ChatPromptTemplate:
     preprompt_text = preprompt or MY_CHAT_TEMPLATE
-
+    # six sentences corresponding to six chunks in retriever
     system_template = f"""
         {preprompt_text}
         Use the following pieces of retrieved context to answer the question.
         If you don't know the answer, just say that you don't know.
-        Use five sentences maximum and keep the answer concise.
+        Use six sentences maximum and keep the answer concise.
 
         {{context}}
     """

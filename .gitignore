@@ -7,3 +7,4 @@ routes/tests.py
 .pytest_cache
 __pycache__
 .vscode/
+assets

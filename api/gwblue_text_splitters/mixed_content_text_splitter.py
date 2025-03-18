@@ -83,6 +83,9 @@ class MixedContentTextSplitter(TextSplitter):
                         )
                     )
                 else:
+                    if page_number := new_meta.get("page", None):
+                        page_info = f"Page {page_number}. "
+                        chunk = page_info + chunk
                     output_docs.append(
                         Document(
                             page_content=chunk,

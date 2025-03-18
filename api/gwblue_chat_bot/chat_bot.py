@@ -33,7 +33,7 @@ from langchain_core.runnables import (
     RunnableBinding,
 )
 from langchain_core.tracers.schemas import Run
-from langchain_core.prompts import BasePromptTemplate
+from langchain_core.prompts import BasePromptTemplate, PromptTemplate
 from langchain_core.prompt_values import PromptValue, ChatPromptValue
 from langchain_core.output_parsers.string import StrOutputParser
 from langchain.chains.combine_documents.base import (
@@ -336,6 +336,7 @@ class ChatBot(RunnableSerializable[I, O]):
         preprompt_filter: Optional[Runnable] = None,
     ) -> Runnable:
         """Custom implementation to handle preprompt messages"""
+        model_binding = self.chat_model.bind(stream=False)
 
         def validate_history(input_data: Dict[str, Any]) -> bool:
             return not input_data.get("chat_history")
@@ -347,7 +348,7 @@ class ChatBot(RunnableSerializable[I, O]):
                 validate_history,
                 (lambda input_data: input_data["input"]) | retriever,
             ),
-            prompt | self.chat_model | StrOutputParser() | retriever,
+            prompt | model_binding | StrOutputParser() | retriever,
         ).with_config(
             run_name="history_aware_retriever_chain"
         )
@@ -360,32 +361,44 @@ class ChatBot(RunnableSerializable[I, O]):
         preprompt_filter: Optional[Runnable] = None,
     ) -> Runnable[Dict[str, Any], Any]:
         """Custom implementation to handle preprompt messages"""
-
+        def format_multimodal_chunks(content: str) -> str:
+            model_binding = self.chat_model.bind(stream=False)
+            ai_message = model_binding.invoke(
+                [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": content},
+                            },
+                            {"type": "text", "text": "Describe this image."},
+                        ],
+                    }
+                ]
+            )
+            return ai_message.content
+        
         def format_doc(doc: Document, doc_prompt: str) -> str:
             content = doc.page_content
             if content.startswith("data:image/"):
-                model_binding = self.chat_model.bind(stream=False)
-                ai_message = model_binding.invoke(
-                    [
-                        {
-                            "role": "user",
-                            "content": [
-                                {
-                                    "type": "image_url",
-                                    "image_url": {"url": content},
-                                },
-                                {"type": "text", "text": "Describe this image."},
-                            ],
-                        }
-                    ]
-                )
-                doc = Document(page_content=ai_message.content)
+                page_content = format_multimodal_chunks(content)
+                doc = Document(page_content=page_content)
             return format_document(doc, doc_prompt)
 
         def format_docs(inputs: dict) -> str:
-            return DEFAULT_DOCUMENT_SEPARATOR.join(
-                format_doc(doc, DEFAULT_DOCUMENT_PROMPT) for doc in inputs["context"]
-            )
+            doc_prompts = []
+            for doc in inputs["context"]:
+                if "page" in doc.metadata:
+                    doc_prompt = PromptTemplate(
+                        input_variables=["page", "page_content"],
+                        template="Page {page}: {page_content}"
+                    )
+                    doc_prompts.append(format_doc(doc, doc_prompt))
+                else:
+                    doc_prompts.append(format_doc(doc, DEFAULT_DOCUMENT_PROMPT))
+
+            return DEFAULT_DOCUMENT_SEPARATOR.join(doc_prompts)
 
         return (
             (preprompt_filter or RunnablePassthrough())

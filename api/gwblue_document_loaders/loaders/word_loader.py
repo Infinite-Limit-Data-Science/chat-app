@@ -6,7 +6,7 @@ from docx.section import Section
 from langchain_core.documents import Document
 from .base_loader import BaseLoader
 
-
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 class WordLoader(BaseLoader):
     """
     Recursively extract all text from all paragraphs, tables, headers, and footers of document
