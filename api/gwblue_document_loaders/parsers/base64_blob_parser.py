@@ -3,7 +3,6 @@ from PIL import Image
 from io import BytesIO
 from langchain_community.document_loaders.parsers.images import BaseImageBlobParser
 
-
 class Base64BlobParser(BaseImageBlobParser):
     """
     Pillow supports the following file formats:

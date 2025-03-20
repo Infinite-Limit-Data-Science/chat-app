@@ -81,6 +81,14 @@ from .message_history import (
     MongoMessageHistory,
 )
 
+_GUARD_RAILS_MAX_TOTAL_TOKENS = 13000
+_GUARD_RAILS_MAX_NEW_TOKENS = 4096
+_GUARD_RAILS_MAX_INPUT_TOKENS = _GUARD_RAILS_MAX_TOTAL_TOKENS - _GUARD_RAILS_MAX_NEW_TOKENS
+
+_CHAT_MODEL_MAX_TOTAL_TOKENS = 38334
+_CHAT_MODEL_MAX_NEW_TOKENS = 4096
+_CHAT_MODEL_MAX_INPUT_TOKENS = _CHAT_MODEL_MAX_TOTAL_TOKENS - _CHAT_MODEL_MAX_NEW_TOKENS
+
 ChatGenerationLike: TypeAlias = (
     ChatGeneration | Iterator[ChatGeneration] | AsyncIterator[ChatGenerationChunk]
 )
@@ -140,6 +148,8 @@ class ChatBot(RunnableSerializable[I, O]):
     retry_model: BaseChatModel = Field(default=None, exclude=True)
     safety_model: BaseChatModel = Field(default=None, exclude=True)
     embeddings: Embeddings = Field(default=None, exclude=True)
+    guardrails_tokenizer: Any = Field(default=None, exclude=True)
+    llm_tokenizer: Any = Field(default=None, exclude=True)
     vector_store: MultiModalVectorStore = Field(default=None, exclude=True)
     message_history: MongoMessageHistory = Field(default=None, exclude=True)
 
@@ -171,12 +181,12 @@ class ChatBot(RunnableSerializable[I, O]):
                 seed=42,
             )
 
-        local_tokenizer = get_tokenizer_class_by_prefix(self.config.embeddings.model)()
+        embeddings_tokenizer = get_tokenizer_class_by_prefix(self.config.embeddings.model)()
         config = RedisConfig(
             **{
                 "redis_client": self.config.vectorstore.client,
                 "metadata_schema": self.config.vectorstore.metadata_schema,
-                "embedding_dimensions": local_tokenizer.dimensions,
+                "embedding_dimensions": embeddings_tokenizer.dimensions,
                 **VectorStoreSchema().model_dump(),
             }
         )
@@ -191,6 +201,9 @@ class ChatBot(RunnableSerializable[I, O]):
             session_id_key=self.config.message_history.session_id_key,
         )
         self.message_history = MongoMessageHistory(message_schema)
+
+        self.guardrails_tokenizer = get_tokenizer_class_by_prefix(self.config.guardrails.model)()
+        self.llm_tokenizer = get_tokenizer_class_by_prefix(self.config.llm.model)()
 
         self.graph = self._compile(graph)
 
@@ -285,6 +298,11 @@ class ChatBot(RunnableSerializable[I, O]):
 
     @staticmethod
     def preprompt_filter(state: State, metadata: Dict[str, Any]) -> RunnableLambda:
+        """
+        The prompt templates in registry specifies a system prompt, but _aenter_chat_chain
+        also adds system prompt to mongo directly and stuffs it in chat history. So
+        we remove the duplicate system prompt
+        """
         def create_preprompt_filter(input_data: Dict[str, Any]) -> Dict[str, Any]:
             return {
                 **input_data,
@@ -309,6 +327,170 @@ class ChatBot(RunnableSerializable[I, O]):
         filter_expression = reduce(operator.and_, tag_expressions)
         return filter_expression
 
+    def token_trimmer(
+        self,
+        max_total_tokens: Optional[int] = None,
+        *,
+        buffer_tokens: int = 200,
+        tokenizer: Optional[Any] = None,
+    ) -> RunnableLambda:
+        local_tokenizer = tokenizer if tokenizer else self.llm_tokenizer.tokenizer 
+
+        if not max_total_tokens:
+            if self.llm_tokenizer.empirical_sequence_length > _CHAT_MODEL_MAX_INPUT_TOKENS:
+                max_total_tokens = _CHAT_MODEL_MAX_INPUT_TOKENS
+            else:
+                max_total_tokens = self.llm_tokenizer.empirical_sequence_length
+
+        def trim_tokens(input_data: Dict[str, Any]) -> Dict[str, Any]:
+            chat_history = input_data.get("chat_history", [])
+            context = input_data.get("context", "")
+            user_prompt = input_data.get("input", "")
+
+            chat_history_text = "\n".join(msg.content for msg in chat_history)
+            combined_text = f"{chat_history_text}\n{context}\n{user_prompt}"
+
+            token_ids = local_tokenizer.encode(combined_text)
+            total_tokens = len(token_ids)
+            budget = max_total_tokens - buffer_tokens
+
+            if total_tokens <= budget:
+                return input_data
+
+            truncated_history = list(chat_history)
+            while truncated_history and total_tokens > budget:
+                truncated_history.pop(0)
+                tmp_text = (
+                    "\n".join(msg.content for msg in truncated_history)
+                    + f"\n{context}\n{user_prompt}"
+                )
+                total_tokens = len(local_tokenizer.encode(tmp_text))
+
+            if total_tokens > budget:
+                context_tokens = local_tokenizer.encode(context)
+                needed = total_tokens - budget
+                if needed < len(context_tokens):
+                    trimmed_ids = context_tokens[: len(context_tokens) - needed]
+                    context = local_tokenizer.decode(trimmed_ids)
+                else:
+                    context = ""
+
+                tmp_text = (
+                    "\n".join(msg.content for msg in truncated_history)
+                    + f"\n{context}\n{user_prompt}"
+                )
+                total_tokens = len(local_tokenizer.encode(tmp_text))
+
+            if total_tokens > budget:
+                prompt_tokens = local_tokenizer.encode(user_prompt)
+                needed = total_tokens - budget
+                if needed < len(prompt_tokens):
+                    user_prompt = local_tokenizer.decode(prompt_tokens[: len(prompt_tokens) - needed])
+                else:
+
+                    user_prompt = local_tokenizer.decode(
+                        prompt_tokens[:budget]
+                    )
+
+            return {
+                **input_data,
+                "chat_history": truncated_history,
+                "context": context,
+                "input": user_prompt,
+            }
+
+        return RunnableLambda(trim_tokens)
+
+    def token_trimmer_for_chat_prompt(
+        self,
+        max_total_tokens: Optional[int] = None,
+        *,
+        buffer_tokens: int = 200,
+        tokenizer: Optional[Any] = None,
+    ) -> RunnableLambda:
+        def trim_tokens(chat_prompt: ChatPromptValue) -> ChatPromptValue:
+            local_tokenizer = tokenizer if tokenizer else self.llm_tokenizer.tokenizer
+
+            if max_total_tokens is not None:
+                chosen_max = max_total_tokens
+            else:
+                if self.llm_tokenizer.empirical_sequence_length > _CHAT_MODEL_MAX_INPUT_TOKENS:
+                    chosen_max = _CHAT_MODEL_MAX_INPUT_TOKENS
+                else:
+                    chosen_max = self.llm_tokenizer.empirical_sequence_length
+
+            messages: list[BaseMessage] = chat_prompt.to_messages()
+
+            def is_base64_image(data: str) -> bool:
+                return data.startswith("data:image/")
+
+            text_contents = []
+            for msg in messages:
+                content_str = msg.content
+                if isinstance(content_str, str) and is_base64_image(content_str):
+                    text_contents.append("[IMAGE]")
+                else:
+                    text_contents.append(content_str)
+
+            all_text = "\n".join(text_contents)
+            token_ids = local_tokenizer.encode(all_text)
+            total_tokens = len(token_ids)
+            budget = chosen_max - buffer_tokens
+
+            if total_tokens <= budget:
+                return chat_prompt
+
+            truncated_messages = list(messages)
+
+            start_index = 1 if truncated_messages and isinstance(truncated_messages[0], SystemMessage) else 0
+
+            while len(truncated_messages) > 1:
+                truncated_texts = []
+                for i, msg in enumerate(truncated_messages):
+                    c = "[IMAGE]" if (isinstance(msg.content, str) and is_base64_image(msg.content)) else msg.content
+                    truncated_texts.append(c)
+                combined_text = "\n".join(truncated_texts)
+                token_ids = local_tokenizer.encode(combined_text)
+                total_tokens = len(token_ids)
+
+                if total_tokens <= budget:
+                    break
+
+                truncated_messages.pop(start_index)
+
+            truncated_texts = []
+            for msg in truncated_messages:
+                c = "[IMAGE]" if (isinstance(msg.content, str) and is_base64_image(msg.content)) else msg.content
+                truncated_texts.append(c)
+            combined_text = "\n".join(truncated_texts)
+            token_ids = local_tokenizer.encode(combined_text)
+            total_tokens = len(token_ids)
+
+            if total_tokens > budget and truncated_messages:
+                last_msg = truncated_messages[-1]
+                last_content = "[IMAGE]" if (is_base64_image(last_msg.content)) else last_msg.content
+                last_tokens = local_tokenizer.encode(last_content)
+                needed = total_tokens - budget
+
+                if needed < len(last_tokens):
+                    truncated_ids = last_tokens[: len(last_tokens) - needed]
+                    truncated_str = local_tokenizer.decode(truncated_ids)
+
+                    if isinstance(last_msg, SystemMessage):
+                        new_last = SystemMessage(content=truncated_str)
+                    elif isinstance(last_msg, HumanMessage):
+                        new_last = HumanMessage(content=truncated_str)
+                    else:
+                        new_last = AIMessage(content=truncated_str)
+
+                    truncated_messages[-1] = new_last
+                else:
+                    truncated_messages.pop()
+
+            return ChatPromptValue(messages=truncated_messages)
+
+        return RunnableLambda(trim_tokens)
+
     def create_generic_chain(self, state: State, system_prompt: str) -> Runnable:
         """
         Conform to `answer` key produced by `create_retrieval_chain`
@@ -318,11 +500,17 @@ class ChatBot(RunnableSerializable[I, O]):
         `AIMessage` means that any metadata associated with that AIMessage is lost,
         scuh as token_usage or logprobs
         """
+        preprompt = self.preprompt_filter(state, {})
+        
         answer_parser = RunnableLambda(
             lambda ai_message: {"answer": ai_message.content}
         )
+        
+        trimmer = self.token_trimmer_for_chat_prompt(_CHAT_MODEL_MAX_INPUT_TOKENS, buffer_tokens=50)
         chain = (
-            registry["chat_prompt_with_history"](system_prompt)
+            preprompt
+            | registry["chat_prompt_with_history"](system_prompt)
+            | trimmer
             | self.chat_model
             | answer_parser
         )
@@ -341,6 +529,11 @@ class ChatBot(RunnableSerializable[I, O]):
         def validate_history(input_data: Dict[str, Any]) -> bool:
             return not input_data.get("chat_history")
 
+        trimmer = self.token_trimmer_for_chat_prompt(
+            _GUARD_RAILS_MAX_INPUT_TOKENS, 
+            buffer_tokens=10, 
+        )
+
         retrieve_documents = (
             preprompt_filter or RunnablePassthrough()
         ) | RunnableBranch(
@@ -348,7 +541,7 @@ class ChatBot(RunnableSerializable[I, O]):
                 validate_history,
                 (lambda input_data: input_data["input"]) | retriever,
             ),
-            prompt | model_binding | StrOutputParser() | retriever,
+            prompt | trimmer | model_binding | StrOutputParser() | retriever,
         ).with_config(
             run_name="history_aware_retriever_chain"
         )
@@ -400,11 +593,14 @@ class ChatBot(RunnableSerializable[I, O]):
 
             return DEFAULT_DOCUMENT_SEPARATOR.join(doc_prompts)
 
+        trimmer = self.token_trimmer(_CHAT_MODEL_MAX_INPUT_TOKENS, buffer_tokens=50)
+
         return (
             (preprompt_filter or RunnablePassthrough())
             | RunnablePassthrough.assign(context=format_docs).with_config(
                 run_name="format_inputs"
             )
+            | trimmer
             | prompt
             | self.chat_model
             | StrOutputParser()
@@ -608,10 +804,24 @@ class ChatBot(RunnableSerializable[I, O]):
         async def guardrails(state: State) -> State:
             user_content = state["messages"][1].content
             sanitized_text = _textualize_model_input(user_content)
-            ai_message = await self.safety_model.bind(stream=False).ainvoke(
-                [sanitized_text]
+
+            trimmer = self.token_trimmer(
+                _GUARD_RAILS_MAX_INPUT_TOKENS, 
+                buffer_tokens=10, 
+                tokenizer=self.guardrails_tokenizer.tokenizer
+            )
+            model_binding = self.safety_model.bind(stream=False)
+            
+            chain = (
+                trimmer 
+                | RunnableLambda(lambda d: [d["input"]])
+                | model_binding
             )
 
+            ai_message = await chain.ainvoke({
+                'input': sanitized_text
+            })
+            
             guardrails_message = AIMessage(
                 content=ai_message.content,
                 additional_kwargs={"guardrails": True},

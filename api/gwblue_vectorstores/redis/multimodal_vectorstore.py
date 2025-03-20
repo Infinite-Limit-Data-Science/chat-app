@@ -88,6 +88,7 @@ class MultiModalVectorStore(RedisVectorStore):
                 )
                 return batch_ids
 
+        # TODO: process multiple documents at once as a single input to model, e.g. ['chunk info 1', 'chunk info 2']
         tasks = [
             asyncio.create_task(process_document(document)) for document in documents
         ]

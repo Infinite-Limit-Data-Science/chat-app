@@ -32,32 +32,48 @@ class VLLMEmbeddingTask(TaskProviderHelper):
             "mm_processor_kwargs": {},
         }
 
-        if isinstance(inputs.get("text"), list) and all(
-            isinstance(t, str) for t in inputs["text"]
+        text_val = inputs.get("text")
+
+        if isinstance(text_val, list) and all(isinstance(t, str) for t in text_val):
+            payload["input"] = text_val
+            payload.update(parameters)
+            return payload
+
+        if isinstance(text_val, str):
+            payload["input"] = [text_val]
+            payload.update(parameters)
+            return payload
+
+        if (
+            isinstance(text_val, list)
+            and len(text_val) > 0
+            and all(isinstance(msg, dict) and "role" in msg and "content" in msg for msg in text_val)
         ):
-            payload["input"] = inputs["text"]
+            payload["messages"] = text_val
             payload.update(parameters)
             return payload
 
         payload["messages"] = [{"role": "user", "content": []}]
 
-        content_list = (
-            inputs["text"] if isinstance(inputs["text"], list) else [inputs["text"]]
-        )
+        content_list = text_val if isinstance(text_val, list) else [text_val]
 
         for item in content_list:
             if isinstance(item, dict):
                 if "image_url" in item:
-                    payload["messages"][0]["content"].append(
-                        {"type": "image_url", "image_url": {"url": item["image_url"]}}
-                    )
+                    payload["messages"][0]["content"].append({
+                        "type": "image_url",
+                        "image_url": {"url": item["image_url"]},
+                    })
                 if "text" in item:
-                    payload["messages"][0]["content"].append(
-                        {"type": "text", "text": item["text"]}
-                    )
+                    payload["messages"][0]["content"].append({
+                        "type": "text",
+                        "text": item["text"],
+                    })
             elif isinstance(item, str):
-
-                payload["messages"][0]["content"].append({"type": "text", "text": item})
+                payload["messages"][0]["content"].append({
+                    "type": "text",
+                    "text": item,
+                })
 
         payload.update(parameters)
         return payload

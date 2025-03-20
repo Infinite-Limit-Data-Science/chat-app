@@ -162,6 +162,28 @@ def devops_engineer_word_path() -> Path:
 
 
 @pytest.fixture
+def calculus_book1_path() -> Path:
+    return assets_dir / "CalculusBook1.pdf"
+
+
+@pytest.fixture
+def calculus_book2_path() -> Path:
+    return assets_dir / "CalculusBook2.pdf"
+
+
+@pytest.fixture
+def calculus_book3_path() -> Path:
+    return assets_dir / "CalculusBook3.pdf"
+
+@pytest.fixture
+def doc_compare1_pdf_path() -> Path:
+    return assets_dir / "25M06-02C.pdf"
+
+@pytest.fixture
+def doc_compare2_pdf_path() -> Path:
+    return assets_dir / "2025Centene.pdf"
+    
+@pytest.fixture
 def nvidia_1tri_fiscal_2025_path() -> Path:
     return assets_dir / "Nvidia-1tri-fiscal-2025.pdf"
 
@@ -178,6 +200,10 @@ def baby_jpg_path() -> Path:
 @pytest.fixture
 def jpeg_pdf_path() -> Path:
     return assets_dir / "jpeg.pdf"
+
+@pytest.fixture
+def arag_ignite_pdf_path() -> Path:
+    return assets_dir / "ARAG Ignite 2025 Flier 1.pdf"
 
 @pytest.fixture
 def messages_db(chat_bot_config: ChatBotConfig) -> Database:
@@ -265,8 +291,70 @@ async def test_single_doc_prompt(
         ai_content += chunk.content
         streaming_resp.append(chunk)
 
-    assert len(ai_content) > 0
+    assert "nvidia" in ai_content.lower()
 
+@pytest.mark.asyncio
+async def test_single_doc_prompt_with_trimming(
+    embeddings: HuggingFaceEmbeddings,
+    chat_bot_config: ChatBotConfig,
+    message_metadata: Dict[str, Any],
+    conversation_doc: Dict[str, Any],
+    nvidiaan_pdf_path: Path,
+    calculus_book1_path: Path,
+):
+    chat_bot_config.message_history.session_id = conversation_doc["_id"]
+
+    metadata = {
+        **message_metadata,
+        "conversation_id": str(message_metadata["conversation_id"]),
+        "source": "NVIDIAAn.pdf",
+    }
+
+    ingestor = LazyPdfIngestor(
+        nvidiaan_pdf_path,
+        embeddings=embeddings,
+        metadata=metadata,
+        vector_config=chat_bot_config.vectorstore,
+        embeddings_config=chat_bot_config.embeddings,
+    )
+    ids = await ingestor.ingest()
+    print(ids)
+
+    chat_prompt = ChatPromptTemplate.from_messages(
+        [("system", "You're a helpful assistant"), ("human", "{input}")]
+    )
+    chat_bot = ChatBot(config=chat_bot_config)
+    chain = chat_prompt | chat_bot
+
+    config = RunnableConfig(
+        tags=[
+            "chat_bot_run_test",
+            f"uuid_${message_metadata['uuid']}",
+            f"conversation_id_${message_metadata['uuid']}",
+        ],
+        metadata={"vector_metadata": [metadata]},
+        configurable={"retrieval_mode": "mmr"},
+    )
+
+    from langchain_community.document_loaders import PyPDFLoader
+    loader = PyPDFLoader(
+        file_path=calculus_book1_path,
+        mode="single",
+        extraction_mode="plain",
+    )
+    docs = loader.load()
+    input = docs[0].page_content
+
+    ai_content = ""
+    streaming_resp = []
+    async for chunk in chain.astream(
+        {"input": input }, config=config
+    ):
+        print(f"Custom event ${chunk.content}")
+        ai_content += chunk.content
+        streaming_resp.append(chunk)
+
+    assert len(ai_content) > 0
 
 @pytest.mark.asyncio
 async def test_teams_to_consider_doc_prompt(
@@ -322,7 +410,63 @@ async def test_teams_to_consider_doc_prompt(
         ai_content += chunk.content
         streaming_resp.append(chunk)
 
-    assert len(ai_content) > 0
+    assert "guidewell" in ai_content.lower()
+
+@pytest.mark.asyncio
+async def test_arag_ignite_doc_prompt(
+    embeddings: HuggingFaceEmbeddings,
+    chat_bot_config: ChatBotConfig,
+    message_metadata: Dict[str, Any],
+    conversation_doc: Dict[str, Any],
+    arag_ignite_pdf_path: Path,
+):
+    chat_bot_config.message_history.session_id = conversation_doc["_id"]
+
+    metadata = {
+        **message_metadata,
+        "conversation_id": str(message_metadata["conversation_id"]),
+        "source": "ARAG Ignite 2025 Flier 1.pdf",
+    }
+
+    ingestor = LazyPdfIngestor(
+        arag_ignite_pdf_path,
+        embeddings=embeddings,
+        metadata=metadata,
+        vector_config=chat_bot_config.vectorstore,
+        embeddings_config=chat_bot_config.embeddings,
+    )
+    ids = await ingestor.ingest()
+    print(ids)
+
+    chat_prompt = ChatPromptTemplate.from_messages(
+        [("system", "You're a helpful assistant"), ("human", "{input}")]
+    )
+    chat_bot = ChatBot(config=chat_bot_config)
+    chain = chat_prompt | chat_bot
+
+    config = RunnableConfig(
+        tags=[
+            "chat_bot_run_test",
+            f"uuid_${message_metadata['uuid']}",
+            f"conversation_id_${message_metadata['uuid']}",
+        ],
+        metadata={"vector_metadata": [metadata]},
+        configurable={"retrieval_mode": "mmr"},
+    )
+
+    ai_content = ""
+    streaming_resp = []
+    async for chunk in chain.astream(
+        {
+            "input": "Summarize the document"
+        },
+        config=config,
+    ):
+        print(f"Custom event ${chunk.content}")
+        ai_content += chunk.content
+        streaming_resp.append(chunk)
+
+    assert "arag" in ai_content.lower() 
 
 @pytest.mark.asyncio
 async def test_multi_doc_prompt(
@@ -330,9 +474,8 @@ async def test_multi_doc_prompt(
     chat_bot_config: ChatBotConfig,
     message_metadata: Dict[str, Any],
     conversation_doc: Dict[str, Any],
-    developer_word_path: Path,
-    cloud_engineer_word_path: Path,
-    devops_engineer_word_path: Path,
+    doc_compare1_pdf_path: Path,
+    doc_compare2_pdf_path: Path,
 ):
     chat_bot_config.message_history.session_id = conversation_doc["_id"]
 
@@ -340,28 +483,22 @@ async def test_multi_doc_prompt(
         {
             **message_metadata,
             "conversation_id": str(message_metadata["conversation_id"]),
-            "source": "ruby-rails-developer-v2.docx",
+            "source": "25M06-02C.pdf",
         },
         {
             **message_metadata,
             "conversation_id": str(message_metadata["conversation_id"]),
-            "source": "senior-cloud-engineer-v1.docx",
-        },
-        {
-            **message_metadata,
-            "conversation_id": str(message_metadata["conversation_id"]),
-            "source": "senior-devops-engineer-v4.docx",
+            "source": "2025Centene.pdf",
         },
     ]
 
     ingestors = []
     compare_file_paths = [
-        developer_word_path,
-        cloud_engineer_word_path,
-        devops_engineer_word_path,
+        doc_compare1_pdf_path,
+        doc_compare2_pdf_path,
     ]
     for file_path, metadata in zip(compare_file_paths, metadatas):
-        ingestor = LazyWordIngestor(
+        ingestor = LazyPdfIngestor(
             file_path,
             embeddings=embeddings,
             metadata=metadata,
@@ -393,14 +530,13 @@ async def test_multi_doc_prompt(
     ai_content = ""
     streaming_resp = []
     async for chunk in chain.astream(
-        {"input": "Compare the three documents"}, config=config
+        {"input": "Compare the two documents"}, config=config
     ):
         print(f"Custom event ${chunk.content}")
         ai_content += chunk.content
         streaming_resp.append(chunk)
 
-    assert len(ai_content) > 0
-
+    assert "health" in ai_content
 
 @pytest.mark.asyncio
 async def test_pretrained_corpus_prompt(
@@ -434,8 +570,7 @@ async def test_pretrained_corpus_prompt(
         ai_content += chunk.content
         streaming_resp.append(chunk)
 
-    assert len(ai_content) > 0
-
+    assert "memento" in ai_content.lower()
 
 # TODO: when users upload images, it should store images as vectors rather
 # than process them all and load them all into single prompt
@@ -485,7 +620,7 @@ async def test_multimodal_image(
         ai_content += chunk.content
         streaming_resp.append(chunk)
 
-    assert len(ai_content) > 0
+    assert "image" in ai_content.lower()
 
 
 @pytest.mark.asyncio
@@ -565,7 +700,7 @@ async def test_message_history(
         ai_content += chunk.content
         streaming_resp.append(chunk)
 
-    assert len(ai_content) > 0
+    assert "gaap" in ai_content.lower()
 
 @pytest.mark.asyncio
 async def test_message_history2(
@@ -647,7 +782,7 @@ async def test_message_history2(
         ai_content += chunk.content
         streaming_resp.append(chunk)
 
-    assert len(ai_content) > 0    
+    assert "team" in ai_content   
 
 @pytest.mark.asyncio
 async def test_unsafe_content(
@@ -682,8 +817,7 @@ async def test_unsafe_content(
         ai_content += chunk.content
         streaming_resp.append(chunk)
 
-    assert len(ai_content) > 0
-
+    assert "not safe" in ai_content
 
 @pytest.mark.asyncio
 async def test_multimodal_multiple_image(
@@ -739,8 +873,7 @@ async def test_multimodal_multiple_image(
         ai_content += chunk.content
         streaming_resp.append(chunk)
 
-    assert len(ai_content) > 0
-
+    assert "image" in ai_content.lower()
 
 @pytest.mark.asyncio
 async def test_vector_history_from_multiple_docs(
@@ -816,7 +949,7 @@ async def test_vector_history_from_multiple_docs(
         ai_content += chunk.content
         streaming_resp.append(chunk)
 
-    assert len(ai_content) > 0
+    assert "fiscal" in ai_content.lower()
 
 @pytest.mark.asyncio
 async def test_images_embedded_in_pdfs(
@@ -869,7 +1002,7 @@ async def test_images_embedded_in_pdfs(
         ai_content += chunk.content
         streaming_resp.append(chunk)
 
-    assert len(ai_content) > 0
+    assert "dice" in ai_content.lower()
 
 @pytest.mark.asyncio
 async def test_compare_doc_by_page_numbers(
@@ -922,12 +1055,9 @@ async def test_compare_doc_by_page_numbers(
         ai_content += chunk.content
         streaming_resp.append(chunk)
 
-    assert len(ai_content) > 0
-
+    assert "page" in ai_content
 
 # async def test_usage_tokens_with_callback
-
-# test chat history trimmer
 
 # async def test_images_embedded_in_word
 
