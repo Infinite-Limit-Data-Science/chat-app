@@ -3,7 +3,673 @@
 
 token=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
 model=TIGER-Lab/VLM2Vec-Full
-docker run --runtime nvidia --gpus all -v ~/.cache/huggingface:/root/.cache/huggingface --env "HUGGING_FACE_HUB_TOKEN=$token" -p 8070:8000 --ipc=host vllm/vllm-openai:latest --model $model --trust-remote-code --task embed --tensor-parallel-size 4 --max-num-batched-tokens 24256 --max-num-seqs 65 --max-model-len 24256
+docker run --runtime nvidia --gpus all -v ~/.cache/huggingface:/root/.cache/huggingface --env "HUGGING_FACE_HUB_TOKEN=$token" -p 8070:8000 --ipc=host vllm/vllm-openai:latest --model $model --trust-remote-code --task embed --uvicorn-log-level debug --tensor-parallel-size 1 --max-num-batched-tokens 24256 --max-num-seqs 65 --max-model-len 24256
+
+
+docker run -d --runtime nvidia --gpus all -v ~/.cache/huggingface:/root/.cache/huggingface --env "HUGGING_FACE_HUB_TOKEN=$token" -p 8070:8000 --ipc=host vllm/vllm-openai:latest --model $model --trust-remote-code --task embed --tensor-parallel-size 4
+docker container run -d -p 6379:6379 --name redisearch redis/redis-stack-server:latest
+
+ --tensor-parallel-size 4
+
+### ulimit
+sudo vi /etc/security/limits.conf
+* soft nofile 65536
+* hard nofile 65536
+
+ulimit -a
+
+### model weights: token embedding table
+The Token Embedding Table maps each token ID from the vocabulary to a continuous vector representation. The token id is often a word or subword from the vocabulary. For example, the token “the” is often mapped to the ID 464. Thus, when you see token ID 464 at runtime, that refers to the word “the.” In most transformer architectures, every token is mapped to a vector whose dimensionality matches the model’s internal hidden dimension (sometimes referred to as “d_model”). So if your model uses 3072 as the hidden dimension, all tokens—“the” included—will have an associated 3072-dimensional embedding vector. The fact that 3072 is quite large just reflects the architecture’s capacity. It allows the model to store richer contextual and semantic information for each token than if the dimension were smaller.
+
+Each embedding vector (for instance, the 3072-dimensional vector for “the”) is learned end-to-end to capture whatever the model finds most useful for its predictive objectives (e.g., next-token prediction). While each individual dimension isn’t interpretable on its own, taken together, the dimensions encode patterns of usage and context—syntactic, semantic, even morphological traits—that help the model distinguish how tokens behave in language. Essentially:
+- High Dimensionality: The large number of dimensions gives the model a broad “budget” of representational capacity
+- Learned, Not Predefined: The vectors are learned from data
+- Contextual and Semantic Nuances: Tokens with similar usage and meaning often end up with similar embeddings, because the model groups them according to how they co-occur in context.
+Hence, although the embedding matrix itself is just a big table indexed by token IDs, each row (embedding) is a rich, learned representation that encodes diverse nuance about that token’s role in language.
+
+The length of the vocabulary is determined by the vocab_size in the transformer's model card config.json file. For example, for vlm2vec-full, vocab_size is 32064. The shape of the matrix of the token embedding table is [32064, 3072] for vlm2-vec full. The vocab_size is thus 32064 and, as already mentioned, the dimensions is 3072. Index i in this matrix corresponds to the embedding for the i-th token in the vocabulary. The table does not store the literal text “the” (or any other strings). Instead, each row in the table is just a vector of learned numbers (floating-point parameters). Row index i (for example, 464 for “the”) corresponds to a 3072-dimensional vector (like [0.12, -0.03, 0.78, ...]) that the model learns to represent the concept of that token.
+
+So if it doesn't store "the" or any other string that represents an actual real vocabulary, such as the english vernacular, then when I send the model English input, how does it know to map the given words to the index in the token embedding table? That mapping is handled by the tokenizer. Essentially, the tokenizer is a separate component (or module) that knows:
+- How to split your raw text (e.g., "The cat sat on the mat.") into tokens (subword units, wordpieces, bytes, etc.).
+- How to look up each token’s ID in the model’s vocabulary (so “the” might become 464, “cat” might be 1201, etc.).
+
+Once the tokenizer has converted your English text into a sequence of token IDs, the model itself just sees those IDs. At that point, each ID is an index into the [vocab_size, hidden_dim] token embedding table, retrieving the learned vector for that token.
+
+When you send ["The", " ", "cat", ...] (just an example) to the tokenizer, it uses a learned or defined vocabulary that says:
+- "The" → token ID 464
+- " " → token ID 220
+- "cat" → token ID 1201
+
+This step is purely text processing—no numeric embeddings yet, just string-to-integer lookups.
+
+Inside the model, each token ID is used to index into the token embedding matrix. If 464 means “The,” row 464 in the [vocab_size, hidden_dim] matrix is the continuous vector representing that token.
+
+Back to text (if needed): When the model outputs token IDs (e.g., when generating text), the tokenizer can convert them back into strings. That’s how you get a final text response like “Hello world!”
+
+Hence, the system is split into two major parts:
+- A tokenizer that handles string <-> token ID conversions.
+- The model (with its embedding table) that handles token ID <-> vector mappings for actual computation.
+
+Is the tokenizer stored in the vLLM instance running, or is handled by the actual application that sends requests to vLLM (for example, hugging face transformers downloads the model card configs such as config.json, special_tokens_map.json, tokenizer_config.json, and tokenizer.json when you communciate with model) ?  **By default, vLLM handles the tokenizer on the server side, loading it automatically from the Hugging Face model repository (along with the config and weights) when you run something like: vllm serve my-hf-model. I have verified this!**
+
+```shell
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source $HOME/.local/bin/env
+uv venv myenv --python 3.12 --seed
+source myenv/bin/activate
+uv pip install vllm
+vllm serve --trust-remote-code --max-model-len 4096 TIGER-Lab/VLM2Vec-Full
+```
+
+**The vllm serve command will download config.json, special_tokens_map.json, tokenizer_config.json, and tokenizer.json!!!!**
+
+So, in that scenario:
+- vLLM downloads and caches the tokenizer files (e.g. tokenizer.json, tokenizer_config.json, etc.).
+- When a request comes in with raw text, vLLM applies the tokenizer to convert the text to token IDs.
+- After generating output token IDs, vLLM converts them back to text using the same tokenizer.
+
+**Is the token embedding table in any particular order? Not in any semantic or alphabetical sense.** Internally, the embedding table is simply indexed by token ID in ascending order:
+- Row 0 in the embedding matrix corresponds to token ID 0.
+- Row 1 corresponds to token ID 1.
+- ... and so on, up to token ID 
+
+However, how those token IDs were assigned in the first place depends on the tokenizer. For example, in a Byte-Pair Encoding (BPE) or WordPiece tokenizer, the algorithm might merge subwords by frequency or other heuristics, and assign lower IDs to more frequent tokens. But there is no strict rule that “token 0 must be [PAD]” or “token 464 must be the” across all models—each tokenizer might have a different mapping.
+
+So while the embedding matrix is laid out in numerical ID order, that ordering does not directly represent any alphabetical or semantic structure. It’s just “row = token ID.” Any deeper meaning comes from how the tokenizer assigned those IDs.
+
+So if the token ids are not in any particular order, then how is semantic relationships calculated between tokens? **Because the IDs themselves aren’t what encodes meaning—the learned embedding vectors do (those 3072 dimensional embeddings).** The numeric ID is just an index into the embedding table, associating a text word to anumeric id which in turn is linked to the critical embedding. When you train a Transformer:
+- Random initialization:
+  - At first, each row in the token embedding matrix is set to random numbers, regardless of the token’s ID or any ordering.
+- Learning process:
+  - During training, the model updates those embedding vectors so that tokens with similar contexts end up with similar vectors.
+  - This means words that appear in similar linguistic or semantic environments get embedding vectors that are closer together in the embedding space.
+- Result:
+  - By the end of training, tokens with similar meaning or usage have similar embeddings, even though their numeric IDs may be far apart.
+  - The token ID is just a pointer to that row in the matrix. The model learns how to shape those rows so that “cat” and “dog” might end up closer together than “cat” and “democracy.”
+In other words, there’s no inherent semantic structure in the IDs themselves. The semantic relationships emerge because the model’s training drives the embedding vectors to reflect meaning, usage, and context.
+
+All in all, each token ID directly corresponds to one row in the token embedding matrix, and that row is the learned semantic representation for that token. The ID is simply an integer index, but the row of the matrix contains the actual embedding vector that captures the token’s semantics (as learned during training).
+- When the model sees token ID i, it looks up row i in the embedding matrix
+- That row is a high-dimensional vector (e.g. 3072 dimensions) that represents the meaning or usage of that token. 
+- During training, the model adjusts these vectors so tokens that appear in similar contexts end up with embeddings that are close in vector space—even if their IDs are numerically far apart.
+
+Why is the token embedding table loaded in GPU memory? Because it’s part of the model’s trainable parameters and must be accessed repeatedly (and very quickly) during inference (or training). Specifically:
+- Fast lookups:
+  - Each token ID has to be looked up in the embedding table for every token in the sequence. Doing this on the CPU and copying to the GPU for each token would be a big bottleneck.
+  - Having the embedding matrix on the GPU allows direct, high-throughput lookups without transferring data from CPU to GPU.
+- Integration with subsequent layers:
+  - After a token is converted to its embedding vector, the model immediately processes that vector in multiple GPU-accelerated layers (attention, feed-forward, etc.).
+  - Keeping the embeddings in GPU memory ensures these operations remain on GPU without unnecessary copies.
+- They are trainable parameters:
+  - Like other Transformer weights (attention matrices, feed-forward layers, etc.), the token embedding table is trained to produce optimal representations.
+  - Storing them on GPU makes both training and inference efficient, as with all other model parameters.
+
+### model weights: positional embedding table
+Given that the Token Embedding Table stores the vocabulary ids and the associating vectors that are searched to discover semantic relationships, it seems all that is needed is there. Why have a positional embedding table? Semantic similarity (as captured by token embeddings) and sequence ordering (which token appears first, second, etc. in an input sequence) are two different concepts. Token embeddings answer the question “what token is this?” but not “where does this token appear in the sentence?”
+- Token Embeddings capture semantic relationships
+  - Vectors for “dog” and “cat” might be close if they frequently appear in similar contexts.
+  - This helps the model generalize across synonyms or related words.
+- Order / Positional Information is structural
+  - The model must know: is “cats” the subject of a sentence or is it the object?
+  - Are we talking about “I love cats” or “cats love me”? Both share the tokens “I,” “love,” “cats,” but they have fundamentally different meanings because the tokens appear in a different order.
+- Why “semantic closeness” is not enough
+  - Without telling the model that “I” is the first token, “love” is the second, and “cats” is the third, the Transformer only sees three embeddings (for “I,” “love,” and “cats”) in some set.
+  - Self-attention by itself would treat the input as an unordered collection of vectors. It wouldn’t know which vector came before which, so it can’t infer who loves whom.
+    - Self-attention is still extremely valuable even if the base mechanism doesn’t inherently encode sequence order. It’s the core method by which a Transformer allows each token to “see” (or “attend to”) the other tokens in the input.
+    - Self-attention: For each token, it computes a “query” vector and compares it to the “key” vectors of all other tokens, thereby gathering relevant information from them (the “value” vectors).
+    - This is crucial for capturing what other tokens appear in the same sentence (or sequence) and how strongly they are related, whether or not we know their position.
+    - Instead of reading tokens one by one (as a typical RNN would), self-attention can use the entire set of token embeddings at once. This helps capture long-range dependencies and broad contextual clues.
+    - Requires positional embeddings to also learn ‘who is first, second, etc.’
+    - On its own, self-attention sees a “bag” of embeddings. It knows how strongly token A relates to token B, but not who comes before whom.
+    - By adding positional embeddings, you give the model the sequential context it needs to figure out “I is the first token,” “love is the second,” and so on.
+    - That way, when self-attention compares tokens, it also “knows” each token’s position in the sentence.
+    - You can implement and run self-attention without a positional embedding table, but the model then has no information about token order in the sequence. By default, self-attention simply processes a set of token vectors, treating them as if their order doesn’t matter. 
+    - So while you can do self-attention without positional embeddings, it wouldn’t help you solve tasks that depend on word order. **The most common design is to combine self-attention with a positional embedding approach to handle both content (what each token is) and structure (where it appears in the sequence).**
+- Positional Embeddings
+  - By adding positional vectors (e.g., position #1, position #2, etc.) to each token’s embedding, we effectively “tag” each token with its place in the sequence.
+  - This is what allows the model to learn that “the first token might be the subject,” or “the second token might be the verb,” and so forth.
+
+But there are so many ways to arrange words in a sentence that express different meanings. If we were to arrange words all the different ways possible, we will have an infinite number of permutations. **Indeed, there are infinitely many possible word permutations—but a Transformer (or any language model) does not store every permutation. Instead, it learns generalizable patterns of how word order affects meaning.** Let's discuss this concept of "generalizable patterns". Transformers use Statistical/Distributional Learning. During training, the model is exposed to vast amounts of text with all sorts of word orders and contexts. It doesn’t memorize each sentence arrangement individually. Instead, the self-attention mechanism plus positional embeddings allow it to learn probabilistic relationships: “If Token A appears before Token B, the meaning often shifts in this way.”
+
+Transformers don’t rely on classical statistical tests like z-tests, t-tests, or chi-squared tests to learn those relationships. Instead, they’re trained using gradient-based optimization (e.g. stochastic gradient descent) on a loss function such as cross-entropy. Classical statistical tests (z-test, t-test, chi-squared, etc.) are designed for one-off hypothesis testing—you have a small set of parameters and a well-defined hypothesis (e.g., “Is the mean of group A different from the mean of group B?”), and you compute a test statistic based on a probability distribution (the z-distribution, t-distribution, etc.). In neural network training (including Transformers), we handle many parameters (millions or billions) and a large dataset. Rather than a single hypothesis test, we do iterative fitting to make the model’s predictions match the data. Iterative fitting is the process of repeatedly adjusting a model’s parameters so that its predictions get closer and closer to the actual data. Here’s a simple analogy:
+- Initial Guess: You start with random guesses for how the model should behave (like randomly chosen parameters).
+- Check Error: You see how far off the model’s predictions are from the real answers.
+- Adjust: You tweak the parameters to reduce that error slightly.
+- Repeat: You go back to Step 2 with the updated model and do it again on more data.
+- Over many rounds of this “guess, check, adjust” cycle (like practicing a skill repeatedly), the model’s parameters slowly converge to values that produce better and better predictions. This is fundamentally what happens in gradient descent training for neural networks.
+
+Two key pieces of iterative fitting are:
+- Cross-Entropy Loss
+- Stochastic Gradient Descent (SGD)
+
+Cross-Entropy loss is a measure of how “wrong” the model’s probability distribution is compared to the actual outcomes (labels) in your data.
+It isn't using z-tests, z-scores, confidence interval, significance level, p-values, central limit theorem to know whether to reject or fail to reject the null hypothesis.Cross-entropy does not use classical hypothesis test, such as z-tests, t-tests, and chi-squared tests. Instead, it’s a direct measure of the difference between two probability distributions:
+- The model’s predicted distribution over possible outcomes (for instance, which token comes next?), and
+- The true distribution (which in a supervised dataset is typically 100% on the correct label/token).
+
+Formally, if the model outputs a probability distribution p for the next token and the ground truth distribution is q (e.g., the correct token with probability 1, or a “one-hot” vector), then the cross-entropy is:
+
+$$
+H(q,p) = - \sum_{x} q(x) \log p(x)
+$$
+
+No p-values, z-scores, or explicit use of the central limit theorem are involved here. Instead, the model just directly sees how well its predicted probabilities match reality:
+- If p(x) is high for the actual label x, the cross-entropy is lower (the model is doing well).
+- If p(x) is low for the actual label x, the cross-entropy is higher (the model is doing poorly).
+
+In a z-test, you usually have one main statistic (the difference of means, for instance) and you know (or assume) its approximate distribution if the null hypothesis is true. In deep learning, you have millions (or billions) of parameters. The cross-entropy is simply a scalar objective that the optimizer tries to push down, but there’s no simple, “this is distributed as a Z under the null” derivation. We don’t do a one-time test; we do a long optimization procedure over enormous data. Neural network training is an iterative process: in each gradient update, you see a small batch, compute cross-entropy, adjust parameters. Over many epochs, you (hopefully) converge to a model that generalizes well. There’s no single “reject/fail to reject” moment. 
+
+Stochastic Gradient Descent (SGD) is a method of iterative fitting that works by repeatedly nudging the model’s parameters in the direction that reduces the training error (loss). Here’s a step-by-step outline of how it happens:
+- Initialize Parameters
+  - Start with random values for all the model’s parameters (e.g., weights in the token embedding table, position embedding table, the attention matrices, feed-forward layers, etc.).
+  - If your Transformer uses learned (absolute) positional embeddings, then that table is also randomly initialized at the start of training, right alongside the token embeddings, attention matrices, feed-forward layers, etc. Each row in the [max_position,hidden_dim] positional embedding matrix starts with random values. As training proceeds (via SGD and backpropagation), those values are updated so the model learns how to encode positional order effectively.
+- Select a Mini-Batch
+  - Instead of using the entire dataset at once (which could be huge), you pick a small batch of training examples (e.g. 32 or 64 sentences).
+- Compute Loss
+  - For that mini-batch, you run the model forward:
+    - Tokenize the input into token IDs.
+    - Map IDs to embeddings.
+    - Pass them through the Transformer layers (self-attention, feed-forward, etc.).
+    - Compare the model’s predictions to the actual targets (like the next token in each sentence)
+    - Calculate a loss measure (often cross-entropy).
+    - This loss tells you how far off the model’s predictions are for that mini-batch.
+- Compute Gradients (Backpropagation)
+  - Use backprop to find, for each parameter, how changing that parameter slightly would affect the loss.
+  - In other words, compute the partial derivative of the loss with respect to each weight.
+- Update Parameters
+  - “Descend” in the direction that lowers the loss the most.
+- Repeat
+  - Move on to the next mini-batch, compute the new loss, new gradients, update parameters again.
+  - Over time (many epochs), the parameters converge toward values that minimize the overall loss on the training set.
+
+In effect, we use Cross-Entropy Loss and Stochastic Gradient Descent (SGD) to learn the meaning of a word respect to its position in a sentence (so not just the meaning of the word itself but also its position in a sentence) and then we store that essence as a vector in a positional embedding table? Then we later add this stored vector in the positional embedding table with the vector stored in the token embedding table to find overall semantic meaning of word with respect to surrounding words? Essentially. We use cross-entropy loss + SGD to fine-tune those embedding vectors (and all other model parameters) across countless examples of different word orders. Over many training steps, the model learns general patterns of how word order impacts meaning. It doesn’t memorize each unique sentence permutation; it gradually adjusts the positional embeddings (and the rest of the network) to handle any order that shows up in the data.
+
+The key here is that just like the token embedding table, the positional embedding table is storing a vector in an index of its table. This vector is comprised of hundreds or thousands of floats, depending on how many dimensions the vector has. It does not store words or integers representing a position. It stores vectors. So there’s no row for “the cat” or any other multi-word sequence. Each row is just a vector encoding “this is the i-th token in the sequence,” and it never stores actual word pairs.
+
+They’re two different “lookup tables”—each one answers a different question:
+- Token (Word) Embedding Table
+  - Indexed by token ID (which word/subword in the vocabulary).
+  - Says “What is the semantic meaning of token #X?”
+  - Example shape: [vocab_size,hidden_dim].
+  - Row 42 might correspond to the word “cat,” row 464 might be “the,” etc.
+- Positional Embedding Table
+  - Indexed by position (which spot in the sequence: 1st token, 2nd token, etc.).
+  - Says “What does it mean to be in position #i in the sequence?”
+  - Example shape: [max_position,hidden_dim].
+  - Row 0 might correspond to “1st token,” row 1 to “2nd token,” and so on—no actual words here, just a “position vector.”
+
+Why both are needed
+- The token embedding tells the model which word each token is.
+- The positional embedding tells the model where in the sequence that token occurs.
+
+The Transformer then adds those two vectors together (token embedding + positional embedding) so each token knows both what it is and where it’s located in the sentence.
+
+When you feed a sentence into the Transformer, each token is combined with a position:
+- Token ID (e.g., “cat” → ID 1234) is looked up in the token embedding table → yields a vector like [0.51, -0.12, 1.33, ...].
+- Position index (e.g., 2nd token in the sentence) is looked up in the positional embedding table → yields another vector like [0.09, 0.85, -1.02, ...].
+The model then adds these two vectors—so the token’s final representation is something like: token_embedding("cat") + positional_embedding(for position #2). That merged vector says: “I’m the token ‘cat,’ and I’m the 2nd token in this sentence.”
+
+Positional Embedding approaches:
+There are several ways to encode positional information. The learned (absolute) positional embedding approach is just one of them. Some common alternatives include:
+- Sinusoidal (Fixed) Positional Embeddings
+  - First popularized in the original “Attention Is All You Need” Transformer paper (2017).
+  - Instead of having a learned [max_position,hidden_dim] matrix, they use a fixed sin/cos function of the position index p.
+  - No trainable parameters; the idea is that different positions get different sine-wave patterns in each dimension of the embedding.
+- Relative Positional Encodings
+  - Used in models like T5 and Transformer-XL.
+  - The model encodes distance between pairs of tokens (e.g., “how far is token i from token j?”) rather than storing a separate embedding for each absolute position.  
+- Rotary Positional Embeddings (RoPE)
+  - Employed by models like GPT-NeoX, LLaMA, and others.
+  - They multiply the hidden states by rotation matrices whose angles are functions of the token’s position.
+  - No explicit table of learnable parameters for each position. Instead, you configure a “base frequency,” and the rotation handles positions of any length (though typically truncated at a max position in practice).
+
+
+Summary:
+
+Transformers are permutation-invariant by design. “Permutation-invariant” basically means if you shuffle the input tokens around, the model (without any extra position info) can’t tell you changed the order—it sees them as the same set of tokens. Think of it like a bag of words: if you take words out of a sentence and reinsert them in a different order, a permutation-invariant system would treat those words the same way regardless of sequence.
+
+A Transformer’s self-attention mechanism, by default, just sees a collection of token embeddings and compares every token embedding to every other token embedding. Without positional embeddings, there’s no built-in notion of “the first token,” “the second token,” etc. That’s why we must provide positional information (like positional embeddings) so the model knows the order in which tokens appear.
+
+Why the model needs positional information? Order matters: “I love cats” vs. “Cats love me” use the same tokens, but the meaning depends on which token is first/second/third. Transformer self-attention:
+- Self-attention doesn’t inherently preserve input order; it treats the input embeddings as an unordered set of vectors.
+- Positional embeddings inject sequence order into the representation so the model can learn to attend more (or less) to nearby tokens.
+
+### model weights: token embedding table and positional embedding table and memory
+
+Above, we learned how token embeddings and positional embeddings work in a typical Transformer. It captures how:
+- Token embeddings map each vocabulary token to a unique continuous vector capturing semantic meaning.
+- Positional embeddings map each sequence position (1st token, 2nd token, etc.) to another continuous vector capturing structural information (where a token appears in the sentence).
+- Self-attention sees all token vectors at once, so without positional information, it has no built-in sense of order.
+- Training via cross-entropy loss and stochastic gradient descent (SGD) iteratively shapes both the token embedding table and positional embedding table, so the model learns how word meaning (token embedding) interacts with its position (positional embedding) to form correct predictions.
+
+Both tables are trainable parameters, so both the positional embedding table and the token embedding table are typically stored in GPU memory at inference (and during training). Each is simply a separate learned matrix within the Transformer’s overall parameter set:
+- Token Embedding Table
+  - Shape: [vocab_size,hidden_dim]
+  - Stores a learned vector for each token in the vocabulary.
+- Positional Embedding Table
+  - Shape: [max_position,hidden_dim]
+  - Stores a learned vector for each possible position in the sequence.
+
+Since both must be accessed quickly by the model, they are loaded into GPU memory just like the attention weights, feed-forward layers, and other parameters.
+
+### model weights: self-attention (only forward pass during inference), final output project, and softmax
+
+I truly understand this: "Training via cross-entropy loss and stochastic gradient descent (SGD) iteratively shapes both the token embedding table and positional embedding table, so the model learns how word meaning (token embedding) interacts with its position (positional embedding) to form correct predictions."    And this is key to have meaningful vectors stored in two tables (token and positional) so that we can later reference them when consuming input sequences (such as English text or paragraphs). My question is how is this accomplished during inference? Text comes in, a tokenizer converts it to a token, can we just look up the token id in both the token embedding and positional embedding table, find semantically related tokens, and then send them back to the user? Or do we actually have to do any forward passes and backpropagation, Cross-Entropy Loss, and Stochastic Gradient Descent during inference? And if we have to do this, why? Why can't we just find semantically related vectors in those two tables and send them back? 
+
+During inference, you do not retrain the model or do backpropagation. The token and positional embeddings are already learned (frozen) from training. You still have to do a forward pass, but no gradient updates. Back propagation and gradient updates are only done during training? **Yes. Backpropagation and gradient updates are done only during training (when the model is learning its parameters). Once the model is trained and you’re using it for inference, there’s no more backprop or parameter adjustment—you only perform a forward pass with the frozen (already-learned) weights.**
+
+Is self-attention only done in backpropagation and gradient updates? Or is self-attention done in forward pass as well? Self-attention is used in both the forward pass and during backpropagation (training), but in different ways:
+- Forward pass (inference and training):
+  - The model computes self-attention to update each token’s representation based on all the other tokens.
+  - This is the “normal” use of self-attention: combining (query, key, value) across tokens.
+- Backward pass (training only):
+  - After the forward pass, you compute a loss (like cross-entropy).
+  - Then you do backpropagation, which calculates how changing each parameter (including those in self-attention) would affect that loss.
+  - So you also “go through” the self-attention logic in reverse (mathematically) to get gradients for the attention parameters.
+
+It's important to note that self-attention is done in a forward pass. It is not that self-attention has a forward pass. Forward pass encompasses both self-attention and feed-forward. In other words, both self-attention and feed forward are both part of the Transformer block's forward pass.
+
+**Why do we need to do self-attention in the forward pass during inference? Because self-attention is the mechanism that actually incorporates context during inference. Simply looking up token embeddings (and positional embeddings) only gives you a basic representation of “which token, at which position.”** But to understand or generate text, the model must figure out:
+- How each token relates to the others in the sequence (e.g. “Does ‘cat’ modify ‘sat,’ or does something else happen?”). In terms of sequence, we are talking about the input sequence of tokens that you feed into the model at inference time.
+- Which tokens are important for predicting the next token (in a language model) or determining the answer (in a QA model).
+
+During inference, you typically use the token and positional embedding tables once at the start of the forward pass for each token in the input (or each newly generated token in a language-model setting). Here’s the sequence:
+- Embed the Tokens
+  - For each input token ID, you look up its row in the token embedding table.
+  - For each position i, you also look up its row in the positional embedding table.
+  - You add those two vectors: TokenEmbedding(tokenID) + PositionalEmbedding(i).
+  - This sum is the initial representation of that token (including content + position).
+    - This initial representation is a vector - specifically, a high-dimensional float vector of size hidden_dim. For instance, if your model’s hidden_dim is 3072, then the initial representation for each token will be a 3072-dimensional vector.
+- Process Self-Attention in Forward Pass
+  - You feed all these token representations (one for each input token) into the subsequent Transformer layers (self-attention + feed-forward).
+  - The model “mixes” the tokens’ embeddings based on context, refining each token’s representation.
+    - In self-attention, mixing means each token’s updated representation becomes a weighted combination of the other tokens’ representations, guided by the attention scores. Think of it like this: 
+      - You have multiple tokens – say “The,” “cat,” “sat.”
+      - Each token has some current representation (a vector).
+      - Self-attention asks: “For token X, which other tokens might provide useful information?”
+      - Attention scores determine how much each other token contributes.
+      - If scores for token X ↔ token Y are high, it means “X should pay close attention to Y’s content.”
+      - Weighted combination (the “mixing”):
+        - Token X’s new representation is built by summing the “value” vectors of all tokens, each multiplied by its attention score. "All tokens" refers to all tokens in the sequence, not all tokens in the entire vocabulary. During self-attention, each token only interacts with the other tokens in the current input.
+        - For example, if your input sequence has 10 tokens, each token’s new representation is formed by combining (via weighted sums) the “value” vectors from those 10 tokens in this input sequence.
+        - It does not look at every possible token in the token embedding table; only the tokens actually present in the current batch/sequence.
+        - Due to weighted combination, **That means X’s new vector is partly from itself, partly from “cat,” partly from “sat,” and so on—weighted by how relevant each is.**
+        - Because of this, each token’s updated representation is no longer just “the embedding for that token alone.” It’s enriched by bits of information from the other tokens it’s attending to. That’s what we mean by a “weighted combination” or “mixing.”
+- Process Feed Forward in Forward Pass
+  - Self-attention and feed-forward are two distinct sub-layers within a Transformer block. Both happen in the forward pass, but they serve different purposes:
+    - Self-Attention
+      - Lets each token interact with the other tokens in the sequence.
+      - Produces context-aware representations by weighting relevant tokens more heavily.
+    - Feed-Forward
+      - Imagine you have already run self-attention, so each token now has an updated hidden state h. The feed-forward (FFN) sub-layer then operates on each token individually.
+      -  You have a token’s hidden state. Let’s call it h. This is a vector of size hidden_dim (e.g., 3072 dimensions). 
+      - After self-attention, h already includes context from other tokens, but it’s still a single vector that “belongs” to one specific token.
+      - The same MLP is applied to every token’s h. MLP stands for Multi-Layer Perceptron. It’s basically a small fully-connected neural network—usually with one or more hidden layers, each followed by a non-linear activation function. Here’s a simple breakdown:
+        - Fully-connected (or “dense”) means every input neuron connects to every neuron in the next layer, using a learned weight for each connection.
+        - Multi-layer implies at least one hidden layer between input and output—so the data flows through multiple linear transformations plus non-linear activations.
+        - Perceptron is just the old term for a basic unit that does a weighted sum and applies an activation function.
+        - In the context of Transformers: Each feed-forward sub-layer is a small MLP that takes a single token’s embedding (a vector) as input, expands it to a larger dimension, applies a non-linear activation (like ReLU or GELU), and then projects it back down. This gives the model more complex (“non-linear”) transformation capacity than just a single linear layer.
+        - So, an MLP is just a traditional neural network block: Input vector → (Linear → Activation → Linear) → Output vector.
+        - MLP effectively enriches each token’s representation by letting the model learn a more complex, non-linear transformation of that token’s context-enriched vector.
+- Final Output Layer
+  - After self-attention and feed-forward, each token has a final hidden state.
+  - The model does not go back to the embedding tables here; instead, it passes these hidden states into a final output projection (often a linear layer) that maps each hidden state to a vocabulary-sized vector (logits).
+  - Softmaxing those logits yields a probability distribution over possible next tokens (for a language model) or a set of class probabilities (for a classifier), etc.
+
+ I am a little confused here. If attention score is only applied to tokens in the input sequence, then how can the response generate tokens not in the input sequence but rather tokens from the token embeddings table? **Because self‐attention is not responsible for choosing the output token from the entire vocabulary—it's responsible for contextualizing the input tokens. The final output layer is what produces a probability distribution over all possible tokens in the vocabulary, allowing the model to predict tokens not in the input.** Here’s how:
+- Self‐attention:
+  - Operates only over the current input tokens (the sequence so far).
+  - Learns how those tokens relate to each other, refining their representations with contextual information.
+- Feed forward
+- Final Output Projection (the “language modeling head”):
+  - Takes the context‐enriched representation of the last token (or each token, depending on the setup) and applies a linear transformation that has one weight vector per vocabulary token.
+  - In other words, for each position, the model now has a “hidden state” that encodes what’s happening in the sequence so far.
+  - **The final layer maps that hidden state to a logits vector of size = vocab_size, giving a score for every token in the vocabulary—whether or not it appeared in the input.**
+- Softmax over those logits:
+  - **Converts the scores into a probability distribution over all tokens in the vocabulary.**
+  - This distribution often has high probability on tokens that logically follow the sequence context, even if those tokens never appeared in the input.
+
+So, attention only deals with the tokens in the current input (so it knows how they interrelate), but the final projection always covers the entire vocabulary. That’s how the model can generate words or tokens that weren’t in the input.
+
+Do all three of these components have model weights:  self-attention (only forward pass during inference), final output project, and softmax
+- Self-Attention: Yes. It has learnable parameters—namely the query, key, value, and output projection matrices (and possibly biases).
+- Feed forward: does feed forward have separate model weights than self-attention during forward pass? Yes. Feed-forward and self-attention are separate components within a Transformer block, each with its own trainable parameters:
+  - Self-Attention has parameters for:
+    - Query, Key, Value projection matrices
+    - Output projection matrix (after combining the values)
+    - (Plus optional biases)
+  - Feed-Forward has parameters for:
+    - The first linear layer (W₁, b₁)
+    - The non-linear activation (no trainable parameters, just a function)
+    - The second linear layer (W₂, b₂)
+- Final Output Projection: Yes. This linear layer (hidden_dim → vocab_size) has a weight matrix (and typically a bias) mapping the final hidden states to logits over the vocabulary.
+- Softmax: No. Standard softmax is just a mathematical function (exponentiate and normalize). It has no trainable parameters. The model’s weights end at the final linear layer; the softmax is just applied to those logits to turn them into a probability distribution.
+
+### Self-attention and Maximum Sequence Length
+
+When passing data through a transformers model, you must consider:
+- How many tokens are in a specific input sequence (the “actual sequence length”).
+- How large that sequence can be before exceeding the model’s “maximum sequence length.”
+
+Once you tokenize your input text, you end up with a sequence of token IDs. The length of that list of token IDs is your actual sequence length. For example, if the tokenizer produces 512 tokens from your text, then your input’s sequence length is 512. This count is determined by:
+- Tokenization: The tokenizer splits your text into tokens (subwords, wordpieces, etc.).
+- Number of tokens: However many tokens the text yields – for instance, 512 tokens, 1024 tokens, etc.
+
+So the sequence length for that batch/input is just the count of tokens the tokenizer produces.
+
+A Transformer also has a maximum sequence length it can handle. This limit can come from one (or more) of the following:
+- Positional Embedding Shape
+  - For learned, absolute positional embeddings, you typically have a table of shape [max_position,hidden_dim]. If max_position = 4096, the model can’t natively handle tokens at positions beyond 4096, because there are no embeddings for positions 4097, 4098, etc.
+  - Example: If a model has max_position = 2048, it can’t directly handle sequences of length 4096 (there’s no row for position 3000, say).
+- Rotary or Relative Positional Embeddings
+  - Some models (e.g., LLaMA, GPT-NeoX, T5) use relative or rotary embeddings, which can be more flexible about maximum sequence length. However, even these often have a practical limit defined in the code or config (e.g., 4096 or 8192).
+  - Going beyond that limit might degrade performance or require special tweaks, even if it’s theoretically possible to extend.
+- Memory Constraints
+  - Even if the positional encoding allows large sequences (say 64k tokens), you might run out of GPU memory. Self-attention scales roughly with O(n²) in the number of tokens n. So at some length, you simply can’t store all the key/value states in GPU memory. When we say “O(n²),” we’re using Big-O notation to describe how the compute and memory cost of self-attention grows with the sequence length 𝑛. Specifically:
+    - Self-attention requires computing attention scores between every pair of tokens in the sequence. If you have n tokens, that’s n queries each compared to n keys, i.e. n×n=n² comparisons.
+    - This also typically involves storing or processing an n×n attention matrix in memory (for attention scores).
+    - So, as n (the sequence length) grows larger, the required compute and GPU memory grow quadratically, which quickly becomes prohibitive for very large sequences.
+- Configuration Files
+  - Many model configs (e.g., config.json) explicitly set a max_position_embeddings field. That number is the official cap on sequence length.
+ 
+### Self-attention and KV Cache
+
+The K/V cache (key/value cache) isn’t part of the model’s trainable weights; instead, it’s temporary (ephemeral) storage the model uses during inference (and possibly training) to speed up self-attention across tokens. Here’s how it fits in:
+- Not Trainable Parameters
+  - Unlike the token embedding table or the attention weight matrices (Q, K, V projections), the K/V cache isn’t “learned.”
+  - It’s just a buffer that holds the key and value representations of each token in a sequence, so you don’t have to recompute them from scratch every time you attend to those tokens.
+- Why It Exists (Especially in Autoregressive Generation)
+  - In a language model generating text token by token, at each new step the model only needs to compute queries for the newest token—then look up the keys and values of all previously generated tokens (which have been cached).
+  - Without a K/V cache, you’d have to re-run self-attention over the entire prefix each time you generate a new token, repeating a lot of computations.
+- Memory Usage
+  - The K/V cache can be large because it stores a hidden-state vector (the key and the value) for each token at each layer of the Transformer.
+  - That’s why the memory usage for the K/V cache can grow linearly with the length of your sequence—and is often cited in the O(n^2) discussion (since bigger sequences also mean more attention score computations).
+- Ephemeral vs. Persistent
+  - The cache is ephemeral: it exists only for the current forward pass or the incremental generation session. Once you’re done generating text or finish a batch inference, you can discard it.
+  - Model weights, on the other hand, are persistent trainable parameters (like the embedding tables, attention matrices, feed-forward layers). They remain fixed in GPU memory during inference.
+
+During inference you typically need both:
+- Model Weights (all the trainable parameters like token/positional embeddings, attention matrices, feed-forward layers), which are fixed (frozen) during inference but must be in GPU memory so the model can do its forward pass efficiently.
+- K/V cache, which is temporary storage for the attention keys/values of each token in the current context.
+  - This grows with your sequence length so that each newly generated token (in an autoregressive model) can quickly “look up” previously computed keys/values.
+  - Not trainable, but kept in GPU memory for fast access during generation or inference steps.
+
+### Beyond Model Weights and KV Cache
+
+Beyond model weights and the K/V cache, you’ll also see some additional GPU memory usage for:
+- Intermediate Activations
+  - Even in a purely forward-pass scenario (inference), each Transformer layer produces intermediate tensors (the outputs of attention, feed-forward steps, etc.) while computing the final output.
+  - These temporary activations only persist briefly but do occupy GPU memory as the model runs forward.
+- Framework Overheads and Buffers
+  - PyTorch, TensorFlow, or another deep-learning framework may allocate working buffers, scratch space, and CUDA contexts. This overhead can vary depending on batch size, sequence length, and the exact hardware/software stack.
+- Compiled Kernels or Graphs (optional / implementation-specific)
+  - If you’re using features like torch.compile, TensorRT, or other optimizations, the system might store compiled code or runtime graphs in GPU memory (or partially in CPU memory, depending on the setup).
+- Other Temporary Data Structures
+  - Depending on your pipeline (e.g., multi-head attention might have extra buffers for reshaping heads, or gather/scatter operations).
+  - Some libraries also keep reference copies of certain parameters or partial computations to accelerate subsequent steps.
+
+### Managing memory with max_model_len
+
+Is there a way to instruct vLLM when running a model to not use all token embeddings, positional embeddings, self-attention forward pass capabillity, feed forward forward pass capability, final output projection capability in order to ensure the model weights doesn't reach near the gpu limits?
+
+Not really. You can’t just say, “don’t load the self-attention or final projection,” because those components are fundamental to the model’s architecture – if you drop them, the model’s forward pass wouldn’t work at all. Most serving solutions (including vLLM) assume you load the entire model and run a proper forward pass.
+
+That said, here are some practical ways to reduce GPU memory usage with vLLM (or other frameworks) without literally “skipping” major model components. max_model_len  controls the maximum number of tokens the model will handle in a single forward pass. In other words, it’s an upper bound on the context window (the sequence length) during inference. By lowering max_model_len, you reduce how many tokens the model can process at once—thus reducing memory usage (especially for attention and K/V cache). How it affects each component:
+- Token embeddings:
+  - You still have a full token embedding matrix (vocab_size × hidden_dim). That’s a fixed portion of the model’s weights. max_model_len doesn’t prune or shrink the embedding table for tokens.
+  - Instead, max_model_len just limits how many tokens from the prompt/response are fed through the model at once.
+- Positional embeddings:
+  - If you set --max-model-len=2048, the model will only use positional embeddings up to position 2048. It effectively ignores embeddings beyond that index.
+  - This can also help avoid out-of-bounds lookups if the original model supports more tokens but you want to cap it.
+- Self-attention:
+  - Self-attention scales with O(n^2) in the number of tokens n. By capping n (the sequence length) at max_model_len, you keep these computations and memory needs under control.
+  - Self-attention and feed-forward happen inside each Transformer layer. Both require GPU memory and compute proportional to the sequence length (n) in slightly different ways:
+    - Why O(n^2): Self-attention compares each token (query) with every token (key) to compute attention scores. That’s n×n comparisons (dot products), forming an n×n attention matrix.
+    - Also, each token’s updated representation is a weighted sum of up to n “value” vectors.
+  - How max_model_len helps:
+    - If you limit n to a smaller maximum (e.g. 2048 tokens instead of 4096), then the number of operations and the size of intermediate tensors (like the attention matrix) shrink quadratically. For instance, going from 4096 tokens to 2048 tokens reduces memory/compute for attention by roughly a factor of 4 (4096^2=16,777,216 vs. 2048^2=4,194,304). 16,777,216 is the number of elements in a 4096×4096 matrix. 4,194,304 is the number of elements in a 2048×2048 matrix. They represent how many attention “slots” or comparisons you’d store or compute if you have n tokens in your sequence. 
+- Feed-Forward:
+  - The position-wise feed-forward network processes each token vector individually. That’s an O(n) operation if you do it for each token, but the exact compute is linear in the number of tokens.
+  - High dimension expansions: Each token is mapped to an intermediate dimension (often 4× hidden_dim) and back. If hidden_dim is large, feed-forward can still be expensive.
+  - Fewer tokens, fewer feed-forward calls: If you cap max_model_len at a lower number of tokens, you have fewer per-token feed-forward operations to do. That linearly reduces memory usage for feed-forward intermediate activations.
+- K/V cache:
+  - The K/V cache size is roughly proportional to [# of tokens] × [# of Transformer layers] × [hidden size].
+    - How do I find out the number of transformer layers from hugging face model card config? n most Hugging Face transformer configs (the JSON file stored alongside the model on the Hub), you’ll see an integer field that indicates the number of layers. The exact name varies by architecture: BERT-like models often have a key like "num_hidden_layers".
+    - In vLLM can I reduce the number of transformer layers? no. vLLM expects to load and run the entire model as it was trained. There’s no built-in feature to “drop layers” or only load a subset of them. If you tried to remove some layers on your own, the model’s weights and structure wouldn’t match up, and it would no longer produce meaningful results without a full retraining or fine-tuning process.
+  - Restricting max_model_len puts a hard limit on how many tokens can appear in the prompt (and ongoing generation), so it caps the maximum K/V cache memory usage.
+- Final output projection:
+  - The dimension of the final output projection is [hidden_dim, vocab_size]. This doesn’t change based on max_model_len, because you still need to map any hidden state to a vocab-sized logits vector.
+  - Lowering max_model_len won’t shrink this layer, but it does ensure fewer tokens go through that projection in a single pass.
+
+### Managing memory with max_num_batched_tokens
+
+When you run vLLM in batching mode (where multiple requests are served together in a single forward pass to improve throughput) - does this mean if we have 2000 tokens per input sequence and there are two concurrent requests, both requests will be batched together and pass 4000 tokens in a single forward pass (self-attention and feed forward)? Yes—that’s exactly what batching means. If vLLM can bundle both 2,000‑token requests into one forward pass, it effectively runs a single forward pass over 4,000 tokens total. Concretely:
+- Two concurrent requests arrive, each with a 2,000‑token input sequence.
+- vLLM checks its batching limits (e.g., --max-num-batched-tokens) to see if both requests can fit into a single pass.
+- If they do fit, vLLM combines them into one batched forward pass. Internally, the model sees 2 sequences in the same “batch,” each sequence having 2,000 tokens (or the model might pad them so they fit neatly into a single tensor).
+- Self-attention and feed-forward then process 4,000 tokens in total (2 sequences × 2,000 tokens each) in one go, leveraging the GPU’s parallelism.
+
+This boosts throughput—you pay the overhead of one forward pass instead of two separate passes. However:
+- You use more GPU memory in one shot (4,000 tokens → bigger attention matrices and feed-forward buffers).
+- If --max-num-batched-tokens < 4,000, vLLM can’t combine them fully; it might split them into separate passes or partial batches.
+
+So, in short: batched means multiple request sequences are concatenated (or processed simultaneously) in a single forward pass, leading to a total token count = sum of each sequence’s token count.
+
+how does vLLM not mix tokens between the two separate input sequences when referencing token embedding, positional embedding, self-attention, feed forward, and final output projection, thus sacrificing the semantic context and output? Because batching simply processes multiple sequences in parallel rather than merging them into a single sequence. The model sees each sequence as a separate row in the batch dimension, and it uses attention masking (or sequence-length metadata) to ensure:
+- Token embeddings:
+  - Each token ID is looked up by (batch_index, token_index). The embedding table returns a vector, but it knows which batch row it’s for. There’s no cross-talk in the embedding lookup.
+- Positional embeddings:
+  - Each token in each sequence has its own position index (0…n-1). The model keeps track of “sequence A, position i” vs. “sequence B, position j.” They don’t share the same positional indexes.
+- Self-attention:
+  - For each batch row (i.e., each sequence), the model typically applies a mask so tokens in one sequence do not attend to tokens from another. This is done by zeroing out cross-sequence attention scores or setting them to −∞.
+  - This way, “sequence A’s tokens” only attend to “sequence A’s tokens,” and similarly for B.
+- Feed-forward:
+  - This MLP runs per token. Each token vector is processed independently within the batch dimension. So “sequence A, token i” is fed through the same feed-forward sub-layer as “sequence B, token j,” but with separate vectors and no cross-mixing.
+- Final output projection:
+  - Once each token has its final hidden state, the model applies the same linear mapping + softmax to produce logit distributions for each token in each sequence. Sequences are just separate rows in the batch dimension, so each token’s output is separate.
+Overall, batching in vLLM means you combine multiple requests into one forward pass. Internally, each sequence is still isolated by padding or masking. The model never confuses or merges tokens across different sequences. It’s just more efficient to run them in parallel on the GPU rather than one at a time.
+
+### Managing memory with cpu_offload_gb
+
+The --cpu-offload-gb CPU_OFFLOAD_GB option in vLLM allows you to offload part of the model’s memory usage to CPU if you don’t have enough VRAM. Example: vllm serve --model <model> --cpu-offload-gb 4. This tries to offload up to 4 GB of model data to CPU. It can slow down inference, but reduces GPU memory pressure.
+
+### Managing memory with Quantization
+
+If a model supports 8-bit or 4-bit quantization, you can reduce memory usage by storing weights in fewer bits. (vLLM’s built-in quantization support is still evolving, but many frameworks provide ways to quantize.)
+
+### Managing memory with Sharded 
+
+can shard the weights across more than one GPU, effectively giving you more VRAM capacity.
+
+### Managing memory with reduced transformer layers 
+
+vLLM expects to load and run the entire model as it was trained. There’s no built-in feature to “drop layers” or only load a subset of them. If you tried to remove some layers on your own, the model’s weights and structure wouldn’t match up, and it would no longer produce meaningful results without a full retraining or fine-tuning process.
+
+Distillation: If you truly want a smaller model with fewer layers, you can do a model distillation process—training a new “student” model with fewer layers on the outputs of the “teacher” model. That’s a bigger effort, but it’s how many “mini” or “distilled” models get created.
+
+### vLLM setup
+
+If you are using NVIDIA GPUs, you can install vLLM using pip directly. It’s recommended to use uv, a very fast Python environment manager, to create and manage Python environments. Please follow the documentation to install uv. After installing uv, you can create a new Python environment and install vLLM using the following commands:
+
+```shell
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source $HOME/.local/bin/env 
+uv venv myenv --python 3.12 --seed
+source myenv/bin/activate
+uv pip install vllm
+```
+  
+### OpenAI-Compatible Server
+
+LLM can be deployed as a server that implements the OpenAI API protocol. This allows vLLM to be used as a drop-in replacement for applications using OpenAI API. By default, it starts the server at http://localhost:8000. You can specify the address with --host and --port arguments. The server currently hosts one model at a time and implements endpoints such as list models, create chat completion, and create completion endpoints. Run the following command to start the vLLM server with the vlm2vec-full model:
+
+```shell
+ulimit -n
+65536
+
+# you may need to start a new container frequently due to the load it receives
+# otherwise it can lead to errors where the writes stop working and it tries
+# using a read-replica to write to
+docker container run -d -p 6379:6379 redis/redis-stack-server:latest
+
+source myenv/bin/activate
+# below takes 13 minutes and 25 seconds
+vllm serve --port 8070 --host 0.0.0.0 --trust-remote-code --tensor-parallel-size 1 --max-model-len 2048 --max-num-batched-tokens 2048 --task embed TIGER-Lab/VLM2Vec-Full
+# below takes 7 minutes and 30 seconds (sometimes works, sometimes crashes)
+vllm serve --port 8070 --host 0.0.0.0 --trust-remote-code --tensor-parallel-size 1 --max-model-len 2048 --max-num-batched-tokens 4096 --task embed TIGER-Lab/VLM2Vec-Full
+# below takes 5 minutes and 23 seconds (sometimes works, sometimes crashes)
+vllm serve --port 8070 --host 0.0.0.0 --trust-remote-code --tensor-parallel-size 1 --max-model-len 2048 --max-num-batched-tokens 6144 --task embed TIGER-Lab/VLM2Vec-Full
+# the below fails
+vllm serve --port 8070 --host 0.0.0.0 --trust-remote-code --tensor-parallel-size 1 --max-model-len 2048 --max-num-batched-tokens 8192 --task embed TIGER-Lab/VLM2Vec-Full
+
+INFO 03-23 05:00:55 [__init__.py:256] Automatically detected platform cuda.
+INFO 03-23 05:00:57 [api_server.py:977] vLLM API server version 0.8.1
+INFO 03-23 05:00:57 [api_server.py:978] args: Namespace(subparser='serve', model_tag='TIGER-Lab/VLM2Vec-Full', config='', host='0.0.0.0', port=8070, uvicorn_log_level='info', allow_credentials=False, allowed_origins=['*'], allowed_methods=['*'], allowed_headers=['*'], api_key=None, lora_modules=None, prompt_adapters=None, chat_template=None, chat_template_content_format='auto', response_role='assistant', ssl_keyfile=None, ssl_certfile=None, ssl_ca_certs=None, enable_ssl_refresh=False, ssl_cert_reqs=0, root_path=None, middleware=[], return_tokens_as_token_ids=False, disable_frontend_multiprocessing=False, enable_request_id_headers=False, enable_auto_tool_choice=False, tool_call_parser=None, tool_parser_plugin='', model='TIGER-Lab/VLM2Vec-Full', task='auto', tokenizer=None, hf_config_path=None, skip_tokenizer_init=False, revision=None, code_revision=None, tokenizer_revision=None, tokenizer_mode='auto', trust_remote_code=True, allowed_local_media_path=None, download_dir=None, load_format='auto', config_format=<ConfigFormat.AUTO: 'auto'>, dtype='auto', kv_cache_dtype='auto', max_model_len=2048, guided_decoding_backend='xgrammar', logits_processor_pattern=None, model_impl='auto', distributed_executor_backend=None, pipeline_parallel_size=1, tensor_parallel_size=1, enable_expert_parallel=False, max_parallel_loading_workers=None, ray_workers_use_nsight=False, block_size=None, enable_prefix_caching=None, disable_sliding_window=False, use_v2_block_manager=True, num_lookahead_slots=0, seed=None, swap_space=4, cpu_offload_gb=0, gpu_memory_utilization=0.9, num_gpu_blocks_override=None, max_num_batched_tokens=2048, max_num_partial_prefills=1, max_long_partial_prefills=1, long_prefill_token_threshold=0, max_num_seqs=None, max_logprobs=20, disable_log_stats=False, quantization=None, rope_scaling=None, rope_theta=None, hf_overrides=None, enforce_eager=False, max_seq_len_to_capture=8192, disable_custom_all_reduce=False, tokenizer_pool_size=0, tokenizer_pool_type='ray', tokenizer_pool_extra_config=None, limit_mm_per_prompt=None, mm_processor_kwargs=None, disable_mm_preprocessor_cache=False, enable_lora=False, enable_lora_bias=False, max_loras=1, max_lora_rank=16, lora_extra_vocab_size=256, lora_dtype='auto', long_lora_scaling_factors=None, max_cpu_loras=None, fully_sharded_loras=False, enable_prompt_adapter=False, max_prompt_adapters=1, max_prompt_adapter_token=0, device='auto', num_scheduler_steps=1, use_tqdm_on_load=True, multi_step_stream_outputs=True, scheduler_delay_factor=0.0, enable_chunked_prefill=None, speculative_model=None, speculative_model_quantization=None, num_speculative_tokens=None, speculative_disable_mqa_scorer=False, speculative_draft_tensor_parallel_size=None, speculative_max_model_len=None, speculative_disable_by_batch_size=None, ngram_prompt_lookup_max=None, ngram_prompt_lookup_min=None, spec_decoding_acceptance_method='rejection_sampler', typical_acceptance_sampler_posterior_threshold=None, typical_acceptance_sampler_posterior_alpha=None, disable_logprobs_during_spec_decoding=None, model_loader_extra_config=None, ignore_patterns=[], preemption_mode=None, served_model_name=None, qlora_adapter_name_or_path=None, show_hidden_metrics_for_version=None, otlp_traces_endpoint=None, collect_detailed_traces=None, disable_async_output_proc=False, scheduling_policy='fcfs', scheduler_cls='vllm.core.scheduler.Scheduler', override_neuron_config=None, override_pooler_config=None, compilation_config=None, kv_transfer_config=None, worker_cls='auto', worker_extension_cls='', generation_config='auto', override_generation_config=None, enable_sleep_mode=False, calculate_kv_scales=False, additional_config=None, enable_reasoning=False, reasoning_parser=None, disable_log_requests=False, max_log_len=None, disable_fastapi_docs=False, enable_prompt_tokens_details=False, enable_server_load_tracking=False, dispatch_function=<function ServeSubcommand.cmd at 0x7f81cc92dee0>)
+WARNING 03-23 05:00:57 [utils.py:2079] Found ulimit of 8192 and failed to automatically increase with error current limit exceeds maximum limit. This can cause fd limit errors like `OSError: [Errno 24] Too many open files`. Consider increasing with ulimit -n
+INFO 03-23 05:00:57 [config.py:208] Replacing legacy 'type' key with 'rope_type'
+WARNING 03-23 05:00:57 [config.py:215] Replacing legacy rope_type 'su' with 'longrope'
+INFO 03-23 05:01:05 [config.py:1693] Chunked prefill is enabled with max_num_batched_tokens=2048.
+INFO 03-23 05:01:10 [__init__.py:256] Automatically detected platform cuda.
+INFO 03-23 05:01:12 [core.py:53] Initializing a V1 LLM engine (v0.8.1) with config: model='TIGER-Lab/VLM2Vec-Full', speculative_config=None, tokenizer='TIGER-Lab/VLM2Vec-Full', skip_tokenizer_init=False, tokenizer_mode=auto, revision=None, override_neuron_config=None, tokenizer_revision=None, trust_remote_code=True, dtype=torch.bfloat16, max_seq_len=2048, download_dir=None, load_format=LoadFormat.AUTO, tensor_parallel_size=1, pipeline_parallel_size=1, disable_custom_all_reduce=False, quantization=None, enforce_eager=False, kv_cache_dtype=auto,  device_config=cuda, decoding_config=DecodingConfig(guided_decoding_backend='xgrammar', reasoning_backend=None), observability_config=ObservabilityConfig(show_hidden_metrics=False, otlp_traces_endpoint=None, collect_model_forward_time=False, collect_model_execute_time=False), seed=None, served_model_name=TIGER-Lab/VLM2Vec-Full, num_scheduler_steps=1, multi_step_stream_outputs=True, enable_prefix_caching=True, chunked_prefill_enabled=True, use_async_output_proc=True, disable_mm_preprocessor_cache=False, mm_processor_kwargs=None, pooler_config=None, compilation_config={"level":3,"custom_ops":["none"],"splitting_ops":["vllm.unified_attention","vllm.unified_attention_with_output"],"use_inductor":true,"compile_sizes":[],"use_cudagraph":true,"cudagraph_num_of_warmups":1,"cudagraph_capture_sizes":[512,504,496,488,480,472,464,456,448,440,432,424,416,408,400,392,384,376,368,360,352,344,336,328,320,312,304,296,288,280,272,264,256,248,240,232,224,216,208,200,192,184,176,168,160,152,144,136,128,120,112,104,96,88,80,72,64,56,48,40,32,24,16,8,4,2,1],"max_capture_size":512}
+WARNING 03-23 05:01:13 [utils.py:2282] Methods determine_num_available_blocks,device_config,get_cache_block_size_bytes,initialize_cache not implemented in <vllm.v1.worker.gpu_worker.Worker object at 0x7faad654bb90>
+INFO 03-23 05:01:14 [parallel_state.py:967] rank 0 in world size 1 is assigned as DP rank 0, PP rank 0, TP rank 0
+INFO 03-23 05:01:14 [cuda.py:215] Using Flash Attention backend on V1 engine.
+Could not cache non-existence of file. Will ignore error and continue. Error: [Errno 13] Permission denied: '/home/ubuntu/.cache/huggingface/hub/models--TIGER-Lab--VLM2Vec-Full/.no_exist/0f078450a78f421b62630e4ade3da5778efd98fd/chat_template.json'
+[2025-03-23 05:01:14] ERROR file_download.py:1389: Could not cache non-existence of file. Will ignore error and continue. Error: [Errno 13] Permission denied: '/home/ubuntu/.cache/huggingface/hub/models--TIGER-Lab--VLM2Vec-Full/.no_exist/0f078450a78f421b62630e4ade3da5778efd98fd/chat_template.json'
+Could not cache non-existence of file. Will ignore error and continue. Error: [Errno 13] Permission denied: '/home/ubuntu/.cache/huggingface/hub/models--TIGER-Lab--VLM2Vec-Full/.no_exist/0f078450a78f421b62630e4ade3da5778efd98fd/chat_template.jinja'
+[2025-03-23 05:01:14] ERROR file_download.py:1389: Could not cache non-existence of file. Will ignore error and continue. Error: [Errno 13] Permission denied: '/home/ubuntu/.cache/huggingface/hub/models--TIGER-Lab--VLM2Vec-Full/.no_exist/0f078450a78f421b62630e4ade3da5778efd98fd/chat_template.jinja'
+/home/ubuntu/myenv/lib/python3.12/site-packages/transformers/models/auto/image_processing_auto.py:602: FutureWarning: The image_processor_class argument is deprecated and will be removed in v4.42. Please use `slow_image_processor_class`, or `fast_image_processor_class` instead
+  warnings.warn(
+Could not cache non-existence of file. Will ignore error and continue. Error: [Errno 13] Permission denied: '/home/ubuntu/.cache/huggingface/hub/models--TIGER-Lab--VLM2Vec-Full/.no_exist/0f078450a78f421b62630e4ade3da5778efd98fd/chat_template.json'
+[2025-03-23 05:01:15] ERROR file_download.py:1389: Could not cache non-existence of file. Will ignore error and continue. Error: [Errno 13] Permission denied: '/home/ubuntu/.cache/huggingface/hub/models--TIGER-Lab--VLM2Vec-Full/.no_exist/0f078450a78f421b62630e4ade3da5778efd98fd/chat_template.json'
+Could not cache non-existence of file. Will ignore error and continue. Error: [Errno 13] Permission denied: '/home/ubuntu/.cache/huggingface/hub/models--TIGER-Lab--VLM2Vec-Full/.no_exist/0f078450a78f421b62630e4ade3da5778efd98fd/chat_template.jinja'
+[2025-03-23 05:01:15] ERROR file_download.py:1389: Could not cache non-existence of file. Will ignore error and continue. Error: [Errno 13] Permission denied: '/home/ubuntu/.cache/huggingface/hub/models--TIGER-Lab--VLM2Vec-Full/.no_exist/0f078450a78f421b62630e4ade3da5778efd98fd/chat_template.jinja'
+INFO 03-23 05:01:16 [gpu_model_runner.py:1164] Starting to load model TIGER-Lab/VLM2Vec-Full...
+INFO 03-23 05:01:16 [config.py:3222] cudagraph sizes specified by model runner [1, 2, 4, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 104, 112, 120, 128, 136, 144, 152, 160, 168, 176, 184, 192, 200, 208, 216, 224, 232, 240, 248, 256, 264, 272, 280, 288, 296, 304, 312, 320, 328, 336, 344, 352, 360, 368, 376, 384, 392, 400, 408, 416, 424, 432, 440, 448, 456, 464, 472, 480, 488, 496, 504, 512] is overridden by config [512, 384, 256, 128, 4, 2, 1, 392, 264, 136, 8, 400, 272, 144, 16, 408, 280, 152, 24, 416, 288, 160, 32, 424, 296, 168, 40, 432, 304, 176, 48, 440, 312, 184, 56, 448, 320, 192, 64, 456, 328, 200, 72, 464, 336, 208, 80, 472, 344, 216, 88, 120, 480, 352, 248, 224, 96, 488, 504, 360, 232, 104, 496, 368, 240, 112, 376]
+WARNING 03-23 05:01:16 [topk_topp_sampler.py:63] FlashInfer is not available. Falling back to the PyTorch-native implementation of top-p & top-k sampling. For the best performance, please install FlashInfer.
+INFO 03-23 05:01:16 [weight_utils.py:257] Using model weights format ['*.safetensors']
+Ignored error while writing commit hash to /home/ubuntu/.cache/huggingface/hub/models--TIGER-Lab--VLM2Vec-Full/refs/main: [Errno 13] Permission denied: '/home/ubuntu/.cache/huggingface/hub/models--TIGER-Lab--VLM2Vec-Full/refs/main'.
+[2025-03-23 05:01:16] WARNING _snapshot_download.py:264: Ignored error while writing commit hash to /home/ubuntu/.cache/huggingface/hub/models--TIGER-Lab--VLM2Vec-Full/refs/main: [Errno 13] Permission denied: '/home/ubuntu/.cache/huggingface/hub/models--TIGER-Lab--VLM2Vec-Full/refs/main'.
+Loading safetensors checkpoint shards:   0% Completed | 0/2 [00:00<?, ?it/s]
+Loading safetensors checkpoint shards:  50% Completed | 1/2 [00:37<00:37, 37.10s/it]
+Loading safetensors checkpoint shards: 100% Completed | 2/2 [01:02<00:00, 30.29s/it]
+Loading safetensors checkpoint shards: 100% Completed | 2/2 [01:02<00:00, 31.31s/it]
+
+INFO 03-23 05:02:19 [loader.py:429] Loading weights took 62.67 seconds
+INFO 03-23 05:02:19 [gpu_model_runner.py:1176] Model loading took 7.9083 GB and 63.438900 seconds
+INFO 03-23 05:02:19 [gpu_model_runner.py:1421] Encoder cache will be initialized with a budget of 2048 tokens, and profiled with 3 image items of the maximum feature size.
+INFO 03-23 05:02:28 [backends.py:409] Using cache directory: /home/ubuntu/.cache/vllm/torch_compile_cache/dde0fd4b63/rank_0_0 for vLLM's torch.compile
+INFO 03-23 05:02:28 [backends.py:419] Dynamo bytecode transform time: 7.30 s
+INFO 03-23 05:02:31 [backends.py:132] Cache the graph of shape None for later use
+INFO 03-23 05:02:56 [backends.py:144] Compiling a graph for general shape takes 27.31 s
+INFO 03-23 05:03:04 [monitor.py:33] torch.compile takes 34.61 s in total
+INFO 03-23 05:03:05 [kv_cache_utils.py:537] GPU KV cache size: 28,704 tokens
+INFO 03-23 05:03:05 [kv_cache_utils.py:540] Maximum concurrency for 2,048 tokens per request: 14.02x
+INFO 03-23 05:03:30 [gpu_model_runner.py:1499] Graph capturing finished in 25 secs, took 1.58 GiB
+INFO 03-23 05:03:30 [core.py:138] init engine (profile, create kv cache, warmup model) took 70.27 seconds
+INFO 03-23 05:03:30 [api_server.py:1024] Starting vLLM API server on http://0.0.0.0:8070
+INFO 03-23 05:03:30 [launcher.py:26] Available routes are:
+INFO 03-23 05:03:30 [launcher.py:34] Route: /openapi.json, Methods: HEAD, GET
+INFO 03-23 05:03:30 [launcher.py:34] Route: /docs, Methods: HEAD, GET
+INFO 03-23 05:03:30 [launcher.py:34] Route: /docs/oauth2-redirect, Methods: HEAD, GET
+INFO 03-23 05:03:30 [launcher.py:34] Route: /redoc, Methods: HEAD, GET
+INFO 03-23 05:03:30 [launcher.py:34] Route: /health, Methods: GET
+INFO 03-23 05:03:30 [launcher.py:34] Route: /load, Methods: GET
+INFO 03-23 05:03:30 [launcher.py:34] Route: /ping, Methods: POST, GET
+INFO 03-23 05:03:30 [launcher.py:34] Route: /tokenize, Methods: POST
+INFO 03-23 05:03:30 [launcher.py:34] Route: /detokenize, Methods: POST
+INFO 03-23 05:03:30 [launcher.py:34] Route: /v1/models, Methods: GET
+INFO 03-23 05:03:30 [launcher.py:34] Route: /version, Methods: GET
+INFO 03-23 05:03:30 [launcher.py:34] Route: /v1/chat/completions, Methods: POST
+INFO 03-23 05:03:30 [launcher.py:34] Route: /v1/completions, Methods: POST
+INFO 03-23 05:03:30 [launcher.py:34] Route: /v1/embeddings, Methods: POST
+INFO 03-23 05:03:30 [launcher.py:34] Route: /pooling, Methods: POST
+INFO 03-23 05:03:30 [launcher.py:34] Route: /score, Methods: POST
+INFO 03-23 05:03:30 [launcher.py:34] Route: /v1/score, Methods: POST
+INFO 03-23 05:03:30 [launcher.py:34] Route: /v1/audio/transcriptions, Methods: POST
+INFO 03-23 05:03:30 [launcher.py:34] Route: /rerank, Methods: POST
+INFO 03-23 05:03:30 [launcher.py:34] Route: /v1/rerank, Methods: POST
+INFO 03-23 05:03:30 [launcher.py:34] Route: /v2/rerank, Methods: POST
+INFO 03-23 05:03:30 [launcher.py:34] Route: /invocations, Methods: POST
+INFO:     Started server process [2239]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+```
+
+Depending on the settings of the server, you may or may not be able to do concurrency. An asyncio.Semaphore is a concurrency primitive in Python’s asyncio library that limits how many coroutines can run a particular section of code at once. When you do:
+
+```python
+semaphore = asyncio.Semaphore(1)
+```
+you’re creating a semaphore that allows only one coroutine to acquire it at a time. In other words, it enforces that any code wrapped with:
+
+```python
+async with semaphore:
+    ...
+```
+runs sequentially – only one piece of code can be in that block at a time.
+
+If you had something like Semaphore(5), up to 5 coroutines could enter that block concurrently, but no more. The purpose is usually to throttle or rate-limit some resource-intensive or external call so you don’t overwhelm a system (e.g., a rate-limited API) or cause an overly heavy load on your local resources.
+
+Does asyncio create multiple threads or is it a single thread in an event loop? By default, asyncio runs its event loop in a single thread and manages concurrency by interleaving tasks (coroutines). This is cooperative concurrency, not parallelism. Each coroutine yields control (for example, when awaiting I/O) back to the event loop so other tasks can run.
+
+You can, however, combine asyncio with libraries such as concurrent.futures.ThreadPoolExecutor or ProcessPoolExecutor to do work in multiple threads or processes, but pure asyncio uses an event loop that generally operates on a single thread. In this snippet:
+
+```python
+semaphore = asyncio.Semaphore(1)
+
+async def process_document(document: Document):
+    async with semaphore:
+        batch_ids = await self._process_batch(
+            [document], ttl_seconds, redis_client, **kwargs
+        )
+        return batch_ids
+
+tasks = [
+    asyncio.create_task(process_document(document))
+    for document in documents
+]
+results = await asyncio.gather(*tasks)
+```
+- semaphore = asyncio.Semaphore(1) ensures that only one coroutine at a time can enter the async with semaphore: block.
+- As a result, only one document is processed (i.e., embedded and stored in Redis) at a time in this particular piece of code.
+- So, there are never two concurrent requests going out to the embedding server or to Redis in that specific code path, because each call to _process_batch() (and transitively the calls to aadd_documents() and redis_client.expire()) happens sequentially.
+
+
+- KV cache tokens
+Inside a Transformer, each layer stores “keys” and “values” for every token in the sequence, so it can quickly attend to previously processed tokens. This key/value data is the “KV cache.”
+
+For each token, at each layer, the model stores “key” and “value” tensors. This is how the attention mechanism can refer back to previously processed tokens when generating or embedding the next token. If requests truly run in parallel (i.e., the GPU is switching back and forth between them at the layer or batch level), the model needs the KV data for all those active sequences available in GPU memory, so it can instantly access previous tokens’ keys/values. So if each request uses 4,096 tokens, 10 such requests in flight at once require space for 10×4,096=40,960 tokens in the KV cache.
+
+What if I have 10 concurrent requests of 4096 tokens and my gpu memory can handle 40,960 tokens in KV cache total, and then the 10th request is followed by another request, is there enough time for the KV cache to be freed before the 11th requests comes in and demands another 4096 tokens of KV cache? Generally, yes—once a given request is finished (i.e., its prompt and generation/embedding work is done), the model no longer needs to store the key/value states for that request, and that portion of the KV cache is freed up. So if your GPU memory can handle exactly 40,960 tokens (10 parallel requests at 4,096 each) and you only add an 11th request after at least one of those earlier requests has fully completed, there would be new space available in the KV cache for that next request.
+
+However, how smoothly that works depends on:
+- Whether the earlier requests truly “finished”
+  - If even one of those 10 requests is still in flight when the 11th arrives, you’re effectively going up to 11 concurrent requests. If your system only has capacity for 40,960 tokens in the KV cache, and you suddenly need 45,056 tokens (11 × 4,096), that’s beyond your limit. At that point, vLLM 
+    - Queue or delay the 11th request until memory is freed,
+    - Evict older requests’ KV states (causing a performance drop for those requests),
+    - Or potentially fail with an out-of-memory error (depending on the server’s behavior).
+Many server frameworks will serialize or queue new requests if the GPU is at capacity, ensuring you never exceed the KV memory limit. Others may attempt to serve all requests at once, risking out-of-memory if concurrency spikes beyond your KV cache capacity. vLLM also does “chunked prefill,” where long prompts might be processed incrementally, so the peak memory usage per request might not be at the full 4,096 tokens simultaneously—depending on the server’s scheduling.
+
+Does vLLM do queueing of requests when concurrency is reached?
+Yes—vLLM implements a scheduling policy and can effectively queue or batch incoming requests so they don’t exceed the GPU’s memory capacity. By default, vLLM uses a “First Come, First Served” (FCFS) scheduler. If your concurrency is very high (and you’re near the KV cache or GPU memory limit), new requests may be queued while the engine finishes processing earlier ones.
+
+Highlights from vLLM’s scheduling:
+- FCFS scheduling: Incoming requests are handled in the order they arrive, with each request being put in a queue if the system is at capacity.
+- Chunked prefill: For large prompts, vLLM processes them incrementally, which helps reduce the maximum memory usage at any one moment.
+- Per-request concurrency limit: If you exceed your total KV cache limit with simultaneous requests, vLLM may delay (queue) new requests until capacity is freed.
+
+
+
+
+“GPU KV cache size: 28,688 tokens” means that with your GPU memory, the engine can store up to ~28.7k tokens of K/V cache at once. That “GPU KV cache size: 28,688 tokens” is telling you how many tokens’ worth of key-value cache can fit into your GPU memory across all active requests at runtime.  The GPU KV cache size of 28,688 tokens means that, across all sequences currently being processed in parallel, you can store up to ~28.7k tokens worth of K/V states in GPU memory. 
+
+
+
+“Maximum concurrency for 4,096 tokens per request: 7.00x” means you can handle about 7 concurrent requests at the full 4096-token context each before running out of GPU memory for caching. In other words, 7 parallel requests of length 4096 tokens.
+
+
+H100 box
 
 g5.12xlarge
 sg-036a8002c430fc904

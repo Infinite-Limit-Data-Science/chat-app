@@ -53,9 +53,12 @@ class MixedContentTextSplitter(TextSplitter):
             chunk_overlap=chunk_overlap,
             length_function=length_function,
         )
+        self.num_image_docs = 0
 
     def split_documents(self, docs: List[Document]) -> List[Document]:
         output_docs = []
+        self.num_image_docs = 0
+
         for doc in docs:
             new_meta = {
                 k: v
@@ -73,6 +76,7 @@ class MixedContentTextSplitter(TextSplitter):
 
             for chunk in chunks:
                 if self.img_regex.match(chunk):
+                    self.num_image_docs += 1
                     match = re.search(r'src="([^"]+)"', chunk, flags=re.IGNORECASE)
                     if match:
                         chunk = match.group(1)

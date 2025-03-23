@@ -1,6 +1,7 @@
 from typing import Dict, Any
 import os
 import json
+import time
 import pytest
 from pathlib import Path
 from uuid import uuid4
@@ -139,5 +140,12 @@ async def test_pdf_embed(
         vector_config=chat_bot_config.vectorstore,
         embeddings_config=chat_bot_config.embeddings,
     )
+
+    start_time = time.perf_counter()
     ids = await ingestor.ingest()
+    end_time = time.perf_counter()
+
+    elapsed = end_time - start_time
+    print(f"Ingestion took {elapsed:.2f} seconds")
+
     assert len(ids) > 0
