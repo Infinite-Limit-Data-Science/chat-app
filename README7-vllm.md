@@ -18,146 +18,8 @@ sudo vi /etc/security/limits.conf
 
 ulimit -a
 
-### model weights: token embedding table
-The Token Embedding Table maps each token ID from the vocabulary to a continuous vector representation. The token id is often a word or subword from the vocabulary. For example, the token “the” is often mapped to the ID 464. Thus, when you see token ID 464 at runtime, that refers to the word “the.” In most transformer architectures, every token is mapped to a vector whose dimensionality matches the model’s internal hidden dimension (sometimes referred to as “d_model”). So if your model uses 3072 as the hidden dimension, all tokens—“the” included—will have an associated 3072-dimensional embedding vector. The fact that 3072 is quite large just reflects the architecture’s capacity. It allows the model to store richer contextual and semantic information for each token than if the dimension were smaller.
-
-Each embedding vector (for instance, the 3072-dimensional vector for “the”) is learned end-to-end to capture whatever the model finds most useful for its predictive objectives (e.g., next-token prediction). While each individual dimension isn’t interpretable on its own, taken together, the dimensions encode patterns of usage and context—syntactic, semantic, even morphological traits—that help the model distinguish how tokens behave in language. Essentially:
-- High Dimensionality: The large number of dimensions gives the model a broad “budget” of representational capacity
-- Learned, Not Predefined: The vectors are learned from data
-- Contextual and Semantic Nuances: Tokens with similar usage and meaning often end up with similar embeddings, because the model groups them according to how they co-occur in context.
-Hence, although the embedding matrix itself is just a big table indexed by token IDs, each row (embedding) is a rich, learned representation that encodes diverse nuance about that token’s role in language.
-
-The length of the vocabulary is determined by the vocab_size in the transformer's model card config.json file. For example, for vlm2vec-full, vocab_size is 32064. The shape of the matrix of the token embedding table is [32064, 3072] for vlm2-vec full. The vocab_size is thus 32064 and, as already mentioned, the dimensions is 3072. Index i in this matrix corresponds to the embedding for the i-th token in the vocabulary. The table does not store the literal text “the” (or any other strings). Instead, each row in the table is just a vector of learned numbers (floating-point parameters). Row index i (for example, 464 for “the”) corresponds to a 3072-dimensional vector (like [0.12, -0.03, 0.78, ...]) that the model learns to represent the concept of that token.
-
-So if it doesn't store "the" or any other string that represents an actual real vocabulary, such as the english vernacular, then when I send the model English input, how does it know to map the given words to the index in the token embedding table? That mapping is handled by the tokenizer. Essentially, the tokenizer is a separate component (or module) that knows:
-- How to split your raw text (e.g., "The cat sat on the mat.") into tokens (subword units, wordpieces, bytes, etc.).
-- How to look up each token’s ID in the model’s vocabulary (so “the” might become 464, “cat” might be 1201, etc.).
-
-Once the tokenizer has converted your English text into a sequence of token IDs, the model itself just sees those IDs. At that point, each ID is an index into the [vocab_size, hidden_dim] token embedding table, retrieving the learned vector for that token.
-
-When you send ["The", " ", "cat", ...] (just an example) to the tokenizer, it uses a learned or defined vocabulary that says:
-- "The" → token ID 464
-- " " → token ID 220
-- "cat" → token ID 1201
-
-This step is purely text processing—no numeric embeddings yet, just string-to-integer lookups.
-
-Inside the model, each token ID is used to index into the token embedding matrix. If 464 means “The,” row 464 in the [vocab_size, hidden_dim] matrix is the continuous vector representing that token.
-
-Back to text (if needed): When the model outputs token IDs (e.g., when generating text), the tokenizer can convert them back into strings. That’s how you get a final text response like “Hello world!”
-
-Hence, the system is split into two major parts:
-- A tokenizer that handles string <-> token ID conversions.
-- The model (with its embedding table) that handles token ID <-> vector mappings for actual computation.
-
-Is the tokenizer stored in the vLLM instance running, or is handled by the actual application that sends requests to vLLM (for example, hugging face transformers downloads the model card configs such as config.json, special_tokens_map.json, tokenizer_config.json, and tokenizer.json when you communciate with model) ?  **By default, vLLM handles the tokenizer on the server side, loading it automatically from the Hugging Face model repository (along with the config and weights) when you run something like: vllm serve my-hf-model. I have verified this!**
-
-```shell
-curl -LsSf https://astral.sh/uv/install.sh | sh
-source $HOME/.local/bin/env
-uv venv myenv --python 3.12 --seed
-source myenv/bin/activate
-uv pip install vllm
-vllm serve --trust-remote-code --max-model-len 4096 TIGER-Lab/VLM2Vec-Full
-```
-
-**The vllm serve command will download config.json, special_tokens_map.json, tokenizer_config.json, and tokenizer.json!!!!**
-
-So, in that scenario:
-- vLLM downloads and caches the tokenizer files (e.g. tokenizer.json, tokenizer_config.json, etc.).
-- When a request comes in with raw text, vLLM applies the tokenizer to convert the text to token IDs.
-- After generating output token IDs, vLLM converts them back to text using the same tokenizer.
-
-**Is the token embedding table in any particular order? Not in any semantic or alphabetical sense.** Internally, the embedding table is simply indexed by token ID in ascending order:
-- Row 0 in the embedding matrix corresponds to token ID 0.
-- Row 1 corresponds to token ID 1.
-- ... and so on, up to token ID 
-
-However, how those token IDs were assigned in the first place depends on the tokenizer. For example, in a Byte-Pair Encoding (BPE) or WordPiece tokenizer, the algorithm might merge subwords by frequency or other heuristics, and assign lower IDs to more frequent tokens. But there is no strict rule that “token 0 must be [PAD]” or “token 464 must be the” across all models—each tokenizer might have a different mapping.
-
-So while the embedding matrix is laid out in numerical ID order, that ordering does not directly represent any alphabetical or semantic structure. It’s just “row = token ID.” Any deeper meaning comes from how the tokenizer assigned those IDs.
-
-So if the token ids are not in any particular order, then how is semantic relationships calculated between tokens? **Because the IDs themselves aren’t what encodes meaning—the learned embedding vectors do (those 3072 dimensional embeddings).** The numeric ID is just an index into the embedding table, associating a text word to anumeric id which in turn is linked to the critical embedding. When you train a Transformer:
-- Random initialization:
-  - At first, each row in the token embedding matrix is set to random numbers, regardless of the token’s ID or any ordering.
-- Learning process:
-  - During training, the model updates those embedding vectors so that tokens with similar contexts end up with similar vectors.
-  - This means words that appear in similar linguistic or semantic environments get embedding vectors that are closer together in the embedding space.
-- Result:
-  - By the end of training, tokens with similar meaning or usage have similar embeddings, even though their numeric IDs may be far apart.
-  - The token ID is just a pointer to that row in the matrix. The model learns how to shape those rows so that “cat” and “dog” might end up closer together than “cat” and “democracy.”
-In other words, there’s no inherent semantic structure in the IDs themselves. The semantic relationships emerge because the model’s training drives the embedding vectors to reflect meaning, usage, and context.
-
-All in all, each token ID directly corresponds to one row in the token embedding matrix, and that row is the learned semantic representation for that token. The ID is simply an integer index, but the row of the matrix contains the actual embedding vector that captures the token’s semantics (as learned during training).
-- When the model sees token ID i, it looks up row i in the embedding matrix
-- That row is a high-dimensional vector (e.g. 3072 dimensions) that represents the meaning or usage of that token. 
-- During training, the model adjusts these vectors so tokens that appear in similar contexts end up with embeddings that are close in vector space—even if their IDs are numerically far apart.
-
-Why is the token embedding table loaded in GPU memory? Because it’s part of the model’s trainable parameters and must be accessed repeatedly (and very quickly) during inference (or training). Specifically:
-- Fast lookups:
-  - Each token ID has to be looked up in the embedding table for every token in the sequence. Doing this on the CPU and copying to the GPU for each token would be a big bottleneck.
-  - Having the embedding matrix on the GPU allows direct, high-throughput lookups without transferring data from CPU to GPU.
-- Integration with subsequent layers:
-  - After a token is converted to its embedding vector, the model immediately processes that vector in multiple GPU-accelerated layers (attention, feed-forward, etc.).
-  - Keeping the embeddings in GPU memory ensures these operations remain on GPU without unnecessary copies.
-- They are trainable parameters:
-  - Like other Transformer weights (attention matrices, feed-forward layers, etc.), the token embedding table is trained to produce optimal representations.
-  - Storing them on GPU makes both training and inference efficient, as with all other model parameters.
-
-### model weights: positional embedding table
-Given that the Token Embedding Table stores the vocabulary ids and the associating vectors that are searched to discover semantic relationships, it seems all that is needed is there. Why have a positional embedding table? Semantic similarity (as captured by token embeddings) and sequence ordering (which token appears first, second, etc. in an input sequence) are two different concepts. Token embeddings answer the question “what token is this?” but not “where does this token appear in the sentence?”
-- Token Embeddings capture semantic relationships
-  - Vectors for “dog” and “cat” might be close if they frequently appear in similar contexts.
-  - This helps the model generalize across synonyms or related words.
-- Order / Positional Information is structural
-  - The model must know: is “cats” the subject of a sentence or is it the object?
-  - Are we talking about “I love cats” or “cats love me”? Both share the tokens “I,” “love,” “cats,” but they have fundamentally different meanings because the tokens appear in a different order.
-- Why “semantic closeness” is not enough
-  - Without telling the model that “I” is the first token, “love” is the second, and “cats” is the third, the Transformer only sees three embeddings (for “I,” “love,” and “cats”) in some set.
-  - Self-attention by itself would treat the input as an unordered collection of vectors. It wouldn’t know which vector came before which, so it can’t infer who loves whom.
-    - Self-attention is still extremely valuable even if the base mechanism doesn’t inherently encode sequence order. It’s the core method by which a Transformer allows each token to “see” (or “attend to”) the other tokens in the input.
-    - Self-attention: For each token, it computes a “query” vector and compares it to the “key” vectors of all other tokens, thereby gathering relevant information from them (the “value” vectors).
-    - This is crucial for capturing what other tokens appear in the same sentence (or sequence) and how strongly they are related, whether or not we know their position.
-    - Instead of reading tokens one by one (as a typical RNN would), self-attention can use the entire set of token embeddings at once. This helps capture long-range dependencies and broad contextual clues.
-    - Requires positional embeddings to also learn ‘who is first, second, etc.’
-    - On its own, self-attention sees a “bag” of embeddings. It knows how strongly token A relates to token B, but not who comes before whom.
-    - By adding positional embeddings, you give the model the sequential context it needs to figure out “I is the first token,” “love is the second,” and so on.
-    - That way, when self-attention compares tokens, it also “knows” each token’s position in the sentence.
-    - You can implement and run self-attention without a positional embedding table, but the model then has no information about token order in the sequence. By default, self-attention simply processes a set of token vectors, treating them as if their order doesn’t matter. 
-    - So while you can do self-attention without positional embeddings, it wouldn’t help you solve tasks that depend on word order. **The most common design is to combine self-attention with a positional embedding approach to handle both content (what each token is) and structure (where it appears in the sequence).**
-- Positional Embeddings
-  - By adding positional vectors (e.g., position #1, position #2, etc.) to each token’s embedding, we effectively “tag” each token with its place in the sequence.
-  - This is what allows the model to learn that “the first token might be the subject,” or “the second token might be the verb,” and so forth.
-
-But there are so many ways to arrange words in a sentence that express different meanings. If we were to arrange words all the different ways possible, we will have an infinite number of permutations. **Indeed, there are infinitely many possible word permutations—but a Transformer (or any language model) does not store every permutation. Instead, it learns generalizable patterns of how word order affects meaning.** Let's discuss this concept of "generalizable patterns". Transformers use Statistical/Distributional Learning. During training, the model is exposed to vast amounts of text with all sorts of word orders and contexts. It doesn’t memorize each sentence arrangement individually. Instead, the self-attention mechanism plus positional embeddings allow it to learn probabilistic relationships: “If Token A appears before Token B, the meaning often shifts in this way.”
-
-Transformers don’t rely on classical statistical tests like z-tests, t-tests, or chi-squared tests to learn those relationships. Instead, they’re trained using gradient-based optimization (e.g. stochastic gradient descent) on a loss function such as cross-entropy. Classical statistical tests (z-test, t-test, chi-squared, etc.) are designed for one-off hypothesis testing—you have a small set of parameters and a well-defined hypothesis (e.g., “Is the mean of group A different from the mean of group B?”), and you compute a test statistic based on a probability distribution (the z-distribution, t-distribution, etc.). In neural network training (including Transformers), we handle many parameters (millions or billions) and a large dataset. Rather than a single hypothesis test, we do iterative fitting to make the model’s predictions match the data. Iterative fitting is the process of repeatedly adjusting a model’s parameters so that its predictions get closer and closer to the actual data. Here’s a simple analogy:
-- Initial Guess: You start with random guesses for how the model should behave (like randomly chosen parameters).
-- Check Error: You see how far off the model’s predictions are from the real answers.
-- Adjust: You tweak the parameters to reduce that error slightly.
-- Repeat: You go back to Step 2 with the updated model and do it again on more data.
-- Over many rounds of this “guess, check, adjust” cycle (like practicing a skill repeatedly), the model’s parameters slowly converge to values that produce better and better predictions. This is fundamentally what happens in gradient descent training for neural networks.
-
-Two key pieces of iterative fitting are:
-- Cross-Entropy Loss
-- Stochastic Gradient Descent (SGD)
-
-Cross-Entropy loss is a measure of how “wrong” the model’s probability distribution is compared to the actual outcomes (labels) in your data.
-It isn't using z-tests, z-scores, confidence interval, significance level, p-values, central limit theorem to know whether to reject or fail to reject the null hypothesis.Cross-entropy does not use classical hypothesis test, such as z-tests, t-tests, and chi-squared tests. Instead, it’s a direct measure of the difference between two probability distributions:
-- The model’s predicted distribution over possible outcomes (for instance, which token comes next?), and
-- The true distribution (which in a supervised dataset is typically 100% on the correct label/token).
-
-Formally, if the model outputs a probability distribution p for the next token and the ground truth distribution is q (e.g., the correct token with probability 1, or a “one-hot” vector), then the cross-entropy is:
-
-$$
-H(q,p) = - \sum_{x} q(x) \log p(x)
-$$
-
-No p-values, z-scores, or explicit use of the central limit theorem are involved here. Instead, the model just directly sees how well its predicted probabilities match reality:
-- If p(x) is high for the actual label x, the cross-entropy is lower (the model is doing well).
-- If p(x) is low for the actual label x, the cross-entropy is higher (the model is doing poorly).
-
-In a z-test, you usually have one main statistic (the difference of means, for instance) and you know (or assume) its approximate distribution if the null hypothesis is true. In deep learning, you have millions (or billions) of parameters. The cross-entropy is simply a scalar objective that the optimizer tries to push down, but there’s no simple, “this is distributed as a Z under the null” derivation. We don’t do a one-time test; we do a long optimization procedure over enormous data. Neural network training is an iterative process: in each gradient update, you see a small batch, compute cross-entropy, adjust parameters. Over many epochs, you (hopefully) converge to a model that generalizes well. There’s no single “reject/fail to reject” moment. 
+ 
+ 
 
 Stochastic Gradient Descent (SGD) is a method of iterative fitting that works by repeatedly nudging the model’s parameters in the direction that reduces the training error (loss). Here’s a step-by-step outline of how it happens:
 - Initialize Parameters
@@ -513,13 +375,10 @@ ulimit -n
 docker container run -d -p 6379:6379 redis/redis-stack-server:latest
 
 source myenv/bin/activate
-# below takes 13 minutes and 25 seconds
 vllm serve --port 8070 --host 0.0.0.0 --trust-remote-code --tensor-parallel-size 1 --max-model-len 2048 --max-num-batched-tokens 2048 --task embed TIGER-Lab/VLM2Vec-Full
-# below takes 7 minutes and 30 seconds (sometimes works, sometimes crashes)
+# below takes 2 minutes and 55 seconds (when running on same server as model)
 vllm serve --port 8070 --host 0.0.0.0 --trust-remote-code --tensor-parallel-size 1 --max-model-len 2048 --max-num-batched-tokens 4096 --task embed TIGER-Lab/VLM2Vec-Full
-# below takes 5 minutes and 23 seconds (sometimes works, sometimes crashes)
-vllm serve --port 8070 --host 0.0.0.0 --trust-remote-code --tensor-parallel-size 1 --max-model-len 2048 --max-num-batched-tokens 6144 --task embed TIGER-Lab/VLM2Vec-Full
-# the below fails
+# below takes 2 minutes and 53 seconds (sometimes works, sometimes crashes)
 vllm serve --port 8070 --host 0.0.0.0 --trust-remote-code --tensor-parallel-size 1 --max-model-len 2048 --max-num-batched-tokens 8192 --task embed TIGER-Lab/VLM2Vec-Full
 
 INFO 03-23 05:00:55 [__init__.py:256] Automatically detected platform cuda.
