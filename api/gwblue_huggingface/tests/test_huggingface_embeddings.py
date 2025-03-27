@@ -9,8 +9,8 @@ from langchain_redis import RedisConfig
 from redisvl.query.filter import Tag
 from ..huggingface_embeddings import HuggingFaceEmbeddings
 from ..huggingface_transformer_tokenizers import (
-    BgeLargePretrainedTokenizer,
-    VLM2VecFullPretrainedTokenizer,
+    get_tokenizer_class_by_prefix,
+    BaseLocalTokenizer,
 )
 from langchain_community.document_loaders import PyPDFLoader
 from ...gwblue_document_loaders.parsers import Base64BlobParser
@@ -59,17 +59,18 @@ def embeddings() -> HuggingFaceEmbeddings:
 
 
 @pytest.fixture
-def bge_tokenizer() -> BgeLargePretrainedTokenizer:
-    return BgeLargePretrainedTokenizer()
+def bge_tokenizer() -> BaseLocalTokenizer:
+    model_name = "BAAI/bge-large-en-v1.5"
+    return get_tokenizer_class_by_prefix(model_name)(model_name)
 
 
 @pytest.fixture
-def vlm_tokenizer() -> VLM2VecFullPretrainedTokenizer:
-    return VLM2VecFullPretrainedTokenizer()
-
+def vlm_tokenizer() -> BaseLocalTokenizer:
+    model_name = "TIGER-Lab/VLM2Vec-Full"
+    return get_tokenizer_class_by_prefix(model_name)(model_name)
 
 @pytest.fixture
-def text_chunks(vlm_tokenizer: VLM2VecFullPretrainedTokenizer) -> List[str]:
+def text_chunks(vlm_tokenizer: BaseLocalTokenizer) -> List[str]:
     docs = [
         Document(page_content=dummy_corpus1, metadata={"source": "book", "page": 0})
     ]
@@ -89,7 +90,7 @@ def text_chunks(vlm_tokenizer: VLM2VecFullPretrainedTokenizer) -> List[str]:
 
 
 @pytest.fixture
-def mixed_message_chunks(vlm_tokenizer: VLM2VecFullPretrainedTokenizer) -> List[str]:
+def mixed_message_chunks(vlm_tokenizer: BaseLocalTokenizer) -> List[str]:
     pdf_path = Path(__file__).parent / "assets" / "jpeg.pdf"
     loader = PyPDFLoader(
         pdf_path,
@@ -117,7 +118,8 @@ def mixed_message_chunks(vlm_tokenizer: VLM2VecFullPretrainedTokenizer) -> List[
 
 @pytest.fixture
 def vectorstore(
-    embeddings: HuggingFaceEmbeddings, vlm_tokenizer: VLM2VecFullPretrainedTokenizer
+    embeddings: HuggingFaceEmbeddings, 
+    vlm_tokenizer: BaseLocalTokenizer
 ) -> Iterator[MultiModalVectorStore]:
     config = RedisConfig(
         index_name="test1",
@@ -125,7 +127,7 @@ def vectorstore(
         metadata_schema=[
             {"name": "source", "type": "tag"},
         ],
-        embedding_dimensions=vlm_tokenizer.dimensions,
+        embedding_dimensions=vlm_tokenizer.vector_dimension_length,
     )
 
     store = MultiModalVectorStore(embeddings, config=config)
@@ -140,18 +142,18 @@ def vectorstore(
 # @pytest.mark.skip(reason="Temporarily disabled for debugging")
 def test_bge_embed_documents(
     text_embeddings: text_embeddings,
-    bge_tokenizer: BgeLargePretrainedTokenizer,
+    bge_tokenizer: BaseLocalTokenizer,
 ):
     embedded_vectors = text_embeddings.embed_documents([dummy_corpus1])
-    assert len(embedded_vectors[0]) == bge_tokenizer.dimensions
+    assert len(embedded_vectors[0]) == bge_tokenizer.vector_dimension_length
 
 
 def test_vlm_embed_documents(
     embeddings: HuggingFaceEmbeddings,
-    vlm_tokenizer: VLM2VecFullPretrainedTokenizer,
+    vlm_tokenizer: BaseLocalTokenizer,
 ):
     embedded_vectors = embeddings.embed_documents([dummy_corpus1])
-    assert len(embedded_vectors[0]) == vlm_tokenizer.dimensions
+    assert len(embedded_vectors[0]) == vlm_tokenizer.vector_dimension_length
 
 
 def test_embed_multiple_documents(embeddings: HuggingFaceEmbeddings):

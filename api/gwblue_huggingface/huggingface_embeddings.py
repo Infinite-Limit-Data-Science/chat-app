@@ -5,7 +5,6 @@ from langchain_core.embeddings import Embeddings
 from pydantic import ConfigDict, Field, field_validator, model_validator
 from typing_extensions import Self
 from .inference_schema import HuggingFaceInferenceServerMixin
-from .huggingface_inference_server_config import HuggingFaceEmbeddingsConfig
 from .huggingface_inference_client import HuggingFaceInferenceClient
 
 

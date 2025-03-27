@@ -35,15 +35,15 @@ from ..huggingface_chat_model import HuggingFaceChatModel
 from ..huggingface_embeddings import HuggingFaceEmbeddings
 from .corpus import examples
 from .tools import PandasExpressionTool, PandasExpressionInput
-from ..huggingface_transformer_tokenizers import VLM2VecFullPretrainedTokenizer
+from ..huggingface_transformer_tokenizers import (
+    get_tokenizer_class_by_prefix,
+    BaseLocalTokenizer,
+)
 from ...gwblue_vectorstores.redis.multimodal_vectorstore import MultiModalVectorStore
 
 load_dotenv()
 
-_MAX_INPUT_TOKENS = 12582
-
-_MAX_TOTAL_TOKENS = 16777
-
+_MAX_NEW_TOKENS = 2048
 
 def _model_config(model_type: str, model_name: str) -> str:
     models = json.loads(os.environ[model_type])
@@ -57,15 +57,19 @@ def _model_config(model_type: str, model_name: str) -> str:
         "provider": model["endpoints"][0]["provider"],
     }
 
+@pytest.fixture
+def llama_11B_vision_instruct() -> BaseLocalTokenizer:
+    model_name = "meta-llama/Llama-3.2-11B-Vision-Instruct"
+    return get_tokenizer_class_by_prefix(model_name)(model_name)
 
 @pytest.fixture
-def llm() -> HuggingFaceLLM:
+def llm(llama_11B_vision_instruct: BaseLocalTokenizer) -> HuggingFaceLLM:
     config = _model_config("MODELS", "meta-llama/Llama-3.2-11B-Vision-Instruct")
 
     return HuggingFaceLLM(
         base_url=config["url"],
         credentials=os.environ["TEST_AUTH_TOKEN"],
-        max_tokens=_MAX_TOTAL_TOKENS - _MAX_INPUT_TOKENS,
+        max_tokens=_MAX_NEW_TOKENS,
         temperature=0.8,
         provider=config["provider"],
         model=config["name"],
@@ -90,13 +94,13 @@ def embeddings() -> HuggingFaceEmbeddings:
 
 
 @pytest.fixture
-def vlm_tokenizer() -> VLM2VecFullPretrainedTokenizer:
-    return VLM2VecFullPretrainedTokenizer()
-
+def vlm_tokenizer() -> BaseLocalTokenizer:
+    model_name = "TIGER-Lab/VLM2Vec-Full"
+    return get_tokenizer_class_by_prefix(model_name)(model_name)
 
 @pytest.fixture
 def vectorstore(
-    embeddings: HuggingFaceEmbeddings, vlm_tokenizer: VLM2VecFullPretrainedTokenizer
+    embeddings: HuggingFaceEmbeddings, vlm_tokenizer: BaseLocalTokenizer
 ) -> Iterator[MultiModalVectorStore]:
     config = RedisConfig(
         index_name="test1",
@@ -105,7 +109,7 @@ def vectorstore(
             {"name": "input", "type": "text"},
             {"name": "output", "type": "text"},
         ],
-        embedding_dimensions=vlm_tokenizer.dimensions,
+        embedding_dimensions=vlm_tokenizer.vector_dimension_length,
     )
 
     store = MultiModalVectorStore(embeddings, config=config)
@@ -173,16 +177,15 @@ class SpyHuggingFaceLLM(HuggingFaceLLM):
         llm_result.llm_output["final_temp"] = self.temperature
 
         return llm_result
-
-
+        
 @pytest.fixture
-def spy_llm() -> SpyHuggingFaceLLM:
+def spy_llm(llama_11B_vision_instruct: BaseLocalTokenizer) -> SpyHuggingFaceLLM:
     config = _model_config("MODELS", "meta-llama/Llama-3.2-11B-Vision-Instruct")
 
     return SpyHuggingFaceLLM(
         base_url=config["url"],
         credentials=os.environ["TEST_AUTH_TOKEN"],
-        max_tokens=_MAX_TOTAL_TOKENS - _MAX_INPUT_TOKENS,
+        max_tokens=_MAX_NEW_TOKENS,
         temperature=0.8,
         provider=config["provider"],
         model=config["name"],

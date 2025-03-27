@@ -173,7 +173,7 @@ class HuggingFaceChatModel(BaseChatModel):
             raise TypeError(
                 "Expected model name to be defined" f"received {type(tokenizer_name)}"
             )
-        self.tokenizer = get_tokenizer_class_by_prefix(tokenizer_name)
+        self.tokenizer = get_tokenizer_class_by_prefix(tokenizer_name)(tokenizer_name)
 
         return self
 

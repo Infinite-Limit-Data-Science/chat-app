@@ -29,7 +29,6 @@ from huggingface_hub.inference._generated.types import (
 )
 from .inference_schema import HuggingFaceInferenceServerMixin
 from .huggingface_inference_client import HuggingFaceInferenceClient
-from .huggingface_inference_server_config import HuggingFaceInferenceConfig
 from .helpers.chat_completion_helper import (
     postprocess_chat_completion_output,
     postprocess_chat_completion_stream_output,

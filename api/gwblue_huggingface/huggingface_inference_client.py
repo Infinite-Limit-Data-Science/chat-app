@@ -45,10 +45,6 @@ from huggingface_hub.inference._providers._common import (
     filter_none,
 )
 from .inference_schema import HuggingFaceInferenceServerMixin
-from .huggingface_inference_server_config import (
-    HuggingFaceInferenceConfig,
-    HuggingFaceEmbeddingsConfig,
-)
 from .providers.vllm import VLLMEmbeddingTask
 
 providers.PROVIDERS["vllm"] = {"embedding": VLLMEmbeddingTask()}

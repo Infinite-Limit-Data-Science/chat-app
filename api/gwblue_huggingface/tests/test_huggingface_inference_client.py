@@ -11,16 +11,13 @@ from dotenv import load_dotenv
 from huggingface_hub.inference._generated.types import ChatCompletionOutput
 from ..huggingface_inference_client import HuggingFaceInferenceClient
 from ..huggingface_transformer_tokenizers import (
-    BgeLargePretrainedTokenizer,
-    VLM2VecFullPretrainedTokenizer,
+    get_tokenizer_class_by_prefix,
+    BaseLocalTokenizer,
 )
 
 load_dotenv()
 
-_MAX_INPUT_TOKENS = 12582
-
-_MAX_TOTAL_TOKENS = 16777
-
+_MAX_NEW_TOKENS = 4195
 
 def _model_config(model_type: str, model_name: str) -> str:
     models = json.loads(os.environ[model_type])
@@ -60,14 +57,20 @@ def embeddings_client() -> HuggingFaceInferenceClient:
 
 
 @pytest.fixture
-def bge() -> BgeLargePretrainedTokenizer:
-    return BgeLargePretrainedTokenizer()
+def bge() -> BaseLocalTokenizer:
+    model_name = "BAAI/bge-large-en-v1.5"
+    return get_tokenizer_class_by_prefix(model_name)(model_name)
 
 
 @pytest.fixture
-def vlm2vec() -> VLM2VecFullPretrainedTokenizer:
-    return VLM2VecFullPretrainedTokenizer()
+def vlm2vec() -> BaseLocalTokenizer:
+    model_name = "TIGER-Lab/VLM2Vec-Full"
+    return get_tokenizer_class_by_prefix(model_name)(model_name)
 
+@pytest.fixture
+def llama_11B_vision_instruct() -> BaseLocalTokenizer:
+    model_name = "meta-llama/Llama-3.2-11B-Vision-Instruct"
+    return get_tokenizer_class_by_prefix(model_name)(model_name)
 
 @pytest.fixture
 def corpus() -> str:
@@ -89,18 +92,18 @@ def test_inference_client_feature_extraction(
 def test_inference_client_feature_extraction_trunc(
     embeddings_client: HuggingFaceInferenceClient,
     corpus: str,
-    vlm2vec: VLM2VecFullPretrainedTokenizer,
+    vlm2vec: BaseLocalTokenizer,
 ):
     corpus = " ".join([corpus] * 10)
     embeddings = embeddings_client.feature_extraction(corpus, truncate=True)
 
-    assert embeddings.size == vlm2vec.dimensions
+    assert embeddings.size == vlm2vec.vector_dimension_length
 
 
 def test_inference_client_feature_extraction_not_tokens(
     embeddings_client: HuggingFaceInferenceClient,
     corpus: str,
-    bge: BgeLargePretrainedTokenizer,
+    bge: BaseLocalTokenizer,
 ):
     tokens = bge.tokenizer.encode(corpus, add_special_tokens=True)
     embeddings = embeddings_client.feature_extraction(corpus, truncate=True)
@@ -175,11 +178,14 @@ async def test_async_inference_client_feature_extraction_vision2(
     assert len(embeddings) > 0
 
 
-def test_inference_client_chat_completion(inference_client: HuggingFaceInferenceClient):
+def test_inference_client_chat_completion(
+    inference_client: HuggingFaceInferenceClient,
+    llama_11B_vision_instruct: BaseLocalTokenizer,
+):
     chat_completion_output = inference_client.chat_completion(
         messages=[{"role": "user", "content": "What is Generative AI?"}],
         stream=False,  # not needed, defaults to False
-        max_tokens=_MAX_TOTAL_TOKENS - _MAX_INPUT_TOKENS,
+        max_tokens=llama_11B_vision_instruct.sequence_length_forward_pass - _MAX_NEW_TOKENS,
         temperature=0.8,  # add randomness
     )
 
@@ -193,10 +199,11 @@ def test_inference_client_chat_completion(inference_client: HuggingFaceInference
 
 def test_inference_client_chat_completion_with_multiple_candidates(
     inference_client: HuggingFaceInferenceClient,
+    llama_11B_vision_instruct: BaseLocalTokenizer,
 ):
     chat_completion_output = inference_client.chat_completion(
         messages=[{"role": "user", "content": "What is Generative AI?"}],
-        max_tokens=_MAX_TOTAL_TOKENS - _MAX_INPUT_TOKENS,
+        max_tokens=llama_11B_vision_instruct.sequence_length_forward_pass - _MAX_NEW_TOKENS,
         num_generations=3,
         temperature=0.8,
     )
@@ -213,9 +220,10 @@ def test_inference_client_chat_completion_with_multiple_candidates(
 @pytest.mark.asyncio
 async def test_inference_client_chat_completion_with_logprobs(
     inference_client: HuggingFaceInferenceClient,
+    llama_11B_vision_instruct: BaseLocalTokenizer,
 ):
     messages = [{"role": "user", "content": "What is Generative AI?"}]
-    max_tokens = _MAX_TOTAL_TOKENS - _MAX_INPUT_TOKENS
+    max_tokens = llama_11B_vision_instruct.sequence_length_forward_pass - _MAX_NEW_TOKENS,
     params = [{"top_p": 0.5}, {"top_p": 0.9}]
 
     async def fetch_chat_completion(top_p_value):
@@ -243,9 +251,10 @@ async def test_inference_client_chat_completion_with_logprobs(
 @pytest.mark.asyncio
 async def test_inference_client_chat_completion_with_reranking(
     inference_client: HuggingFaceInferenceClient,
+    llama_11B_vision_instruct: BaseLocalTokenizer,
 ):
     messages = [{"role": "user", "content": "What is Generative AI?"}]
-    max_tokens = _MAX_TOTAL_TOKENS - _MAX_INPUT_TOKENS
+    max_tokens = llama_11B_vision_instruct.sequence_length_forward_pass - _MAX_NEW_TOKENS,
     params = [{"top_p": 0.5}, {"top_p": 0.9}]
 
     async def fetch_chat_completion(top_p_value):
@@ -277,6 +286,7 @@ async def test_inference_client_chat_completion_with_reranking(
 
 def test_inference_client_chat_completion_with_image_to_text(
     inference_client: HuggingFaceInferenceClient,
+    llama_11B_vision_instruct: BaseLocalTokenizer,
 ):
     image_path = Path(__file__).parent / "assets" / "baby.jpg"
     with image_path.open("rb") as f:
@@ -296,7 +306,7 @@ def test_inference_client_chat_completion_with_image_to_text(
                 ],
             }
         ],
-        max_tokens=_MAX_TOTAL_TOKENS - _MAX_INPUT_TOKENS,
+        max_tokens=llama_11B_vision_instruct.sequence_length_forward_pass - _MAX_NEW_TOKENS,
         temperature=0.8,
         logprobs=True,
     )
@@ -309,10 +319,11 @@ def test_inference_client_chat_completion_with_image_to_text(
 
 def test_inference_client_chat_completion_with_output_usage(
     inference_client: HuggingFaceInferenceClient,
+    llama_11B_vision_instruct: BaseLocalTokenizer,
 ):
     chat_completion_output = inference_client.chat_completion(
         messages=[{"role": "user", "content": "What is Generative AI?"}],
-        max_tokens=_MAX_TOTAL_TOKENS - _MAX_INPUT_TOKENS,
+        max_tokens=llama_11B_vision_instruct.sequence_length_forward_pass - _MAX_NEW_TOKENS,
         temperature=0.8,
     )
 
@@ -324,6 +335,7 @@ def test_inference_client_chat_completion_with_output_usage(
 @pytest.mark.skip(reason="Temporarily disabled for debugging")
 def test_inference_client_chat_completion_with_tool_calling(
     inference_client: HuggingFaceInferenceClient,
+    llama_11B_vision_instruct: BaseLocalTokenizer,
 ):
     class WeatherForecastRequest(BaseModel):
         location: str = Field(
@@ -360,7 +372,7 @@ def test_inference_client_chat_completion_with_tool_calling(
                 "content": "What's the weather like in New York for the next 3 days?",
             },
         ],
-        max_tokens=_MAX_TOTAL_TOKENS - _MAX_INPUT_TOKENS,
+        max_tokens=llama_11B_vision_instruct.sequence_length_forward_pass - _MAX_NEW_TOKENS,
         tools=tools,
         tool_choice="auto",
         temperature=0.8,
@@ -377,10 +389,11 @@ def test_inference_client_chat_completion_with_tool_calling(
 @pytest.mark.asyncio
 async def test_async_inference_client_chat_completion(
     inference_client: HuggingFaceInferenceClient,
+    llama_11B_vision_instruct: BaseLocalTokenizer,
 ):
     chat_completion_output = await inference_client.achat_completion(
         messages=[{"role": "user", "content": "What is Generative AI?"}],
-        max_tokens=_MAX_TOTAL_TOKENS - _MAX_INPUT_TOKENS,
+        max_tokens=llama_11B_vision_instruct.sequence_length_forward_pass - _MAX_NEW_TOKENS,
         temperature=0.8,
     )
 
@@ -393,10 +406,11 @@ async def test_async_inference_client_chat_completion(
 @pytest.mark.asyncio
 async def test_async_streaming_inference_client_chat_completion(
     inference_client: HuggingFaceInferenceClient,
+    llama_11B_vision_instruct: BaseLocalTokenizer,
 ):
     chat_completion_output = await inference_client.achat_completion(
         messages=[{"role": "user", "content": "What is Generative AI?"}],
-        max_tokens=_MAX_TOTAL_TOKENS - _MAX_INPUT_TOKENS,
+        max_tokens=llama_11B_vision_instruct.sequence_length_forward_pass - _MAX_NEW_TOKENS,
         temperature=0.8,
         stream=True,
         logprobs=True,
