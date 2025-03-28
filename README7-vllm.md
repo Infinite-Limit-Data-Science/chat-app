@@ -376,7 +376,10 @@ docker container run -d -p 6379:6379 redis/redis-stack-server:latest
 
 source myenv/bin/activate
 # 153.59 seconds
+# 140.77 seconds (with new improvement! batching really works with the embedding model!!!!)
 vllm serve --port 8070 --host 0.0.0.0 --trust-remote-code --tensor-parallel-size 1 --max-model-len 2048 --max-num-batched-tokens 8192 --task embed TIGER-Lab/VLM2Vec-Full
+# 145.53 seconds (with new improvement! batching really works with the embedding model!!!!)
+vllm serve --port 8070 --host 0.0.0.0 --trust-remote-code --tensor-parallel-size 1 --max-model-len 8192 --max-num-batched-tokens 8192 --task embed TIGER-Lab/VLM2Vec-Full
 
 INFO 03-23 05:00:55 [__init__.py:256] Automatically detected platform cuda.
 INFO 03-23 05:00:57 [api_server.py:977] vLLM API server version 0.8.1
