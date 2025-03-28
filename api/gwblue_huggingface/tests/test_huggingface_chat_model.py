@@ -43,8 +43,6 @@ from ...gwblue_vectorstores.redis.multimodal_vectorstore import MultiModalVector
 
 load_dotenv()
 
-_MAX_NEW_TOKENS = 2048
-
 def _model_config(model_type: str, model_name: str) -> str:
     models = json.loads(os.environ[model_type])
     model = next((model for model in models if model["name"] == model_name), None)
@@ -69,7 +67,7 @@ def llm(llama_11B_vision_instruct: BaseLocalTokenizer) -> HuggingFaceLLM:
     return HuggingFaceLLM(
         base_url=config["url"],
         credentials=os.environ["TEST_AUTH_TOKEN"],
-        max_tokens=_MAX_NEW_TOKENS,
+        max_tokens=llama_11B_vision_instruct.max_new_tokens,
         temperature=0.8,
         provider=config["provider"],
         model=config["name"],
@@ -100,7 +98,8 @@ def vlm_tokenizer() -> BaseLocalTokenizer:
 
 @pytest.fixture
 def vectorstore(
-    embeddings: HuggingFaceEmbeddings, vlm_tokenizer: BaseLocalTokenizer
+    embeddings: HuggingFaceEmbeddings, 
+    vlm_tokenizer: BaseLocalTokenizer
 ) -> Iterator[MultiModalVectorStore]:
     config = RedisConfig(
         index_name="test1",
@@ -185,7 +184,7 @@ def spy_llm(llama_11B_vision_instruct: BaseLocalTokenizer) -> SpyHuggingFaceLLM:
     return SpyHuggingFaceLLM(
         base_url=config["url"],
         credentials=os.environ["TEST_AUTH_TOKEN"],
-        max_tokens=_MAX_NEW_TOKENS,
+        max_tokens=llama_11B_vision_instruct.max_new_tokens,
         temperature=0.8,
         provider=config["provider"],
         model=config["name"],

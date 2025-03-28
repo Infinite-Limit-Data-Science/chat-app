@@ -1,5 +1,5 @@
 {
     "max_model_len": 38334,
     "max_batch_tokens": 38334,
-    "max_new_tokens": 2048 # try this before reverting back to 4096 or whatever i had
+    "max_new_tokens": 2048
 }

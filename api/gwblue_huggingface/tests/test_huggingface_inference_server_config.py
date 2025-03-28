@@ -22,7 +22,6 @@ def _model_config(model_type: str, model_name: str) -> str:
         "provider": model["endpoints"][0]["provider"],
     }
 
-
 @pytest.fixture
 def inference_config() -> HuggingFaceInferenceConfig:
     config = _model_config("MODELS", "meta-llama/Llama-3.2-11B-Vision-Instruct")
@@ -32,11 +31,10 @@ def inference_config() -> HuggingFaceInferenceConfig:
         url=config["url"],
         provider=config["provider"],
         auth_token=os.environ["TEST_AUTH_TOKEN"],
-        max_input_tokens=12582,
-        max_total_tokens=16777,
-        max_batch_prefill_tokens=12582 + 50,
+        max_input_tokens=36286,
+        max_total_tokens=38334,
+        max_batch_prefill_tokens=36286 + 50,
     )
-
 
 @pytest.fixture
 def embeddings_config() -> HuggingFaceEmbeddingsConfig:
@@ -47,7 +45,7 @@ def embeddings_config() -> HuggingFaceEmbeddingsConfig:
         url=config["url"],
         provider=config["provider"],
         auth_token=os.environ["TEST_AUTH_TOKEN"],
-        max_batch_tokens=32768,
+        max_batch_tokens=8096,
     )
 
 

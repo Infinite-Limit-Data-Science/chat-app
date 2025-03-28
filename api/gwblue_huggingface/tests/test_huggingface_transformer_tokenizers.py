@@ -7,6 +7,7 @@ def test_meta_llama_3_2_11B_vision_instruct_tokenizer():
     local_tokenizer = LocalTokenizer(model_name)
     assert local_tokenizer.sequence_length_forward_pass == 38334
     assert local_tokenizer.max_batch_tokens_forward_pass == 38334
+    assert local_tokenizer.max_new_tokens == 2048
 
 def test_meta_llama_guard_3_8B_tokenizer():
     model_name = "meta-llama/Llama-Guard-3-8B"
@@ -15,6 +16,7 @@ def test_meta_llama_guard_3_8B_tokenizer():
     local_tokenizer = LocalTokenizer(model_name)
     assert local_tokenizer.sequence_length_forward_pass == 38334
     assert local_tokenizer.max_batch_tokens_forward_pass == 38334
+    assert local_tokenizer.max_new_tokens == 2048
 
 def test_tiger_lab_vlm2vec_full_tokenizer():
     model_name = "TIGER-Lab/VLM2Vec-Full"

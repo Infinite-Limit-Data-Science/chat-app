@@ -1,113 +1,79 @@
 import re
-from typing import List, Callable, Dict, Any
-from langchain_text_splitters import RecursiveCharacterTextSplitter, TextSplitter
+from typing import List, Callable, Dict, Any, Iterator
 from langchain_core.documents import Document
 
+def _token_based_split_text_stream(
+    text: str,
+    *,
+    encode_fn: Callable[[str], List[int]],
+    decode_fn: Callable[[List[int]], str],
+    chunk_size: int,
+    chunk_overlap: int,
+) -> Iterator[str]:
+    tokens = encode_fn(text)
+    stride = chunk_size - chunk_overlap if chunk_size > chunk_overlap else chunk_size
+    start = 0
+    while start < len(tokens):
+        end = min(start + chunk_size, len(tokens))
+        chunk_tokens = tokens[start:end]
 
-def _merge_contextless_chunks(
-    text: str, token_len_func: Callable[[str], int], min_paragraph_tokens: int = 50
-) -> str:
-    paragraphs = text.split("\n\n")
-    merged_paragraphs = []
+        yield decode_fn(chunk_tokens)
 
-    current = []
-    current_tokens = 0
+        start += stride
 
-    for p in paragraphs:
-        p_tokens = token_len_func(p)
-        if current_tokens + p_tokens < min_paragraph_tokens:
-            current.append(p)
-            current_tokens += p_tokens
-        else:
-            if current:
-                merged_paragraphs.append("\n\n".join(current))
-            current = [p]
-            current_tokens = p_tokens
-
-    if current:
-        merged_paragraphs.append("\n\n".join(current))
-
-    return "\n\n".join(merged_paragraphs)
-
-
-class MixedContentTextSplitter(TextSplitter):
+class MixedContentTextSplitter:
     def __init__(
         self,
-        chunk_size: int = 4000,
-        chunk_overlap: int = 200,
-        length_function: Callable[[str], int] = len,
+        *,
+        encode_fn: Callable[[str], List[int]],
+        decode_fn: Callable[[List[int]], str],
+        chunk_size: int = 2000,
+        chunk_overlap: int = 0,
         img_pattern: str = r'(<img[^>]*src="[^"]+"[^>]*>)',
-        metadata: Dict[str, Any] = {},
+        metadata: Dict[str, Any] = None,
     ):
-        super().__init__(
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
-            length_function=length_function,
-        )
+        self.encode_fn = encode_fn
+        self.decode_fn = decode_fn
+        self.chunk_size = chunk_size
+        self.chunk_overlap = chunk_overlap
 
+        self.metadata = metadata or {}
         self.img_regex = re.compile(img_pattern, flags=re.IGNORECASE)
-        self.metadata = metadata
 
-        self.text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
-            length_function=length_function,
-        )
-        self.num_image_docs = 0
-
-    def split_documents(self, docs: List[Document]) -> List[Document]:
-        output_docs = []
-        self.num_image_docs = 0
-
+    def split_documents_stream(
+        self,
+        docs: Iterator[Document],
+    ) -> Iterator[Document]:
         for doc in docs:
-            new_meta = {
-                k: v
-                for k, v in doc.metadata.items()
-                if k not in ("producer", "creator", "creationdate")
-            }
-            new_meta = {**new_meta, **self.metadata}
+            merged_meta = {**doc.metadata, **self.metadata}
+            page_number = merged_meta.get("page_number")
 
-            if "source" in new_meta:
-                from pathlib import Path
+            parts = self.img_regex.split(doc.page_content)
 
-                new_meta["source"] = Path(new_meta["source"]).name
+            for part in parts:
+                part = part.strip()
+                if not part:
+                    continue
 
-            chunks = self.split_text(doc.page_content)
+                if self.img_regex.match(part):
+                    src_match = re.search(r'src="([^"]+)"', part, flags=re.IGNORECASE)
+                    img_src = src_match.group(1) if src_match else part
 
-            for chunk in chunks:
-                if self.img_regex.match(chunk):
-                    self.num_image_docs += 1
-                    match = re.search(r'src="([^"]+)"', chunk, flags=re.IGNORECASE)
-                    if match:
-                        chunk = match.group(1)
-                    output_docs.append(
-                        Document(
-                            page_content=chunk,
-                            metadata={**new_meta, "chunk_type": "image"},
-                        )
+                    yield Document(
+                        page_content=img_src,
+                        metadata={**merged_meta, "chunk_type": "image"},
                     )
                 else:
-                    if page_number := new_meta.get("page", None):
-                        page_info = f"Page {page_number}. "
-                        chunk = page_info + chunk
-                    output_docs.append(
-                        Document(
-                            page_content=chunk,
-                            metadata={**new_meta, "chunk_type": "text"},
+                    for text_chunk in _token_based_split_text_stream(
+                        part,
+                        encode_fn=self.encode_fn,
+                        decode_fn=self.decode_fn,
+                        chunk_size=self.chunk_size,
+                        chunk_overlap=self.chunk_overlap,
+                    ):
+                        if page_number:
+                            text_chunk = f"Page {page_number}. {text_chunk}"
+                        yield Document(
+                            page_content=text_chunk,
+                            metadata={**merged_meta, "chunk_type": "text"},
                         )
-                    )
-        return output_docs
-
-    def split_text(self, text: str) -> List[str]:
-        parts = self.img_regex.split(text)
-        final_chunks = []
-        for part in parts:
-            part = part.strip()
-            if not part:
-                continue
-            if self.img_regex.match(part):
-                final_chunks.append(part)
-            else:
-                text_subchunks = self.text_splitter.split_text(part)
-                final_chunks.extend(text_subchunks)
-        return final_chunks

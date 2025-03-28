@@ -375,10 +375,7 @@ ulimit -n
 docker container run -d -p 6379:6379 redis/redis-stack-server:latest
 
 source myenv/bin/activate
-vllm serve --port 8070 --host 0.0.0.0 --trust-remote-code --tensor-parallel-size 1 --max-model-len 2048 --max-num-batched-tokens 2048 --task embed TIGER-Lab/VLM2Vec-Full
-# below takes 2 minutes and 55 seconds (when running on same server as model)
-vllm serve --port 8070 --host 0.0.0.0 --trust-remote-code --tensor-parallel-size 1 --max-model-len 2048 --max-num-batched-tokens 4096 --task embed TIGER-Lab/VLM2Vec-Full
-# below takes 2 minutes and 53 seconds (sometimes works, sometimes crashes)
+# 153.59 seconds
 vllm serve --port 8070 --host 0.0.0.0 --trust-remote-code --tensor-parallel-size 1 --max-model-len 2048 --max-num-batched-tokens 8192 --task embed TIGER-Lab/VLM2Vec-Full
 
 INFO 03-23 05:00:55 [__init__.py:256] Automatically detected platform cuda.

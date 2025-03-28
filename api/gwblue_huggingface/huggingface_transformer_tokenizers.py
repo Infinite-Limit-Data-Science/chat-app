@@ -188,7 +188,7 @@ class BaseLocalTokenizer(ABC):
         corresponds to a 3072-dimensional vector (like [0.12, -0.03, 0.78, ...]) that the model 
         learns to represent the concept of that token.
         """
-        vocab_size = self.config.get('vocab_size') or 0
+        vocab_size = self.config.get('vocab_size', 0)
         return [vocab_size, self.vector_dimension_length]
 
     @property
@@ -378,6 +378,10 @@ class BaseLocalTokenizer(ABC):
         """
         return self.local_config.get("max_batch_tokens") or self.sequence_length_forward_pass
 
+    @property
+    def max_new_tokens(self) -> Optional[int]:
+        return self.local_config.get("max_new_tokens", None)
+
     def __repr__(self) -> str:
         f"""
         {get_tokenizer_class_by_prefix(self.name)}(
@@ -390,6 +394,7 @@ class BaseLocalTokenizer(ABC):
             key_value_heads={self.key_value_heads}
             sequence_length_forward_pass={self.sequence_length_forward_pass}
             max_batch_tokens_forward_pass={self.max_batch_tokens_forward_pass}
+            max_new_tokens={self.max_new_tokens}
         )
         """
 

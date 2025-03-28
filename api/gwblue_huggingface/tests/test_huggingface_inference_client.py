@@ -17,8 +17,6 @@ from ..huggingface_transformer_tokenizers import (
 
 load_dotenv()
 
-_MAX_NEW_TOKENS = 4195
-
 def _model_config(model_type: str, model_name: str) -> str:
     models = json.loads(os.environ[model_type])
     model = next((model for model in models if model["name"] == model_name), None)
@@ -185,7 +183,7 @@ def test_inference_client_chat_completion(
     chat_completion_output = inference_client.chat_completion(
         messages=[{"role": "user", "content": "What is Generative AI?"}],
         stream=False,  # not needed, defaults to False
-        max_tokens=llama_11B_vision_instruct.sequence_length_forward_pass - _MAX_NEW_TOKENS,
+        max_tokens=llama_11B_vision_instruct.max_new_tokens,
         temperature=0.8,  # add randomness
     )
 
@@ -203,7 +201,7 @@ def test_inference_client_chat_completion_with_multiple_candidates(
 ):
     chat_completion_output = inference_client.chat_completion(
         messages=[{"role": "user", "content": "What is Generative AI?"}],
-        max_tokens=llama_11B_vision_instruct.sequence_length_forward_pass - _MAX_NEW_TOKENS,
+        max_tokens=llama_11B_vision_instruct.max_new_tokens,
         num_generations=3,
         temperature=0.8,
     )
@@ -223,7 +221,7 @@ async def test_inference_client_chat_completion_with_logprobs(
     llama_11B_vision_instruct: BaseLocalTokenizer,
 ):
     messages = [{"role": "user", "content": "What is Generative AI?"}]
-    max_tokens = llama_11B_vision_instruct.sequence_length_forward_pass - _MAX_NEW_TOKENS,
+    max_tokens = llama_11B_vision_instruct.max_new_tokens,
     params = [{"top_p": 0.5}, {"top_p": 0.9}]
 
     async def fetch_chat_completion(top_p_value):
@@ -254,7 +252,7 @@ async def test_inference_client_chat_completion_with_reranking(
     llama_11B_vision_instruct: BaseLocalTokenizer,
 ):
     messages = [{"role": "user", "content": "What is Generative AI?"}]
-    max_tokens = llama_11B_vision_instruct.sequence_length_forward_pass - _MAX_NEW_TOKENS,
+    max_tokens = llama_11B_vision_instruct.max_new_tokens,
     params = [{"top_p": 0.5}, {"top_p": 0.9}]
 
     async def fetch_chat_completion(top_p_value):
@@ -306,7 +304,7 @@ def test_inference_client_chat_completion_with_image_to_text(
                 ],
             }
         ],
-        max_tokens=llama_11B_vision_instruct.sequence_length_forward_pass - _MAX_NEW_TOKENS,
+        max_tokens=llama_11B_vision_instruct.max_new_tokens,
         temperature=0.8,
         logprobs=True,
     )
@@ -323,7 +321,7 @@ def test_inference_client_chat_completion_with_output_usage(
 ):
     chat_completion_output = inference_client.chat_completion(
         messages=[{"role": "user", "content": "What is Generative AI?"}],
-        max_tokens=llama_11B_vision_instruct.sequence_length_forward_pass - _MAX_NEW_TOKENS,
+        max_tokens=llama_11B_vision_instruct.max_new_tokens,
         temperature=0.8,
     )
 
@@ -372,7 +370,7 @@ def test_inference_client_chat_completion_with_tool_calling(
                 "content": "What's the weather like in New York for the next 3 days?",
             },
         ],
-        max_tokens=llama_11B_vision_instruct.sequence_length_forward_pass - _MAX_NEW_TOKENS,
+        max_tokens=llama_11B_vision_instruct.max_new_tokens,
         tools=tools,
         tool_choice="auto",
         temperature=0.8,
@@ -393,7 +391,7 @@ async def test_async_inference_client_chat_completion(
 ):
     chat_completion_output = await inference_client.achat_completion(
         messages=[{"role": "user", "content": "What is Generative AI?"}],
-        max_tokens=llama_11B_vision_instruct.sequence_length_forward_pass - _MAX_NEW_TOKENS,
+        max_tokens=llama_11B_vision_instruct.max_new_tokens,
         temperature=0.8,
     )
 
@@ -410,7 +408,7 @@ async def test_async_streaming_inference_client_chat_completion(
 ):
     chat_completion_output = await inference_client.achat_completion(
         messages=[{"role": "user", "content": "What is Generative AI?"}],
-        max_tokens=llama_11B_vision_instruct.sequence_length_forward_pass - _MAX_NEW_TOKENS,
+        max_tokens=llama_11B_vision_instruct.max_new_tokens,
         temperature=0.8,
         stream=True,
         logprobs=True,

@@ -1,9 +1,21 @@
-from typing import Iterator, List, Any
+from typing import (
+    List, 
+    Any, 
+    TypeVar, 
+    Iterable,
+    Iterator, 
+    AsyncIterator,
+)
 import asyncio
 from langchain_core.documents import Document
 from langchain_redis import RedisVectorStore
 from redisvl.redis.utils import array_to_buffer
 
+I = TypeVar("I")
+
+async def _async_iterator_wrapper(iterator: Iterable[I]) -> AsyncIterator[I]:
+    for item in iterator:
+        yield item
 
 class MultiModalVectorStore(RedisVectorStore):
     """
@@ -88,7 +100,6 @@ class MultiModalVectorStore(RedisVectorStore):
                 )
                 return batch_ids
 
-        # TODO: process multiple documents at once as a single input to model, e.g. ['chunk info 1', 'chunk info 2']
         tasks = [
             asyncio.create_task(process_document(document)) for document in documents
         ]
@@ -96,6 +107,70 @@ class MultiModalVectorStore(RedisVectorStore):
         document_ids = [doc_id for batch_ids in results for doc_id in batch_ids]
 
         return document_ids
+    
+    async def aadd_batch_with_ttl(
+        self,
+        documents: Iterator[Document],
+        *,
+        ttl_seconds: int,
+        max_requests: int,
+        batch_size: int = 4,
+        **kwargs: Any,
+    ) -> List[str]:    
+        semaphore = asyncio.Semaphore(max_requests)
+        redis_client = self.config.redis()
+
+        tasks = []
+        text_batch = []
+
+        async def flush_text_batch(batch: List[Document]) -> None:
+            if not batch:
+                return
+
+            local_batch = list(batch)
+            batch.clear()
+
+            async def do_embed_text():
+                async with semaphore:
+                    doc_ids = await super(MultiModalVectorStore, self).aadd_documents(local_batch, **kwargs)
+                    for doc_id in doc_ids:
+                        await asyncio.to_thread(redis_client.expire, doc_id, ttl_seconds)
+                    return doc_ids
+
+            tasks.append(asyncio.create_task(do_embed_text()))
+
+        async def process_image_doc(doc: Document) -> None:
+            async def do_embed_image():
+                async with semaphore:
+                    doc_ids = await self._aadd_image_docs([doc], **kwargs)
+                    for doc_id in doc_ids:
+                        await asyncio.to_thread(redis_client.expire, doc_id, ttl_seconds)
+                    return doc_ids
+
+            tasks.append(asyncio.create_task(do_embed_image()))
+
+        async for doc in _async_iterator_wrapper(documents):
+            if doc.metadata.get("chunk_type", "text") == "text":
+                text_batch.append(doc)
+                if len(text_batch) >= batch_size:
+                    await flush_text_batch(text_batch)
+            else:
+                if text_batch:
+                    await flush_text_batch(text_batch)
+                await process_image_doc(doc)
+
+        if text_batch:
+            await flush_text_batch(text_batch)
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        all_doc_ids: List[str] = []
+        for res in results:
+            if isinstance(res, Exception):
+                raise res
+            else:
+                all_doc_ids.extend(res)
+        return all_doc_ids
 
     async def _process_batch(
         self, batch: List[Document], ttl_seconds: int, redis_client, **kwargs: Any

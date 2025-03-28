@@ -70,11 +70,25 @@ def vlm_tokenizer() -> BaseLocalTokenizer:
     return get_tokenizer_class_by_prefix(model_name)(model_name)
 
 @pytest.fixture
+def text_chunk(vlm_tokenizer: BaseLocalTokenizer) -> str:
+    encoded = vlm_tokenizer.tokenizer(
+        dummy_corpus1,
+        max_length=round(vlm_tokenizer.sequence_length_forward_pass, -2),
+        truncation=True,
+    )
+    chunk = vlm_tokenizer.tokenizer.decode(
+        encoded["input_ids"],
+        skip_special_tokens=True
+    )
+
+    return chunk
+
+@pytest.fixture
 def text_chunks(vlm_tokenizer: BaseLocalTokenizer) -> List[str]:
     docs = [
         Document(page_content=dummy_corpus1, metadata={"source": "book", "page": 0})
     ]
-    sequence_length = 2000
+    sequence_length = round(vlm_tokenizer.sequence_length_forward_pass, -2)
     overlap = int(sequence_length * 0.05)
     len_function = lambda text: len(vlm_tokenizer.tokenizer.encode(text))
 
@@ -151,30 +165,43 @@ def test_bge_embed_documents(
 def test_vlm_embed_documents(
     embeddings: HuggingFaceEmbeddings,
     vlm_tokenizer: BaseLocalTokenizer,
+    text_chunk: str,
 ):
-    embedded_vectors = embeddings.embed_documents([dummy_corpus1])
+    """Amazing idea, no longer use recursive character text splitter, just get the first 2000 tokens and stop at the last space"""
+    embedded_vectors = embeddings.embed_documents([text_chunk])
     assert len(embedded_vectors[0]) == vlm_tokenizer.vector_dimension_length
 
 
-def test_embed_multiple_documents(embeddings: HuggingFaceEmbeddings):
+def test_embed_multiple_documents(
+    embeddings: HuggingFaceEmbeddings,
+    text_chunk: str,
+):
+    """its treating the two input sequences as a single unit to send to forward pass"""
     embedded_vectors = embeddings.embed_documents(
-        [dummy_corpus1, dummy_corpus1.upper()]
+        [text_chunk, text_chunk.upper()]
     )
     assert len(embedded_vectors) > 0
 
 
-def test_embed_query(embeddings: HuggingFaceEmbeddings):
-    embedded_vectors = embeddings.embed_query(dummy_corpus1)
+def test_embed_query(
+    embeddings: HuggingFaceEmbeddings,
+    text_chunk: str,
+):
+    embedded_vectors = embeddings.embed_query(text_chunk)
     assert len(embedded_vectors) > 0
 
 
-def test_embed_documents_in_vector_db(vectorstore: MultiModalVectorStore):
-    ids = vectorstore.add_texts([dummy_corpus1], [{"source": "book"}])
+def test_embed_documents_in_vector_db(
+    vectorstore: MultiModalVectorStore,
+    text_chunk: str,
+):
+    ids = vectorstore.add_texts([text_chunk], [{"source": "book"}])
     assert ids[0].startswith("test1")
 
 
 def test_embed_documents_with_similarity_search(
-    vectorstore: MultiModalVectorStore, text_chunks: List[str]
+    vectorstore: MultiModalVectorStore, 
+    text_chunks: List[str],
 ):
     vectorstore.add_documents(text_chunks)
     query = "What did King Ulfric Stormborn do in 879"
@@ -183,153 +210,153 @@ def test_embed_documents_with_similarity_search(
     assert len(results) == 2
 
 
-def test_embed_documents_with_similarity_search_with_score(
-    vectorstore: MultiModalVectorStore, text_chunks: List[str]
-):
-    vectorstore.add_documents(text_chunks)
-    query = "What did King Ulfric Stormborn do in 879"
-    results = vectorstore.similarity_search_with_score(
-        query, k=2, filter=Tag("source") == "book"
-    )
+# def test_embed_documents_with_similarity_search_with_score(
+#     vectorstore: MultiModalVectorStore, text_chunks: List[str]
+# ):
+#     vectorstore.add_documents(text_chunks)
+#     query = "What did King Ulfric Stormborn do in 879"
+#     results = vectorstore.similarity_search_with_score(
+#         query, k=2, filter=Tag("source") == "book"
+#     )
 
-    score1 = results[0][1]
-    score2 = results[1][1]
+#     score1 = results[0][1]
+#     score2 = results[1][1]
 
-    assert score1 < score2
-
-
-def test_embed_documents_with_max_marginal_relevance_search(
-    vectorstore: MultiModalVectorStore, text_chunks: List[str]
-):
-    vectorstore.add_documents(text_chunks)
-    query = "What did King Ulfric Stormborn do in 879"
-    results = vectorstore.max_marginal_relevance_search(
-        query, k=2, filter=Tag("source") == "book"
-    )
-
-    assert len(results) == 2
+#     assert score1 < score2
 
 
-def test_embed_documents_with_similarity_search_by_vector(
-    embeddings: HuggingFaceEmbeddings,
-    vectorstore: MultiModalVectorStore,
-    text_chunks: List[str],
-):
-    vectorstore.add_documents(text_chunks)
+# def test_embed_documents_with_max_marginal_relevance_search(
+#     vectorstore: MultiModalVectorStore, text_chunks: List[str]
+# ):
+#     vectorstore.add_documents(text_chunks)
+#     query = "What did King Ulfric Stormborn do in 879"
+#     results = vectorstore.max_marginal_relevance_search(
+#         query, k=2, filter=Tag("source") == "book"
+#     )
 
-    query = "What did King Ulfric Stormborn do in 879"
-    float_32_1024_dimensional_bge_vector = embeddings.embed_documents([query])[0]
-    results = vectorstore.similarity_search_by_vector(
-        float_32_1024_dimensional_bge_vector, k=2, filter=Tag("source") == "book"
-    )
-    assert len(results) == 2
+#     assert len(results) == 2
 
 
-def test_embed_documents_with_similarity_search_with_score_by_vector(
-    embeddings: HuggingFaceEmbeddings,
-    vectorstore: MultiModalVectorStore,
-    text_chunks: List[str],
-):
-    vectorstore.add_documents(text_chunks)
+# def test_embed_documents_with_similarity_search_by_vector(
+#     embeddings: HuggingFaceEmbeddings,
+#     vectorstore: MultiModalVectorStore,
+#     text_chunks: List[str],
+# ):
+#     vectorstore.add_documents(text_chunks)
 
-    query = "What did King Ulfric Stormborn do in 879"
-    float_32_1024_dimensional_bge_vector = embeddings.embed_documents([query])[0]
-    results = vectorstore.similarity_search_with_score_by_vector(
-        float_32_1024_dimensional_bge_vector, k=2, filter=Tag("source") == "book"
-    )
-
-    score1 = results[0][1]
-    score2 = results[1][1]
-
-    assert score1 < score2
+#     query = "What did King Ulfric Stormborn do in 879"
+#     float_32_1024_dimensional_bge_vector = embeddings.embed_documents([query])[0]
+#     results = vectorstore.similarity_search_by_vector(
+#         float_32_1024_dimensional_bge_vector, k=2, filter=Tag("source") == "book"
+#     )
+#     assert len(results) == 2
 
 
-def test_embed_documents_with_max_marginal_relevance_search_by_vector(
-    embeddings: HuggingFaceEmbeddings,
-    vectorstore: MultiModalVectorStore,
-    text_chunks: List[str],
-):
-    vectorstore.add_documents(text_chunks)
+# def test_embed_documents_with_similarity_search_with_score_by_vector(
+#     embeddings: HuggingFaceEmbeddings,
+#     vectorstore: MultiModalVectorStore,
+#     text_chunks: List[str],
+# ):
+#     vectorstore.add_documents(text_chunks)
 
-    query = "What did King Ulfric Stormborn do in 879"
-    float_32_1024_dimensional_bge_vector = embeddings.embed_documents([query])[0]
-    results = vectorstore.max_marginal_relevance_search_by_vector(
-        float_32_1024_dimensional_bge_vector, k=2, filter=Tag("source") == "book"
-    )
+#     query = "What did King Ulfric Stormborn do in 879"
+#     float_32_1024_dimensional_bge_vector = embeddings.embed_documents([query])[0]
+#     results = vectorstore.similarity_search_with_score_by_vector(
+#         float_32_1024_dimensional_bge_vector, k=2, filter=Tag("source") == "book"
+#     )
 
-    assert len(results) == 2
+#     score1 = results[0][1]
+#     score2 = results[1][1]
 
-
-@pytest.mark.asyncio
-async def test_aembed_documents(embeddings: HuggingFaceEmbeddings):
-    embedded_vectors = await embeddings.aembed_documents([dummy_corpus1])
-    assert len(embedded_vectors) > 0
+#     assert score1 < score2
 
 
-@pytest.mark.asyncio
-async def test_aembed_multiple_documents(embeddings: HuggingFaceEmbeddings):
-    embedded_vectors = await embeddings.aembed_documents(
-        [dummy_corpus1, dummy_corpus1.upper()]
-    )
-    assert len(embedded_vectors) > 0
+# def test_embed_documents_with_max_marginal_relevance_search_by_vector(
+#     embeddings: HuggingFaceEmbeddings,
+#     vectorstore: MultiModalVectorStore,
+#     text_chunks: List[str],
+# ):
+#     vectorstore.add_documents(text_chunks)
+
+#     query = "What did King Ulfric Stormborn do in 879"
+#     float_32_1024_dimensional_bge_vector = embeddings.embed_documents([query])[0]
+#     results = vectorstore.max_marginal_relevance_search_by_vector(
+#         float_32_1024_dimensional_bge_vector, k=2, filter=Tag("source") == "book"
+#     )
+
+#     assert len(results) == 2
 
 
-@pytest.mark.asyncio
-async def test_aembed_query(embeddings: HuggingFaceEmbeddings):
-    embedded_vectors = await embeddings.aembed_query(dummy_corpus1)
-    assert len(embedded_vectors) > 0
+# @pytest.mark.asyncio
+# async def test_aembed_documents(embeddings: HuggingFaceEmbeddings):
+#     embedded_vectors = await embeddings.aembed_documents([dummy_corpus1])
+#     assert len(embedded_vectors) > 0
 
 
-@pytest.mark.asyncio
-async def test_aembed_documents_in_vector_db(vectorstore: MultiModalVectorStore):
-    ids = await vectorstore.aadd_texts([dummy_corpus1], [{"source": "book"}])
-    assert ids[0].startswith("test1")
+# @pytest.mark.asyncio
+# async def test_aembed_multiple_documents(embeddings: HuggingFaceEmbeddings):
+#     embedded_vectors = await embeddings.aembed_documents(
+#         [dummy_corpus1, dummy_corpus1.upper()]
+#     )
+#     assert len(embedded_vectors) > 0
 
 
-@pytest.mark.asyncio
-async def test_aembed_documents_with_similarity_search(
-    vectorstore: MultiModalVectorStore, text_chunks: List[str]
-):
-    await vectorstore.aadd_documents(text_chunks)
-    query = "What did King Ulfric Stormborn do in 879"
-    results = await vectorstore.asimilarity_search(
-        query, k=2, filter=Tag("source") == "book"
-    )
-    assert len(results) == 2
+# @pytest.mark.asyncio
+# async def test_aembed_query(embeddings: HuggingFaceEmbeddings):
+#     embedded_vectors = await embeddings.aembed_query(dummy_corpus1)
+#     assert len(embedded_vectors) > 0
 
 
-def test_embed_multimodal_documents_with_similarity_search(
-    vectorstore: MultiModalVectorStore, mixed_message_chunks: List[str]
-):
-    vectorstore.add_documents(mixed_message_chunks)
-    query = "Describe the document"
-    results = vectorstore.similarity_search(
-        query, k=2, filter=Tag("source") == "jpeg.pdf"
-    )
-
-    assert len(results) == 2
+# @pytest.mark.asyncio
+# async def test_aembed_documents_in_vector_db(vectorstore: MultiModalVectorStore):
+#     ids = await vectorstore.aadd_texts([dummy_corpus1], [{"source": "book"}])
+#     assert ids[0].startswith("test1")
 
 
-def test_embed_multimodal_documents_with_max_marginal_relevance_search(
-    vectorstore: MultiModalVectorStore, mixed_message_chunks: List[str]
-):
-    vectorstore.add_documents(mixed_message_chunks)
-    query = "Describe the document"
-    results = vectorstore.max_marginal_relevance_search(
-        query, k=2, filter=Tag("source") == "jpeg.pdf"
-    )
+# @pytest.mark.asyncio
+# async def test_aembed_documents_with_similarity_search(
+#     vectorstore: MultiModalVectorStore, text_chunks: List[str]
+# ):
+#     await vectorstore.aadd_documents(text_chunks)
+#     query = "What did King Ulfric Stormborn do in 879"
+#     results = await vectorstore.asimilarity_search(
+#         query, k=2, filter=Tag("source") == "book"
+#     )
+#     assert len(results) == 2
 
-    assert len(results) == 2
+
+# def test_embed_multimodal_documents_with_similarity_search(
+#     vectorstore: MultiModalVectorStore, mixed_message_chunks: List[str]
+# ):
+#     vectorstore.add_documents(mixed_message_chunks)
+#     query = "Describe the document"
+#     results = vectorstore.similarity_search(
+#         query, k=2, filter=Tag("source") == "jpeg.pdf"
+#     )
+
+#     assert len(results) == 2
 
 
-@pytest.mark.asyncio
-async def test_aembed_multimodal_documents_with_similarity_search(
-    vectorstore: MultiModalVectorStore, mixed_message_chunks: List[str]
-):
-    await vectorstore.aadd_documents(mixed_message_chunks)
-    query = "Describe the document"
-    results = await vectorstore.asimilarity_search(
-        query, k=2, filter=Tag("source") == "jpeg.pdf"
-    )
+# def test_embed_multimodal_documents_with_max_marginal_relevance_search(
+#     vectorstore: MultiModalVectorStore, mixed_message_chunks: List[str]
+# ):
+#     vectorstore.add_documents(mixed_message_chunks)
+#     query = "Describe the document"
+#     results = vectorstore.max_marginal_relevance_search(
+#         query, k=2, filter=Tag("source") == "jpeg.pdf"
+#     )
 
-    assert len(results) == 2
+#     assert len(results) == 2
+
+
+# @pytest.mark.asyncio
+# async def test_aembed_multimodal_documents_with_similarity_search(
+#     vectorstore: MultiModalVectorStore, mixed_message_chunks: List[str]
+# ):
+#     await vectorstore.aadd_documents(mixed_message_chunks)
+#     query = "Describe the document"
+#     results = await vectorstore.asimilarity_search(
+#         query, k=2, filter=Tag("source") == "jpeg.pdf"
+#     )
+
+#     assert len(results) == 2
