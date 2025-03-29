@@ -7,6 +7,10 @@ from langchain_community.document_loaders.base import BaseBlobParser
 from ..parsers.extended_pdf_parser import ExtendedPyPDFParser
 
 class ExtendedPyPDFLoader(BasePDFLoader):
+    """
+    If mode is page, the loader will stream page by page
+    else stream content in a single block
+    """
     def __init__(
         self,
         file_path: Union[str, PurePath],

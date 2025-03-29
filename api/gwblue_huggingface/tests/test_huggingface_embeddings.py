@@ -2,7 +2,7 @@ import pytest
 import os
 import json
 from pathlib import Path
-from typing import List, Iterator
+from typing import List, Iterator, Dict
 from dotenv import load_dotenv
 from langchain_core.documents import Document
 from langchain_redis import RedisConfig
@@ -12,7 +12,7 @@ from ..huggingface_transformer_tokenizers import (
     get_tokenizer_class_by_prefix,
     BaseLocalTokenizer,
 )
-from langchain_community.document_loaders import PyPDFLoader
+from ...gwblue_document_loaders.loaders import ExtendedPyPDFLoader
 from ...gwblue_document_loaders.parsers import Base64BlobParser
 from ...gwblue_text_splitters import MixedContentTextSplitter
 from ...gwblue_vectorstores.redis.multimodal_vectorstore import MultiModalVectorStore
@@ -21,7 +21,7 @@ from .corpus import dummy_corpus1
 load_dotenv()
 
 
-def _model_config(model_type: str, model_name: str) -> str:
+def _model_config(model_type: str, model_name: str) -> Dict[str, str]:
     models = json.loads(os.environ[model_type])
     model = next((model for model in models if model["name"] == model_name), None)
     if not model:
@@ -117,13 +117,14 @@ def text_chunks(vlm_tokenizer: BaseLocalTokenizer) -> List[str]:
 @pytest.fixture
 def mixed_message_chunks(vlm_tokenizer: BaseLocalTokenizer) -> List[str]:
     pdf_path = Path(__file__).parent / "assets" / "jpeg.pdf"
-    loader = PyPDFLoader(
+    loader = ExtendedPyPDFLoader(
         pdf_path,
         extract_images=True,
         images_parser=Base64BlobParser(),
         images_inner_format="raw",
         mode="page",
     )
+
     docs = loader.load()
 
     sequence_length = round(vlm_tokenizer.sequence_length_forward_pass, -2)
@@ -348,7 +349,8 @@ async def test_aembed_documents_with_similarity_search(
 
 
 def test_embed_multimodal_documents_with_similarity_search(
-    vectorstore: MultiModalVectorStore, mixed_message_chunks: List[str]
+    vectorstore: MultiModalVectorStore, 
+    mixed_message_chunks: List[str],
 ):
     vectorstore.add_documents(mixed_message_chunks)
     query = "Describe the document"

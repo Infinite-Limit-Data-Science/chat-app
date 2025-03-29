@@ -1,6 +1,7 @@
 import re
 from typing import List, Callable, Dict, Any, Iterator
 from langchain_core.documents import Document
+from pathlib import Path
 
 def _token_based_split_text_stream(
     text: str,
@@ -44,8 +45,20 @@ class MixedContentTextSplitter:
         self,
         docs: Iterator[Document],
     ) -> Iterator[Document]:
+        """
+        In the case of pdf with page parsing enabled, each doc represents
+        a page.
+
+        Else, a doc may represent an entire document. 
+
+        This text splitter streams documents, offering the ability to use
+        exponentially large corpus
+        """
         for doc in docs:
             merged_meta = {**doc.metadata, **self.metadata}
+            if "source" in merged_meta:
+                merged_meta["source"] = Path(merged_meta["source"]).name
+
             page_number = merged_meta.get("page_number")
 
             parts = self.img_regex.split(doc.page_content)

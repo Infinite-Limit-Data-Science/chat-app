@@ -1,5 +1,5 @@
 import pytest
-from typing import List
+from typing import List, Dict
 import asyncio
 import base64
 from pathlib import Path
@@ -17,7 +17,7 @@ from ..huggingface_transformer_tokenizers import (
 
 load_dotenv()
 
-def _model_config(model_type: str, model_name: str) -> str:
+def _model_config(model_type: str, model_name: str) -> Dict[str, str]:
     models = json.loads(os.environ[model_type])
     model = next((model for model in models if model["name"] == model_name), None)
     if not model:
@@ -221,7 +221,7 @@ async def test_inference_client_chat_completion_with_logprobs(
     llama_11B_vision_instruct: BaseLocalTokenizer,
 ):
     messages = [{"role": "user", "content": "What is Generative AI?"}]
-    max_tokens = llama_11B_vision_instruct.max_new_tokens,
+    max_tokens = llama_11B_vision_instruct.max_new_tokens
     params = [{"top_p": 0.5}, {"top_p": 0.9}]
 
     async def fetch_chat_completion(top_p_value):
@@ -252,7 +252,7 @@ async def test_inference_client_chat_completion_with_reranking(
     llama_11B_vision_instruct: BaseLocalTokenizer,
 ):
     messages = [{"role": "user", "content": "What is Generative AI?"}]
-    max_tokens = llama_11B_vision_instruct.max_new_tokens,
+    max_tokens = llama_11B_vision_instruct.max_new_tokens
     params = [{"top_p": 0.5}, {"top_p": 0.9}]
 
     async def fetch_chat_completion(top_p_value):

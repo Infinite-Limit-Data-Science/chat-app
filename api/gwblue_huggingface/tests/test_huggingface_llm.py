@@ -29,7 +29,7 @@ from .corpus import examples
 
 load_dotenv()
 
-def _model_config(model_type: str, model_name: str) -> str:
+def _model_config(model_type: str, model_name: str) -> Dict[str, str]:
     models = json.loads(os.environ[model_type])
     model = next((model for model in models if model["name"] == model_name), None)
     if not model:

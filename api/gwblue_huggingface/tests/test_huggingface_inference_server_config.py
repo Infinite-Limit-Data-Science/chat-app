@@ -1,6 +1,7 @@
 import pytest
 import os
 import json
+from typing import Dict
 from dotenv import load_dotenv
 from ..huggingface_inference_server_config import (
     HuggingFaceInferenceConfig,
@@ -10,7 +11,7 @@ from ..huggingface_inference_server_config import (
 load_dotenv()
 
 
-def _model_config(model_type: str, model_name: str) -> str:
+def _model_config(model_type: str, model_name: str) -> Dict[str, str]:
     models = json.loads(os.environ[model_type])
     model = next((model for model in models if model["name"] == model_name), None)
     if not model:
