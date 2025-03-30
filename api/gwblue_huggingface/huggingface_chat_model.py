@@ -8,13 +8,13 @@ from typing import (
     Sequence,
     Type,
     Union,
-    cast,
     Iterator,
     AsyncIterator,
-    TypeAlias,
-    Tuple,
+    TypeVar,
 )
 import uuid
+from types import MethodType
+from functools import wraps
 from langchain_core.callbacks.manager import (
     AsyncCallbackManagerForLLMRun,
     CallbackManagerForLLMRun,
@@ -22,11 +22,7 @@ from langchain_core.callbacks.manager import (
 from langchain_core.language_models import LanguageModelInput
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import (
-    AIMessage,
-    AIMessageChunk,
     BaseMessage,
-    ChatMessage,
-    HumanMessage,
     SystemMessage,
     ToolMessage,
 )
@@ -47,117 +43,42 @@ from huggingface_hub.inference._generated.types import (
     ChatCompletionStreamOutputDelta,
 )
 from .huggingface_llm import HuggingFaceLLM
-from .huggingface_transformer_tokenizers import get_tokenizer_class_by_prefix
-from .helpers.chat_completion_helper import (
+from .huggingface_transformer_tokenizers import (
+    get_chat_tokenizer_by_prefix,
+    BaseChatTokenizer,
+)
+from ..gwblue_helpers.chat_completion_helper import (
     postprocess_chat_completion_output,
     postprocess_chat_completion_stream_output,
     strip_stop_sequences,
     truncate_at_stop_sequence,
 )
-from .helpers.run_manager_helper import (
+from ..gwblue_helpers.run_manager_helper import (
     handle_sync_run_manager,
     handle_async_run_manager,
 )
-
-ChatCompletionOutputContentLike: TypeAlias = (
-    ChatCompletionOutputMessage | ChatCompletionStreamOutputDelta
+from ..gwblue_helpers.chat_prompt_helper import (
+    convert_message_to_chat_message,
+    convert_tgi_message_to_lc_ai_message,
+    convert_tgi_message_to_lc_ai_message_chunk,
 )
 
 DEFAULT_SYSTEM_PROMPT = """You are a helpful, respectful, and honest assistant."""
 
+T = TypeVar("T", bound=Callable[..., List[int]])
 
-def _convert_message_to_chat_message(
-    message: BaseMessage,
-) -> Dict:
-    if isinstance(message, ChatMessage):
-        return dict(role=message.role, content=message.content)
-    elif isinstance(message, HumanMessage):
-        return dict(role="user", content=message.content)
-    elif isinstance(message, AIMessage):
-        if "tool_calls" in message.additional_kwargs:
-            tool_calls = [
-                {
-                    "function": {
-                        "name": tc["function"]["name"],
-                        "arguments": tc["function"]["arguments"],
-                    }
-                }
-                for tc in message.additional_kwargs["tool_calls"]
-            ]
-        else:
-            tool_calls = None
-        return {
-            "role": "assistant",
-            "content": message.content,
-            "tool_calls": tool_calls,
-        }
-    elif isinstance(message, SystemMessage):
-        return dict(role="system", content=message.content)
-    elif isinstance(message, ToolMessage):
-        return {
-            "role": "tool",
-            "content": message.content,
-            "name": message.name,
-        }
-    else:
-        raise ValueError(f"Got unknown type {message}")
-
-
-def corrected_functions(fn_string: str) -> str:
-    import json, ast
-
-    try:
-        py_obj = ast.literal_eval(fn_string)
-        corrected_json = json.dumps(py_obj)
-    except Exception:
-        corrected_json = fn_string.replace("'", '"')
-
-    return corrected_json
-
-
-def _convert_tgi_message_to_langchain_message(
-    message: ChatCompletionOutputContentLike, token_usage: Dict[str, any]
-) -> Tuple[str, Dict[str, any]]:
-    role = message.role
-    assert role == "assistant", f"Expected role to be 'assistant', got {role}"
-    content = cast(str, message.content)
-    if content is None:
-        content = ""
-    additional_kwargs: Dict = {}
-    additional_kwargs["token_usage"] = token_usage
-    if tool_calls := message.tool_calls:
-        if "arguments" in tool_calls[0]["function"]:
-            functions_string = str(tool_calls[0]["function"].pop("arguments"))
-            tool_calls[0]["function"]["arguments"] = corrected_functions(
-                functions_string
-            )
-        additional_kwargs["tool_calls"] = tool_calls
-    return content, additional_kwargs
-
-
-def _convert_tgi_message_to_lc_ai_message(
-    message: ChatCompletionOutputContentLike, token_usage: Dict[str, any]
-) -> AIMessage:
-    content, additional_kwargs = _convert_tgi_message_to_langchain_message(
-        message, token_usage
-    )
-    return AIMessage(content=content, additional_kwargs=additional_kwargs)
-
-
-def _convert_tgi_message_to_lc_ai_message_chunk(
-    message: ChatCompletionOutputContentLike, token_usage: Dict[str, any]
-) -> AIMessageChunk:
-    content, additional_kwargs = _convert_tgi_message_to_langchain_message(
-        message, token_usage
-    )
-    additional_kwargs["token_usage"] = {"chunks": [additional_kwargs["token_usage"]]}
-    return AIMessageChunk(content=content, additional_kwargs=additional_kwargs)
-
+def parse_lc_messages(func: T) -> T:
+    @wraps(func)
+    def wrapper(self, messages):
+        if messages and hasattr(messages[0], "content"):
+            messages = [convert_message_to_chat_message(m) for m in messages]
+        return func(self, messages)
+    return wrapper
 
 class HuggingFaceChatModel(BaseChatModel):
     llm: HuggingFaceLLM
     system_message: SystemMessage = SystemMessage(content=DEFAULT_SYSTEM_PROMPT)
-    tokenizer: Any = None
+    tokenizer: BaseChatTokenizer = None
     model_name: Optional[str] = None
 
     @model_validator(mode="after")
@@ -173,7 +94,11 @@ class HuggingFaceChatModel(BaseChatModel):
             raise TypeError(
                 "Expected model name to be defined" f"received {type(tokenizer_name)}"
             )
-        self.tokenizer = get_tokenizer_class_by_prefix(tokenizer_name)(tokenizer_name)
+        
+        self.tokenizer = get_chat_tokenizer_by_prefix(tokenizer_name)
+        bound_method = self.tokenizer.to_chat_template_ids
+        wrapped = parse_lc_messages(bound_method.__func__)
+        self.tokenizer.to_chat_template_ids = MethodType(wrapped, self.tokenizer)
 
         return self
 
@@ -211,7 +136,7 @@ class HuggingFaceChatModel(BaseChatModel):
     def _create_message_dicts(
         self, messages: List[BaseMessage], stop: Optional[List[str]]
     ) -> List[Dict[Any, Any]]:
-        message_dicts = [_convert_message_to_chat_message(m) for m in messages]
+        message_dicts = [convert_message_to_chat_message(m) for m in messages]
         return message_dicts
 
     def _create_chat_result(
@@ -219,7 +144,7 @@ class HuggingFaceChatModel(BaseChatModel):
     ) -> ChatResult:
         generations = []
         gen = ChatGeneration(
-            message=_convert_tgi_message_to_lc_ai_message(message, token_usage),
+            message=convert_tgi_message_to_lc_ai_message(message, token_usage),
             generation_info=token_usage,
         )
         generations.append(gen)
@@ -331,7 +256,7 @@ class HuggingFaceChatModel(BaseChatModel):
                     text_chunk, invocation_params.get("stop", [])
                 )
 
-                lc_message = _convert_tgi_message_to_lc_ai_message_chunk(
+                lc_message = convert_tgi_message_to_lc_ai_message_chunk(
                     chat_completion_stream_output.choices[0].delta, token_usage
                 )
                 lc_message.content = text_chunk
@@ -380,7 +305,7 @@ class HuggingFaceChatModel(BaseChatModel):
                     text_chunk, invocation_params.get("stop", [])
                 )
 
-                lc_message = _convert_tgi_message_to_lc_ai_message_chunk(
+                lc_message = convert_tgi_message_to_lc_ai_message_chunk(
                     chat_completion_stream_output.choices[0].delta, token_usage
                 )
                 lc_message.content = text_chunk

@@ -29,15 +29,19 @@ from huggingface_hub.inference._generated.types import (
 )
 from .inference_schema import HuggingFaceInferenceServerMixin
 from .huggingface_inference_client import HuggingFaceInferenceClient
-from .helpers.chat_completion_helper import (
+from ..gwblue_helpers.chat_completion_helper import (
     postprocess_chat_completion_output,
     postprocess_chat_completion_stream_output,
     strip_stop_sequences,
     truncate_at_stop_sequence,
 )
-from .helpers.run_manager_helper import (
+from ..gwblue_helpers.run_manager_helper import (
     handle_sync_run_manager,
     handle_async_run_manager,
+)
+from .huggingface_transformer_tokenizers import (
+    get_tokenizer_by_prefix,
+    BaseLocalTokenizer,
 )
 
 logger = logging.getLogger(__name__)
@@ -48,6 +52,7 @@ class HuggingFaceLLM(LLM, HuggingFaceInferenceServerMixin):
         description="Hugging Face Inference Client to interface with Hugging Face Hub Messages API",
         default=None,
     )
+    tokenizer: BaseLocalTokenizer = None
     # InferenceClient parameters (in addition to HuggingFaceInferenceServerMixin)
     timeout: float = 120
 
@@ -137,6 +142,7 @@ class HuggingFaceLLM(LLM, HuggingFaceInferenceServerMixin):
             model=self.model,
         )
         self.client = client
+        self.tokenizer = get_tokenizer_by_prefix(self.model)
 
         return self
 

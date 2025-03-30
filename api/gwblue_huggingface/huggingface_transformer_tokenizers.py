@@ -3,7 +3,7 @@ import json
 import re
 import importlib
 from pathlib import Path
-from typing import TypeVar, Optional, Annotated, Tuple, Dict, Any
+from typing import TypeVar, Optional, Annotated, Tuple, Dict, Any, List
 from typing_extensions import Doc
 from abc import ABC
 from transformers import PreTrainedTokenizerBase, AutoTokenizer
@@ -16,7 +16,7 @@ Using models with larger model weights will continue to pose challenges and invi
 
 But we still need to load model weights into memory during inference. This includes token embedding, positional embedding, forward pass weights, such as self-attention and feed forward, as well as final output projections.
 
-This module wraps the model tokenizer with additional attributes that specify overriden weights for local deployments, where resources may not match full model training capacity.
+This module wraps features of the transformers package, namely the model tokenizer with additional attributes that specify overriden weights for local deployments, where resources may not match full model training capacity. It also simplifies token management, e.g. `apply_chat_template`.
 """
 
 TRANSFORMER_TOKENIZER_CACHE = "transformers/tokenizers/cache"
@@ -28,11 +28,11 @@ def transform_name(s: str) -> str:
     result = re.sub(r"[.\-]", "", remainder)
     return result
 
-def get_tokenizer_class_by_prefix(prefix: str):
+def get_tokenizer_by_prefix(prefix: str):
     class_name = f"{transform_name(prefix)}PretrainedTokenizer"
 
     if class_name in globals():
-        return globals()[class_name]
+        return globals()[class_name](prefix)
     
     cls = type(
         class_name,
@@ -41,7 +41,22 @@ def get_tokenizer_class_by_prefix(prefix: str):
     )
 
     globals()[class_name] = cls
-    return cls
+    return cls(prefix)
+
+def get_chat_tokenizer_by_prefix(prefix: str):
+    class_name = f"{transform_name(prefix)}ChatPretrainedTokenizer"
+
+    if class_name in globals():
+        return globals()[class_name](prefix)
+    
+    cls = type(
+        class_name,
+        (BaseChatTokenizer,),
+        {}
+    )
+
+    globals()[class_name] = cls
+    return cls(prefix)
 
 def _load_tokenizer_and_config(name: str) -> Tuple[PreTrainedTokenizerBase, dict]:
     """
@@ -384,7 +399,7 @@ class BaseLocalTokenizer(ABC):
 
     def __repr__(self) -> str:
         f"""
-        {get_tokenizer_class_by_prefix(self.name)}(
+        {get_tokenizer_by_prefix(self.name)}(
             name={self.name}
             vector_dimension_length={self.vector_dimension_length}
             token_embeddings={self.token_embeddings}
@@ -403,3 +418,86 @@ class BaseLocalTokenizer(ABC):
     
     def __len__(self) -> int:
         return self.sequence_length_forward_pass
+
+class BaseChatTokenizer(BaseLocalTokenizer, ABC):
+    def to_chat_template_ids(self, messages: List[Dict[str, Any]]) -> List[int]:
+        """
+        The "chat_template" syntax is specific to language models that support a 
+        predefined chat or conversation format, known as an Instruct. For example,
+        Llama 2/3 Chat variants are known as instruction-tuned models that explicitly
+        include a chat template definitions in their tokenizer config. Hence, you
+        have a model name like "Llama 3.1 70B Instruct".
+
+        There is an important distinction to draw. Chat Templates are not baked into 
+        the language model's internal weights, whether it is the token or positional
+        embeddings tables, the weights of the forward pass, or other model weights.
+        Those internal model weights are completely separate from the chat template
+        instructions template. However, the model's weights (including token embeddings) 
+        expect or are attuned to the special tokens and ordering used by its chat 
+        template (remember in the end, the chat template will get broken down into tokens 
+        when pass into the neural network layers). However, that does not mean the 
+        template itself lives in the weights. Rather:
+        - During training, the model sees text data that follows a particular format:
+            - special tokens for roles (<|start_header_id|>user<|end_header_id|>) 
+            - begin-of-sequence(BOS)/end-of-sequence (end of turn) (EOS) markers 
+                - <|begin_of_text|> and <|eot_id|>
+                - <s> and </s>
+        - The embedding matrix ends up with learned representations for those special 
+        tokens; the self-attention layers learn to recognize patterns of usage for them.
+        - At inference time, to get the best behavior, you must replicate the same token 
+        structure (with those special tokens and message order). That's exactly what the 
+        "chat template" handles externally.
+
+        In effect, the "chat_template" is not baked into the model's internal weights 
+        or forward pass; rather, it's typically stored as metadata in the model's files
+        —most often in tokenizer_config.json or a separate Python helper (like 
+        apply_chat_template).
+
+        The "chat template" handles the role-based formatting (system, user, assistant), 
+        multi-turn conversation state, and tokenization for you. In other 
+        words, instead of calling a generic "text-generation" pipeline and manually 
+        stitching messages together, a chat template can:
+        - Accept messages in a structured format (e.g., system and user messages).
+        - Automate the insertion of special "chat" tokens (like role tags, BOS/EOS markers).
+        - Keep track of conversation history across multiple turns so the model maintains 
+        context.
+
+        Note a base LLM (not fine-tuned for chat) typically has no dedicated "system"/"user"
+        /"assistant" roles, so it will not include any "chat_template" in its config.
+
+        Verify support of chat_template:
+        - Check the Model's tokenizer_config.json
+            - If the model's maintainers have included a chat template, you'll see an entry 
+            like "chat_template": ... describing how roles and messages get wrapped in 
+            special tokens.
+        - Look for "chat" or "instruct" in the Model's Card
+            - Models named "-chat-", "-instruct-", or "-dialog-" often come with an 
+            official conversation format.
+        - Use the Official Example
+            - If the model card or README shows code like tokenizer.apply_chat_template(...), 
+            that's a good sign it has built-in chat functionality.
+
+        Utilization of "chat_template" ensures token counting reflects the true prompt length 
+        used by the model. If you simply concatenate the raw message contents without the 
+        template (or use a wrong template), the token count will not match the actual model 
+        input length.
+        """
+        token_ids = self.tokenizer.apply_chat_template(
+            messages, 
+            tokenize=True
+        )
+        return token_ids
+    
+    def multimodal_template(self, content: str) -> List[Dict[str, Any]]:
+        return [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": content},
+                    },
+                    {"type": "text", "text": "Describe this image."},
+                ],
+            }
+        ]

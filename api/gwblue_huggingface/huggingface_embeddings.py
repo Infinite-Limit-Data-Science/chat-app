@@ -6,13 +6,17 @@ from pydantic import ConfigDict, Field, field_validator, model_validator
 from typing_extensions import Self
 from .inference_schema import HuggingFaceInferenceServerMixin
 from .huggingface_inference_client import HuggingFaceInferenceClient
-
+from .huggingface_transformer_tokenizers import (
+    get_tokenizer_by_prefix,
+    BaseLocalTokenizer,
+)
 
 class HuggingFaceBaseEmbeddings(HuggingFaceInferenceServerMixin, Embeddings):
     client: Optional[HuggingFaceInferenceClient] = Field(
         description="Low-level Inference Client to interface to the self-hosted HF TEI Server",
         default=None,
     )
+    tokenizer: BaseLocalTokenizer = None
 
     model_config = ConfigDict(
         extra="forbid",
@@ -44,6 +48,7 @@ class HuggingFaceEmbeddings(HuggingFaceBaseEmbeddings):
             headers=self.headers,
         )
         self.client = client
+        self.tokenizer = get_tokenizer_by_prefix(self.model)
 
         return self
 

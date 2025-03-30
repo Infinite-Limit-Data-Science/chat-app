@@ -19,7 +19,7 @@ from ..gwblue_text_splitters.mixed_content_text_splitter import MixedContentText
 from ..gwblue_vectorstores.redis.config import VectorStoreSchema
 from ..gwblue_vectorstores.redis.multimodal_vectorstore import MultiModalVectorStore
 from ..gwblue_huggingface.huggingface_transformer_tokenizers import (
-    get_tokenizer_class_by_prefix,
+    get_tokenizer_by_prefix,
 )
 
 _VECTOR_TTL_30_DAYS = 3600 * 24 * 30
@@ -58,7 +58,7 @@ class DocumentIngestor(ABC):
         self._file = file
         self.embeddings = embeddings
         self.metadata = metadata
-        self.local_tokenizer = get_tokenizer_class_by_prefix(embeddings_config.model)(embeddings_config.model)
+        self.local_tokenizer = get_tokenizer_by_prefix(embeddings_config.model)
 
         config = RedisConfig(
             **{

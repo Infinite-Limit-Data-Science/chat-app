@@ -21,7 +21,7 @@ from langchain_core.runnables.utils import ConfigurableField
 from ..huggingface_llm import HuggingFaceLLM
 from ..huggingface_embeddings import HuggingFaceEmbeddings
 from ..huggingface_transformer_tokenizers import (
-    get_tokenizer_class_by_prefix,
+    get_tokenizer_by_prefix,
     BaseLocalTokenizer,
 )
 from ...gwblue_vectorstores.redis.multimodal_vectorstore import MultiModalVectorStore
@@ -43,8 +43,7 @@ def _model_config(model_type: str, model_name: str) -> Dict[str, str]:
 
 @pytest.fixture
 def llama_11B_vision_instruct() -> BaseLocalTokenizer:
-    model_name = "meta-llama/Llama-3.2-11B-Vision-Instruct"
-    return get_tokenizer_class_by_prefix(model_name)(model_name)
+    return get_tokenizer_by_prefix("meta-llama/Llama-3.2-11B-Vision-Instruct")
 
 @pytest.fixture
 def llm(llama_11B_vision_instruct: BaseLocalTokenizer) -> HuggingFaceLLM:
@@ -59,7 +58,6 @@ def llm(llama_11B_vision_instruct: BaseLocalTokenizer) -> HuggingFaceLLM:
         model=config["name"],
     )
 
-
 @pytest.fixture
 def embeddings() -> HuggingFaceEmbeddings:
     config = _model_config("EMBEDDING_MODELS", "TIGER-Lab/VLM2Vec-Full")
@@ -73,8 +71,7 @@ def embeddings() -> HuggingFaceEmbeddings:
 
 @pytest.fixture
 def vlm_tokenizer() -> BaseLocalTokenizer:
-    model_name = "TIGER-Lab/VLM2Vec-Full"
-    return get_tokenizer_class_by_prefix(model_name)(model_name)
+    return get_tokenizer_by_prefix("TIGER-Lab/VLM2Vec-Full")
 
 @pytest.fixture
 def vectorstore(
@@ -203,10 +200,8 @@ def spy_llm(llama_11B_vision_instruct: BaseLocalTokenizer) -> SpyHuggingFaceLLM:
         model=config["name"],
     )
 
-
 def test_llm_type(llm: HuggingFaceLLM):
     assert getattr(llm, "_llm_type") == "huggingface_llm"
-
 
 def test_identifying_params(llm: HuggingFaceLLM):
     assert getattr(llm, "_identifying_params") == {
@@ -214,11 +209,9 @@ def test_identifying_params(llm: HuggingFaceLLM):
         "model_kwargs": {},
     }
 
-
 def test_llm_invoke(llm: HuggingFaceLLM):
     ai_message = llm.invoke("What is Generative AI?")
     assert len(ai_message) > 0
-
 
 def test_llm_invoke_with_prompt_template(llm: HuggingFaceLLM):
     prompt = PromptTemplate(
@@ -228,7 +221,6 @@ def test_llm_invoke_with_prompt_template(llm: HuggingFaceLLM):
     chain = prompt | llm
     ai_message = chain.invoke({"input": "Memento"})
     assert len(ai_message) > 0
-
 
 def test_llm_invoke_with_output_parser(llm: HuggingFaceLLM):
     output_parser = PydanticOutputParser(pydantic_object=MovieSummary)
@@ -248,7 +240,6 @@ def test_llm_invoke_with_output_parser(llm: HuggingFaceLLM):
     assert ai_message.release_year == 2000
     assert ai_message.director == "Christopher Nolan"
     assert len(ai_message.plot_summary) > 1
-
 
 def test_llm_invoke_with_few_shot_prompt(
     llm: HuggingFaceLLM,

@@ -9,7 +9,7 @@ from langchain_redis import RedisConfig
 from redisvl.query.filter import Tag
 from ..huggingface_embeddings import HuggingFaceEmbeddings
 from ..huggingface_transformer_tokenizers import (
-    get_tokenizer_class_by_prefix,
+    get_tokenizer_by_prefix,
     BaseLocalTokenizer,
 )
 from ...gwblue_document_loaders.loaders import ExtendedPyPDFLoader
@@ -57,17 +57,13 @@ def embeddings() -> HuggingFaceEmbeddings:
         model=config["name"],
     )
 
-
 @pytest.fixture
 def bge_tokenizer() -> BaseLocalTokenizer:
-    model_name = "BAAI/bge-large-en-v1.5"
-    return get_tokenizer_class_by_prefix(model_name)(model_name)
-
+    return get_tokenizer_by_prefix("BAAI/bge-large-en-v1.5")
 
 @pytest.fixture
 def vlm_tokenizer() -> BaseLocalTokenizer:
-    model_name = "TIGER-Lab/VLM2Vec-Full"
-    return get_tokenizer_class_by_prefix(model_name)(model_name)
+    return get_tokenizer_by_prefix("TIGER-Lab/VLM2Vec-Full")
 
 @pytest.fixture
 def text_chunk(vlm_tokenizer: BaseLocalTokenizer) -> str:

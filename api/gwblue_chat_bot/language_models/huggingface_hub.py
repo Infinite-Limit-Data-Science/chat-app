@@ -6,13 +6,6 @@ from ..chat_bot_config import ChatBotConfig
 
 _DEFAULT_TEMPERATURE = 0.8
 
-# TODO: there should be an api call to get these parameters
-# rather than having to rely on app definition in configmap
-_MAX_INPUT_TOKENS = 12582
-
-_MAX_TOTAL_TOKENS = 16777
-
-
 class HuggingFaceHub(BaseModel):
     config: ChatBotConfig
     model_types: Optional[Dict[str, Any]] = Field(default_factory={}, exclude=True)
@@ -23,7 +16,13 @@ class HuggingFaceHub(BaseModel):
             HuggingFaceLLM,
             HuggingFaceChatModel,
             HuggingFaceEmbeddings,
+            
         )
+
+        from ...gwblue_huggingface.huggingface_transformer_tokenizers import (
+            get_tokenizer_by_prefix,
+        )
+        local_tokenizer = get_tokenizer_by_prefix(self.config.llm.model)
 
         if self.config.llm:
             llm = HuggingFaceLLM(
@@ -31,7 +30,7 @@ class HuggingFaceHub(BaseModel):
                 credentials=self.config.llm.token,
                 provider=self.config.llm.provider,
                 model=self.config.llm.model,
-                max_tokens=_MAX_TOTAL_TOKENS - _MAX_INPUT_TOKENS,
+                max_tokens=local_tokenizer.max_new_tokens,
                 temperature=self.config.llm.parameters["temperature"]
                 or _DEFAULT_TEMPERATURE,
                 logprobs=True,

@@ -1,4 +1,4 @@
 {
-    "bos_token": "<|begin_of_text|>",
-    "eos_token": "<|end_of_text|>"
+  "bos_token": "<|begin_of_text|>",
+  "eos_token": "<|end_of_text|>"
 }

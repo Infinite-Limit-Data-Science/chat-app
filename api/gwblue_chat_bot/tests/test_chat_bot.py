@@ -7,6 +7,10 @@ from pathlib import Path
 from typing import Dict, Any, List, Generator, Iterator
 from redis.client import Redis
 from redis.connection import ConnectionPool
+from bson import ObjectId
+from uuid import uuid4
+from pymongo import MongoClient
+from pymongo.database import Database
 from langchain_core.prompts.chat import ChatPromptTemplate, PromptValue
 from langchain_core.runnables import RunnableConfig, RunnableParallel
 from ..chat_bot_config import (
@@ -22,12 +26,11 @@ from ...gwblue_ingestion_pipeline import (
     LazyPdfIngestor,
     LazyWordIngestor,
 )
-
-from bson import ObjectId
-from uuid import uuid4
-from pymongo import MongoClient
-from pymongo.database import Database
-
+from ...gwblue_huggingface.huggingface_transformer_tokenizers import (
+    get_tokenizer_by_prefix,
+    get_chat_tokenizer_by_prefix,
+    BaseLocalTokenizer,
+)
 
 def _model_config(model_type: str, model_name: str) -> Dict[str, str]:
     models = json.loads(os.environ[model_type])
@@ -51,6 +54,13 @@ def redis_client() -> Redis:
     )
     return redis_client
 
+@pytest.fixture
+def vlm_tokenizer() -> BaseLocalTokenizer:
+    return get_tokenizer_by_prefix("TIGER-Lab/VLM2Vec-Full")
+
+@pytest.fixture
+def llama_11B_vi_tokenizer() -> BaseLocalTokenizer:
+    return get_chat_tokenizer_by_prefix("meta-llama/Llama-3.2-11B-Vision-Instruct")
 
 @pytest.fixture
 def embeddings() -> HuggingFaceEmbeddings:
@@ -63,9 +73,11 @@ def embeddings() -> HuggingFaceEmbeddings:
         model=config["name"],
     )
 
-
 @pytest.fixture
-def chat_bot_config(redis_client: Redis) -> ChatBotConfig:
+def chat_bot_config(
+    redis_client: Redis,
+    vlm_tokenizer: BaseLocalTokenizer
+) -> ChatBotConfig:
     config = _model_config("MODELS", "meta-llama/Llama-3.2-11B-Vision-Instruct")
     llm_config = LLMConfig(
         **{
@@ -94,7 +106,7 @@ def chat_bot_config(redis_client: Redis) -> ChatBotConfig:
             "model": config["name"],
             "endpoint": config["url"],
             "token": os.environ["TEST_AUTH_TOKEN"],
-            "max_batch_tokens": 32768,
+            "max_batch_tokens":  vlm_tokenizer.max_batch_tokens_forward_pass,
             "provider": config["provider"],
         }
     )
@@ -122,29 +134,23 @@ def chat_bot_config(redis_client: Redis) -> ChatBotConfig:
         message_history=message_history_config,
     )
 
-
 assets_dir = Path(__file__).parent / "assets"
-
 
 @pytest.fixture
 def nvidiaan_pdf_path() -> Path:
     return assets_dir / "NVIDIAAn.pdf"
 
-
 @pytest.fixture
 def nvidia_1tri_fiscal_2025() -> Path:
     return assets_dir / "Nvidia-1tri-fiscal-2025.pdf"
-
 
 @pytest.fixture
 def teams_to_consider_word_path() -> Path:
     return assets_dir / "Teams to Consider.docx"
 
-
 @pytest.fixture
 def calculus_pdf_path() -> Path:
     return assets_dir / "Calculus.pdf"
-
 
 @pytest.fixture
 def developer_word_path() -> Path:
@@ -155,21 +161,17 @@ def developer_word_path() -> Path:
 def cloud_engineer_word_path() -> Path:
     return assets_dir / "senior-cloud-engineer-v1.docx"
 
-
 @pytest.fixture
 def devops_engineer_word_path() -> Path:
     return assets_dir / "senior-devops-engineer-v4.docx"
-
 
 @pytest.fixture
 def calculus_book1_path() -> Path:
     return assets_dir / "CalculusBook1.pdf"
 
-
 @pytest.fixture
 def calculus_book2_path() -> Path:
     return assets_dir / "CalculusBook2.pdf"
-
 
 @pytest.fixture
 def calculus_book3_path() -> Path:
@@ -187,11 +189,9 @@ def doc_compare2_pdf_path() -> Path:
 def nvidia_1tri_fiscal_2025_path() -> Path:
     return assets_dir / "Nvidia-1tri-fiscal-2025.pdf"
 
-
 @pytest.fixture
 def guitar_jpg_path() -> Path:
     return assets_dir / "guitar.jpg"
-
 
 @pytest.fixture
 def baby_jpg_path() -> Path:
@@ -206,6 +206,10 @@ def arag_ignite_pdf_path() -> Path:
     return assets_dir / "ARAG Ignite 2025 Flier 1.pdf"
 
 @pytest.fixture
+def genesys_contract_pdf_path() -> Path:
+    return assets_dir / "64654-genesys.pdf"
+
+@pytest.fixture
 def messages_db(chat_bot_config: ChatBotConfig) -> Database:
     url = chat_bot_config.message_history.url
     database = chat_bot_config.message_history.name
@@ -213,7 +217,6 @@ def messages_db(chat_bot_config: ChatBotConfig) -> Database:
     client = MongoClient(url)
     db = client[database]
     return db
-
 
 @pytest.fixture
 def conversation_doc(messages_db: Database) -> Generator[Dict[str, Any], None, None]:
@@ -231,14 +234,12 @@ def conversation_doc(messages_db: Database) -> Generator[Dict[str, Any], None, N
 
     # conversations.delete_one({'_id': attributes['_id']})
 
-
 @pytest.fixture
 def message_metadata(conversation_doc: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "uuid": conversation_doc["sessionId"],
         "conversation_id": conversation_doc["_id"],
     }
-
 
 # @pytest.mark.asyncio
 # async def test_single_doc_prompt(
@@ -346,68 +347,68 @@ def message_metadata(conversation_doc: Dict[str, Any]) -> Dict[str, Any]:
 
 #     assert "limits" in ai_content.lower()
 
-# @pytest.mark.asyncio
-# async def test_single_doc_prompt_with_trimming(
-#     embeddings: HuggingFaceEmbeddings,
-#     chat_bot_config: ChatBotConfig,
-#     message_metadata: Dict[str, Any],
-#     conversation_doc: Dict[str, Any],
-#     nvidiaan_pdf_path: Path,
-#     calculus_book1_path: Path,
-# ):
-#     chat_bot_config.message_history.session_id = conversation_doc["_id"]
+@pytest.mark.asyncio
+async def test_single_doc_prompt_with_trimming(
+    embeddings: HuggingFaceEmbeddings,
+    chat_bot_config: ChatBotConfig,
+    message_metadata: Dict[str, Any],
+    conversation_doc: Dict[str, Any],
+    nvidiaan_pdf_path: Path,
+    calculus_book1_path: Path,
+):
+    chat_bot_config.message_history.session_id = conversation_doc["_id"]
 
-#     metadata = {
-#         **message_metadata,
-#         "conversation_id": str(message_metadata["conversation_id"]),
-#         "source": "NVIDIAAn.pdf",
-#     }
+    metadata = {
+        **message_metadata,
+        "conversation_id": str(message_metadata["conversation_id"]),
+        "source": "NVIDIAAn.pdf",
+    }
 
-#     ingestor = LazyPdfIngestor(
-#         nvidiaan_pdf_path,
-#         embeddings=embeddings,
-#         metadata=metadata,
-#         vector_config=chat_bot_config.vectorstore,
-#         embeddings_config=chat_bot_config.embeddings,
-#     )
-#     ids = await ingestor.ingest()
-#     print(ids)
+    ingestor = LazyPdfIngestor(
+        nvidiaan_pdf_path,
+        embeddings=embeddings,
+        metadata=metadata,
+        vector_config=chat_bot_config.vectorstore,
+        embeddings_config=chat_bot_config.embeddings,
+    )
+    ids = await ingestor.ingest()
+    print(ids)
 
-#     chat_prompt = ChatPromptTemplate.from_messages(
-#         [("system", "You're a helpful assistant"), ("human", "{input}")]
-#     )
-#     chat_bot = ChatBot(config=chat_bot_config)
-#     chain = chat_prompt | chat_bot
+    chat_prompt = ChatPromptTemplate.from_messages(
+        [("system", "You're a helpful assistant"), ("human", "{input}")]
+    )
+    chat_bot = ChatBot(config=chat_bot_config)
+    chain = chat_prompt | chat_bot
 
-#     config = RunnableConfig(
-#         tags=[
-#             "chat_bot_run_test",
-#             f"uuid_${message_metadata['uuid']}",
-#             f"conversation_id_${message_metadata['uuid']}",
-#         ],
-#         metadata={"vector_metadata": [metadata]},
-#         configurable={"retrieval_mode": "mmr"},
-#     )
+    config = RunnableConfig(
+        tags=[
+            "chat_bot_run_test",
+            f"uuid_${message_metadata['uuid']}",
+            f"conversation_id_${message_metadata['uuid']}",
+        ],
+        metadata={"vector_metadata": [metadata]},
+        configurable={"retrieval_mode": "mmr"},
+    )
 
-#     from langchain_community.document_loaders import PyPDFLoader
-#     loader = PyPDFLoader(
-#         file_path=calculus_book1_path,
-#         mode="single",
-#         extraction_mode="plain",
-#     )
-#     docs = loader.load()
-#     input = docs[0].page_content
+    from langchain_community.document_loaders import PyPDFLoader
+    loader = PyPDFLoader(
+        file_path=calculus_book1_path,
+        mode="single",
+        extraction_mode="plain",
+    )
+    docs = loader.load()
+    input = docs[0].page_content
 
-#     ai_content = ""
-#     streaming_resp = []
-#     async for chunk in chain.astream(
-#         {"input": input }, config=config
-#     ):
-#         print(f"Custom event ${chunk.content}")
-#         ai_content += chunk.content
-#         streaming_resp.append(chunk)
+    ai_content = ""
+    streaming_resp = []
+    async for chunk in chain.astream(
+        {"input": f'Compare the document with the following input {input}' }, config=config
+    ):
+        print(f"Custom event ${chunk.content}")
+        ai_content += chunk.content
+        streaming_resp.append(chunk)
 
-#     assert len(ai_content) > 0
+    assert len(ai_content) > 0
 
 # @pytest.mark.asyncio
 # async def test_teams_to_consider_doc_prompt(

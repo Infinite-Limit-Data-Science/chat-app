@@ -36,7 +36,8 @@ from ..huggingface_embeddings import HuggingFaceEmbeddings
 from .corpus import examples
 from .tools import PandasExpressionTool, PandasExpressionInput
 from ..huggingface_transformer_tokenizers import (
-    get_tokenizer_class_by_prefix,
+    get_tokenizer_by_prefix,
+    get_chat_tokenizer_by_prefix,
     BaseLocalTokenizer,
 )
 from ...gwblue_vectorstores.redis.multimodal_vectorstore import MultiModalVectorStore
@@ -57,8 +58,7 @@ def _model_config(model_type: str, model_name: str) -> Dict[str, str]:
 
 @pytest.fixture
 def llama_11B_vision_instruct() -> BaseLocalTokenizer:
-    model_name = "meta-llama/Llama-3.2-11B-Vision-Instruct"
-    return get_tokenizer_class_by_prefix(model_name)(model_name)
+    return get_chat_tokenizer_by_prefix("meta-llama/Llama-3.2-11B-Vision-Instruct")
 
 @pytest.fixture
 def llm(llama_11B_vision_instruct: BaseLocalTokenizer) -> HuggingFaceLLM:
@@ -73,11 +73,9 @@ def llm(llama_11B_vision_instruct: BaseLocalTokenizer) -> HuggingFaceLLM:
         model=config["name"],
     )
 
-
 @pytest.fixture
 def chat_model(llm: HuggingFaceLLM) -> HuggingFaceChatModel:
     return HuggingFaceChatModel(llm=llm)
-
 
 @pytest.fixture
 def embeddings() -> HuggingFaceEmbeddings:
@@ -90,11 +88,9 @@ def embeddings() -> HuggingFaceEmbeddings:
         model=config["name"],
     )
 
-
 @pytest.fixture
 def vlm_tokenizer() -> BaseLocalTokenizer:
-    model_name = "TIGER-Lab/VLM2Vec-Full"
-    return get_tokenizer_class_by_prefix(model_name)(model_name)
+    return get_tokenizer_by_prefix("TIGER-Lab/VLM2Vec-Full")
 
 @pytest.fixture
 def vectorstore(
@@ -118,12 +114,10 @@ def vectorstore(
     store.index.clear()
     store.index.delete(drop=True)
 
-
 @pytest.fixture
 def sample_population() -> List[str]:
     fake = Faker("en_GB")
     return [fake.name() for _ in range(100)]
-
 
 class MovieSummary(BaseModel):
     title: str = Field(description="Title of the movie")
@@ -147,11 +141,9 @@ class MovieSummary(BaseModel):
             )
         return name
 
-
 class OutputMessage(BaseModel):
     summary: str = Field(description="A short summary of the content")
     content: str = Field(description="The full unmodified text from the model")
-
 
 class MockCallbackHandler(BaseCallbackHandler):
     def __init__(self):
@@ -162,7 +154,6 @@ class MockCallbackHandler(BaseCallbackHandler):
     def on_llm_end(self, response: LLMResult, **kwargs):
         self.llm_end_called = True
         self.llm_end_data = response
-
 
 class SpyHuggingFaceLLM(HuggingFaceLLM):
     last_used_temperature: float | None = Field(None, exclude=True)
@@ -190,11 +181,9 @@ def spy_llm(llama_11B_vision_instruct: BaseLocalTokenizer) -> SpyHuggingFaceLLM:
         model=config["name"],
     )
 
-
 @pytest.fixture
 def spy_chat_model(spy_llm: SpyHuggingFaceLLM) -> HuggingFaceChatModel:
     return HuggingFaceChatModel(llm=spy_llm)
-
 
 class ConfigurableCaptureCallbackHandler(BaseCallbackHandler):
     def __init__(self):
@@ -204,7 +193,6 @@ class ConfigurableCaptureCallbackHandler(BaseCallbackHandler):
     def on_llm_end(self, response: LLMResult, run_id=None, **kwargs):
         if response.llm_output is not None:
             self.captured_temp = response.llm_output.get("final_temp")
-
 
 def test_chat_model_invoke_with_image_to_text(chat_model: HuggingFaceChatModel):
     image_path = Path(__file__).parent / "assets" / "baby.jpg"

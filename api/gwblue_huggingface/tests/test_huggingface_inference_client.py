@@ -11,7 +11,8 @@ from dotenv import load_dotenv
 from huggingface_hub.inference._generated.types import ChatCompletionOutput
 from ..huggingface_inference_client import HuggingFaceInferenceClient
 from ..huggingface_transformer_tokenizers import (
-    get_tokenizer_class_by_prefix,
+    get_tokenizer_by_prefix,
+    get_chat_tokenizer_by_prefix,
     BaseLocalTokenizer,
 )
 
@@ -29,7 +30,6 @@ def _model_config(model_type: str, model_name: str) -> Dict[str, str]:
         "provider": model["endpoints"][0]["provider"],
     }
 
-
 @pytest.fixture
 def inference_client() -> HuggingFaceInferenceClient:
     config = _model_config("MODELS", "meta-llama/Llama-3.2-11B-Vision-Instruct")
@@ -40,7 +40,6 @@ def inference_client() -> HuggingFaceInferenceClient:
         provider=config["provider"],
         credentials=os.environ["TEST_AUTH_TOKEN"],
     )
-
 
 @pytest.fixture
 def embeddings_client() -> HuggingFaceInferenceClient:
@@ -53,22 +52,18 @@ def embeddings_client() -> HuggingFaceInferenceClient:
         credentials=os.environ["TEST_AUTH_TOKEN"],
     )
 
-
 @pytest.fixture
 def bge() -> BaseLocalTokenizer:
-    model_name = "BAAI/bge-large-en-v1.5"
-    return get_tokenizer_class_by_prefix(model_name)(model_name)
+    return get_tokenizer_by_prefix("BAAI/bge-large-en-v1.5")
 
 
 @pytest.fixture
 def vlm2vec() -> BaseLocalTokenizer:
-    model_name = "TIGER-Lab/VLM2Vec-Full"
-    return get_tokenizer_class_by_prefix(model_name)(model_name)
+    return get_tokenizer_by_prefix("TIGER-Lab/VLM2Vec-Full")
 
 @pytest.fixture
 def llama_11B_vision_instruct() -> BaseLocalTokenizer:
-    model_name = "meta-llama/Llama-3.2-11B-Vision-Instruct"
-    return get_tokenizer_class_by_prefix(model_name)(model_name)
+    return get_chat_tokenizer_by_prefix("meta-llama/Llama-3.2-11B-Vision-Instruct")
 
 @pytest.fixture
 def corpus() -> str:
@@ -409,7 +404,7 @@ async def test_async_streaming_inference_client_chat_completion(
     chat_completion_output = await inference_client.achat_completion(
         messages=[{"role": "user", "content": "What is Generative AI?"}],
         max_tokens=llama_11B_vision_instruct.max_new_tokens,
-        temperature=0.8,
+        temperature=0.01,
         stream=True,
         logprobs=True,
     )
