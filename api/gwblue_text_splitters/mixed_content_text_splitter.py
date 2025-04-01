@@ -84,8 +84,12 @@ class MixedContentTextSplitter:
                         chunk_size=self.chunk_size,
                         chunk_overlap=self.chunk_overlap,
                     ):
+                        # Consider adding brief summary of page
                         if page_number:
-                            text_chunk = f"Page {page_number}. {text_chunk}"
+                            pnum = int(page_number)
+                            page_label = f"Page {pnum+1}"
+                            if page_label not in text_chunk:
+                                text_chunk = f"{page_label} {text_chunk}"
                         yield Document(
                             page_content=text_chunk,
                             metadata={**merged_meta, "chunk_type": "text"},

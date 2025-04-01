@@ -40,6 +40,7 @@ from langchain_core.prompts import (
 )
 from langchain_core.prompt_values import PromptValue, ChatPromptValue
 from langchain_core.output_parsers.string import StrOutputParser
+from langchain_core.retrievers import BaseRetriever
 from langchain.chains.combine_documents.base import (
     DEFAULT_DOCUMENT_SEPARATOR,
     DEFAULT_DOCUMENT_PROMPT,
@@ -327,7 +328,7 @@ class ChatBot(RunnableSerializable[I, O]):
             Note depending on the chat template, the chat template may
             dynamically add its own system prompt to the request sent
             to model, such as llama guard, which injects a system prompt
-            with your message.
+            with your message and, thus, increases token count.
             """
             local_tokenizer = tokenizer if tokenizer else self.chat_model.tokenizer
 
@@ -362,16 +363,12 @@ class ChatBot(RunnableSerializable[I, O]):
             total_tokens = len(token_ids)
 
             if total_tokens > budget and len(messages) == 1:
-                return ChatPromptValue(
-                    messages=[
-                        AIMessage(
-                            content=(
-                                f"Your message is too long ({total_tokens} tokens)! "
-                                f"Max allowed is {budget}."
-                            ),
-                            additional_kwargs={"exceeded_token_budget": True},
-                        )
-                    ],
+                return AIMessage(
+                    content=(
+                        f"Your message is too long ({total_tokens} tokens)! "
+                        f"Max allowed is {budget}."
+                    ),
+                    additional_kwargs={"exceeded_token_budget": True},
                 )
 
             return ChatPromptValue(messages=messages)
@@ -419,10 +416,10 @@ class ChatBot(RunnableSerializable[I, O]):
         def validate_history(input_data: Dict[str, Any]) -> bool:
             return not input_data.get("chat_history")
 
-        trimmer = self.token_trimmer(
-            self.chat_model.tokenizer.max_batch_tokens_forward_pass - self.chat_model.tokenizer.max_new_tokens, 
-            buffer_tokens=0, 
-        )
+        # trimmer = self.token_trimmer(
+        #     self.chat_model.tokenizer.max_batch_tokens_forward_pass - self.chat_model.tokenizer.max_new_tokens, 
+        #     buffer_tokens=0, 
+        # )
 
         retrieve_documents = (
             preprompt_filter or RunnablePassthrough()
@@ -431,7 +428,8 @@ class ChatBot(RunnableSerializable[I, O]):
                 validate_history,
                 (lambda input_data: input_data["input"]) | retriever,
             ),
-            prompt | trimmer | model_binding | StrOutputParser() | retriever,
+            # prompt | trimmer | model_binding | StrOutputParser() | retriever,
+            prompt | model_binding | StrOutputParser() | retriever,
         ).with_config(
             run_name="history_aware_retriever_chain"
         )
@@ -479,10 +477,10 @@ class ChatBot(RunnableSerializable[I, O]):
 
             return DEFAULT_DOCUMENT_SEPARATOR.join(doc_prompts)
 
-        trimmer = self.token_trimmer(
-            self.chat_model.tokenizer.max_batch_tokens_forward_pass - self.chat_model.tokenizer.max_new_tokens, 
-            buffer_tokens=0
-        )
+        # trimmer = self.token_trimmer(
+        #     self.chat_model.tokenizer.max_batch_tokens_forward_pass - self.chat_model.tokenizer.max_new_tokens, 
+        #     buffer_tokens=0
+        # )
 
         return (
             (preprompt_filter or RunnablePassthrough())
@@ -490,7 +488,7 @@ class ChatBot(RunnableSerializable[I, O]):
                 run_name="format_inputs"
             )
             | prompt
-            | trimmer
+            # | trimmer
             | self.chat_model
             | StrOutputParser()
         ).with_config(run_name="stuff_documents_chain")
@@ -501,18 +499,34 @@ class ChatBot(RunnableSerializable[I, O]):
 
         filter_expression = self.create_filter_expression(metadata)
         search_kwargs = {
-            "k": 6,
+            "k": 20,
             "filter": filter_expression,
         }
         if state["retrieval_mode"] == "similarity_score_threshold":
             search_kwargs["score_threshold"] = 0.8
 
-        retriever = self.vector_store.as_retriever(
-            search_type=state["retrieval_mode"], search_kwargs=search_kwargs
-        ).with_config(
-            tags=[f"create_context_aware_chain_{state['route']}"],
-            metadata=metadata,
+        # TODO: abstract retriever functionality outside of ChatBot
+        # retriever = self.vector_store.as_retriever(
+        #     search_type=state["retrieval_mode"], search_kwargs=search_kwargs
+        # ).with_config(
+        #     tags=[f"create_context_aware_chain_{state['route']}"],
+        #     metadata=metadata,
+        # )
+        from langchain_text_splitters import RecursiveCharacterTextSplitter
+        from langchain.retrievers import ParentDocumentRetriever
+        from ..gwblue_vectorstores.redis.docstore import RedisDocStore
+
+        docstore = RedisDocStore(self.config.vectorstore.client)
+        parent_splitter = RecursiveCharacterTextSplitter(chunk_size=2000)
+        child_splitter = RecursiveCharacterTextSplitter(chunk_size=500)
+        retriever = ParentDocumentRetriever(
+            vectorstore=self.vector_store,
+            docstore=docstore,
+            child_splitter=child_splitter,
+            parent_splitter=parent_splitter
         )
+        retriever.search_type = state["retrieval_mode"]
+        retriever.search_kwargs = search_kwargs
 
         history_aware_retriever = self.create_history_aware_retriever(
             retriever,
@@ -707,10 +721,16 @@ class ChatBot(RunnableSerializable[I, O]):
             )
             model_binding = self.safety_model.bind(stream=False)
             
+            def needs_model(input_data) -> bool:
+                return isinstance(input_data, ChatPromptValue)
+            
             chain = (
                 chat_prompt
-                | trimmer 
-                | model_binding
+                | trimmer
+                | RunnableBranch(
+                    (needs_model, model_binding),
+                    RunnablePassthrough(),
+                )
             )
 
             ai_message = await chain.ainvoke({
@@ -719,13 +739,20 @@ class ChatBot(RunnableSerializable[I, O]):
             
             guardrails_message = AIMessage(
                 content=ai_message.content,
-                additional_kwargs={"guardrails": True},
+                additional_kwargs={
+                    **ai_message.additional_kwargs,
+                    "guardrails": True
+                },
             )
             return {**state, "messages": [guardrails_message]}
 
         def guardrails_condition(state: State) -> str:
             last_msg: AIMessage = state["messages"][-1]
             text = last_msg.content.lower().strip("\n")
+
+            if last_msg.additional_kwargs.get("exceeded_token_budget"):
+                return "exceeded_token_budget"
+            
             if "unsafe" in text:
                 return "not_safe"
             elif "safe" in text:
@@ -743,11 +770,13 @@ class ChatBot(RunnableSerializable[I, O]):
             }
 
         async def exceeded_token_budget(state: State) -> State:
+            last_msg: AIMessage = state["messages"][-1]
+
             return {
                 "messages": [
                     AIMessageChunk(
                         content=(
-                            "Sorry, your message is too long."
+                            last_msg.content
                         )
                     )
                 ]
@@ -822,7 +851,7 @@ class ChatBot(RunnableSerializable[I, O]):
             relevant_docs_with_score = (
                 await self.vector_store.asimilarity_search_with_score(
                     query=human_prompt,
-                    k=20,
+                    k=12,
                     filter=filter_expression,
                 )
             )
@@ -893,7 +922,12 @@ class ChatBot(RunnableSerializable[I, O]):
         graph.add_conditional_edges(
             "guardrails",
             guardrails_condition,
-            {"prefill_system_prompt": "prefill_system_prompt", "not_safe": "not_safe"},
+            {
+                "exceeded_token_budget": "exceeded_token_budget",
+                "prefill_system_prompt": "prefill_system_prompt", 
+                "not_safe": "not_safe",
+
+            },
         )
         graph.add_edge("prefill_system_prompt", "route_query")
         graph.add_edge("not_safe", END)

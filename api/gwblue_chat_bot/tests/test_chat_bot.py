@@ -345,70 +345,70 @@ def message_metadata(conversation_doc: Dict[str, Any]) -> Dict[str, Any]:
 #         ai_content += chunk.content
 #         streaming_resp.append(chunk)
 
-#     assert "limits" in ai_content.lower()
+#     assert "calculus" in ai_content.lower()
 
-@pytest.mark.asyncio
-async def test_single_doc_prompt_with_trimming(
-    embeddings: HuggingFaceEmbeddings,
-    chat_bot_config: ChatBotConfig,
-    message_metadata: Dict[str, Any],
-    conversation_doc: Dict[str, Any],
-    nvidiaan_pdf_path: Path,
-    calculus_book1_path: Path,
-):
-    chat_bot_config.message_history.session_id = conversation_doc["_id"]
+# @pytest.mark.asyncio
+# async def test_single_doc_prompt_with_trimming(
+#     embeddings: HuggingFaceEmbeddings,
+#     chat_bot_config: ChatBotConfig,
+#     message_metadata: Dict[str, Any],
+#     conversation_doc: Dict[str, Any],
+#     nvidiaan_pdf_path: Path,
+#     calculus_book1_path: Path,
+# ):
+#     chat_bot_config.message_history.session_id = conversation_doc["_id"]
 
-    metadata = {
-        **message_metadata,
-        "conversation_id": str(message_metadata["conversation_id"]),
-        "source": "NVIDIAAn.pdf",
-    }
+#     metadata = {
+#         **message_metadata,
+#         "conversation_id": str(message_metadata["conversation_id"]),
+#         "source": "NVIDIAAn.pdf",
+#     }
 
-    ingestor = LazyPdfIngestor(
-        nvidiaan_pdf_path,
-        embeddings=embeddings,
-        metadata=metadata,
-        vector_config=chat_bot_config.vectorstore,
-        embeddings_config=chat_bot_config.embeddings,
-    )
-    ids = await ingestor.ingest()
-    print(ids)
+#     ingestor = LazyPdfIngestor(
+#         nvidiaan_pdf_path,
+#         embeddings=embeddings,
+#         metadata=metadata,
+#         vector_config=chat_bot_config.vectorstore,
+#         embeddings_config=chat_bot_config.embeddings,
+#     )
+#     ids = await ingestor.ingest()
+#     print(ids)
 
-    chat_prompt = ChatPromptTemplate.from_messages(
-        [("system", "You're a helpful assistant"), ("human", "{input}")]
-    )
-    chat_bot = ChatBot(config=chat_bot_config)
-    chain = chat_prompt | chat_bot
+#     chat_prompt = ChatPromptTemplate.from_messages(
+#         [("system", "You're a helpful assistant"), ("human", "{input}")]
+#     )
+#     chat_bot = ChatBot(config=chat_bot_config)
+#     chain = chat_prompt | chat_bot
 
-    config = RunnableConfig(
-        tags=[
-            "chat_bot_run_test",
-            f"uuid_${message_metadata['uuid']}",
-            f"conversation_id_${message_metadata['uuid']}",
-        ],
-        metadata={"vector_metadata": [metadata]},
-        configurable={"retrieval_mode": "mmr"},
-    )
+#     config = RunnableConfig(
+#         tags=[
+#             "chat_bot_run_test",
+#             f"uuid_${message_metadata['uuid']}",
+#             f"conversation_id_${message_metadata['uuid']}",
+#         ],
+#         metadata={"vector_metadata": [metadata]},
+#         configurable={"retrieval_mode": "mmr"},
+#     )
 
-    from langchain_community.document_loaders import PyPDFLoader
-    loader = PyPDFLoader(
-        file_path=calculus_book1_path,
-        mode="single",
-        extraction_mode="plain",
-    )
-    docs = loader.load()
-    input = docs[0].page_content
+#     from langchain_community.document_loaders import PyPDFLoader
+#     loader = PyPDFLoader(
+#         file_path=calculus_book1_path,
+#         mode="single",
+#         extraction_mode="plain",
+#     )
+#     docs = loader.load()
+#     input = docs[0].page_content
 
-    ai_content = ""
-    streaming_resp = []
-    async for chunk in chain.astream(
-        {"input": f'Compare the document with the following input {input}' }, config=config
-    ):
-        print(f"Custom event ${chunk.content}")
-        ai_content += chunk.content
-        streaming_resp.append(chunk)
+#     ai_content = ""
+#     streaming_resp = []
+#     async for chunk in chain.astream(
+#         {"input": f'Compare the document with the following input {input}' }, config=config
+#     ):
+#         print(f"Custom event ${chunk.content}")
+#         ai_content += chunk.content
+#         streaming_resp.append(chunk)
 
-    assert len(ai_content) > 0
+#     assert "too long" in ai_content
 
 # @pytest.mark.asyncio
 # async def test_teams_to_consider_doc_prompt(
@@ -521,6 +521,293 @@ async def test_single_doc_prompt_with_trimming(
 #         streaming_resp.append(chunk)
 
 #     assert "arag" in ai_content.lower() 
+
+# https://python.langchain.com/docs/how_to/parent_document_retriever/
+# https://js.langchain.com/docs/how_to/multi_vector/
+# https://js.langchain.com/docs/how_to/parent_document_retriever/
+# https://python.langchain.com/v0.1/docs/modules/data_connection/retrievers/
+# @pytest.mark.asyncio
+# async def test_genesys_contract_doc_prompt(
+#     embeddings: HuggingFaceEmbeddings,
+#     chat_bot_config: ChatBotConfig,
+#     message_metadata: Dict[str, Any],
+#     conversation_doc: Dict[str, Any],
+#     genesys_contract_pdf_path: Path,
+#     vlm_tokenizer,
+# ):
+#     chat_bot_config.message_history.session_id = conversation_doc["_id"]
+
+#     metadata = {
+#         **message_metadata,
+#         "conversation_id": str(message_metadata["conversation_id"]),
+#         "source": "64654-genesys.pdf",
+#     }
+
+#     from langchain_redis import RedisConfig
+#     from langchain.retrievers import ParentDocumentRetriever
+#     from langchain_text_splitters import RecursiveCharacterTextSplitter
+#     from ...gwblue_vectorstores.redis import MultiModalVectorStore
+#     from ...gwblue_vectorstores.redis.config import VectorStoreSchema
+#     from ...gwblue_vectorstores.redis.docstore import RedisDocStore
+#     from ...gwblue_document_loaders.loaders.extended_pypdf_loader import ExtendedPyPDFLoader
+#     from ...gwblue_document_loaders.parsers.base64_blob_parser import Base64BlobParser
+    
+#     loader = ExtendedPyPDFLoader(
+#         genesys_contract_pdf_path,
+#         extract_images=True,
+#         images_parser=Base64BlobParser(),
+#         images_inner_format="raw",
+#         mode="page",
+#     )
+
+#     docs_stream = loader.lazy_load()
+#     docs = list(docs_stream)
+#     assert len(docs) > 0
+
+#     for doc in docs:
+#         doc.metadata = { **doc.metadata, **metadata }
+
+#     config = RedisConfig(
+#         **{
+#             "redis_client": chat_bot_config.vectorstore.client,
+#             "metadata_schema": chat_bot_config.vectorstore.metadata_schema, # now includes doc_id
+#             "embedding_dimensions": 3072,
+#             **VectorStoreSchema().model_dump(),
+#         }
+#     )
+
+#     vectorstore = MultiModalVectorStore(embeddings, config=config)
+#     docstore = RedisDocStore(chat_bot_config.vectorstore.client)
+    
+#     length_function=lambda text: len(vlm_tokenizer.tokenizer.encode(text))
+
+#     parent_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, length_function=length_function)
+#     child_splitter = RecursiveCharacterTextSplitter(chunk_size=250, length_function=length_function)
+#     retriever = ParentDocumentRetriever(
+#         vectorstore=vectorstore,
+#         docstore=docstore,
+#         child_splitter=child_splitter,
+#         parent_splitter=parent_splitter
+#     )
+#     await retriever.aadd_documents(docs)
+
+#     chat_prompt = ChatPromptTemplate.from_messages(
+#         [("system", "You're a helpful assistant"), ("human", "{input}")]
+#     )
+#     chat_bot = ChatBot(config=chat_bot_config)
+#     chain = chat_prompt | chat_bot    
+
+#     config = RunnableConfig(
+#         tags=[
+#             "chat_bot_run_test",
+#             f"uuid_${message_metadata['uuid']}",
+#             f"conversation_id_${message_metadata['uuid']}",
+#         ],
+#         metadata={"vector_metadata": [metadata]},
+#         configurable={"retrieval_mode": "similarity"},
+#     )
+
+#     ai_content = ""
+#     streaming_resp = []
+#     async for chunk in chain.astream(
+#         {
+#             "input": "What is the quote expiration date" # "What is the ramp period?"
+#         },
+#         config=config,
+#     ):
+#         print(f"Custom event ${chunk.content}")
+#         ai_content += chunk.content
+#         streaming_resp.append(chunk)
+
+#     assert "21" in ai_content.lower() 
+
+# @pytest.mark.asyncio
+# async def test_genesys_contract_doc_prompt(
+#     embeddings: HuggingFaceEmbeddings,
+#     chat_bot_config: ChatBotConfig,
+#     message_metadata: Dict[str, Any],
+#     conversation_doc: Dict[str, Any],
+#     teams_to_consider_word_path: Path,
+#     vlm_tokenizer,
+# ):
+#     chat_bot_config.message_history.session_id = conversation_doc["_id"]
+
+#     metadata = {
+#         **message_metadata,
+#         "conversation_id": str(message_metadata["conversation_id"]),
+#         "source": "Teams to Consider.docx",
+#     }
+
+#     from langchain_redis import RedisConfig
+#     from langchain.retrievers import ParentDocumentRetriever
+#     from langchain_text_splitters import RecursiveCharacterTextSplitter
+#     from ...gwblue_vectorstores.redis import MultiModalVectorStore
+#     from ...gwblue_vectorstores.redis.config import VectorStoreSchema
+#     from ...gwblue_vectorstores.redis.docstore import RedisDocStore
+#     from ...gwblue_document_loaders.loaders.word_loader import WordLoader
+    
+#     loader = WordLoader(
+#         teams_to_consider_word_path,
+#     )
+
+#     docs_stream = loader.lazy_load()
+#     docs = list(docs_stream)
+#     assert len(docs) > 0
+
+#     for doc in docs:
+#         doc.metadata = { **doc.metadata, **metadata }
+
+#     config = RedisConfig(
+#         **{
+#             "redis_client": chat_bot_config.vectorstore.client,
+#             "metadata_schema": chat_bot_config.vectorstore.metadata_schema, # now includes doc_id
+#             "embedding_dimensions": 3072,
+#             **VectorStoreSchema().model_dump(),
+#         }
+#     )
+
+#     vectorstore = MultiModalVectorStore(embeddings, config=config)
+#     docstore = RedisDocStore(chat_bot_config.vectorstore.client)
+    
+#     length_function=lambda text: len(vlm_tokenizer.tokenizer.encode(text))
+
+#     parent_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, length_function=length_function)
+#     child_splitter = RecursiveCharacterTextSplitter(chunk_size=250, length_function=length_function)
+#     retriever = ParentDocumentRetriever(
+#         vectorstore=vectorstore,
+#         docstore=docstore,
+#         child_splitter=child_splitter,
+#         parent_splitter=parent_splitter
+#     )
+#     await retriever.aadd_documents(docs)
+
+#     chat_prompt = ChatPromptTemplate.from_messages(
+#         [("system", "You're a helpful assistant"), ("human", "{input}")]
+#     )
+#     chat_bot = ChatBot(config=chat_bot_config)
+#     chain = chat_prompt | chat_bot    
+
+#     config = RunnableConfig(
+#         tags=[
+#             "chat_bot_run_test",
+#             f"uuid_${message_metadata['uuid']}",
+#             f"conversation_id_${message_metadata['uuid']}",
+#         ],
+#         metadata={"vector_metadata": [metadata]},
+#         configurable={"retrieval_mode": "similarity"},
+#     )
+
+#     ai_content = ""
+#     streaming_resp = []
+#     async for chunk in chain.astream(
+#         {
+#             "input": "Review the attached MS Word document throughly and list out all the teams listed under the Mandatory Teams section"
+#         },
+#         config=config,
+#     ):
+#         print(f"Custom event ${chunk.content}")
+#         ai_content += chunk.content
+#         streaming_resp.append(chunk)
+
+#     print(f'AI RESPONSE {ai_content}')
+#     assert "guidewell" in ai_content.lower() 
+
+@pytest.mark.asyncio
+async def test_calculus_book_doc_prompt(
+    embeddings: HuggingFaceEmbeddings,
+    chat_bot_config: ChatBotConfig,
+    message_metadata: Dict[str, Any],
+    conversation_doc: Dict[str, Any],
+    calculus_book1_path: Path,
+    vlm_tokenizer,
+):
+    chat_bot_config.message_history.session_id = conversation_doc["_id"]
+
+    metadata = {
+        **message_metadata,
+        "conversation_id": str(message_metadata["conversation_id"]),
+        "source": "calculus_book1_path",
+    }
+
+    from langchain_redis import RedisConfig
+    from langchain.retrievers import ParentDocumentRetriever
+    from langchain_text_splitters import RecursiveCharacterTextSplitter
+    from ...gwblue_vectorstores.redis import MultiModalVectorStore
+    from ...gwblue_vectorstores.redis.config import VectorStoreSchema
+    from ...gwblue_vectorstores.redis.docstore import RedisDocStore
+    from ...gwblue_document_loaders.loaders.extended_pypdf_loader import ExtendedPyPDFLoader
+    from ...gwblue_document_loaders.parsers.base64_blob_parser import Base64BlobParser
+    
+    loader = ExtendedPyPDFLoader(
+        calculus_book1_path,
+        extract_images=True,
+        images_parser=Base64BlobParser(),
+        images_inner_format="raw",
+        mode="page",
+    )
+
+    docs_stream = loader.lazy_load()
+    docs = list(docs_stream)
+    assert len(docs) > 0
+
+    for doc in docs:
+        doc.metadata = { **doc.metadata, **metadata }
+
+    config = RedisConfig(
+        **{
+            "redis_client": chat_bot_config.vectorstore.client,
+            "metadata_schema": chat_bot_config.vectorstore.metadata_schema, # now includes doc_id
+            "embedding_dimensions": 3072,
+            **VectorStoreSchema().model_dump(),
+        }
+    )
+
+    vectorstore = MultiModalVectorStore(embeddings, config=config)
+    docstore = RedisDocStore(chat_bot_config.vectorstore.client)
+    
+    length_function=lambda text: len(vlm_tokenizer.tokenizer.encode(text))
+
+    # RecursiveCharacterTextSplitter repeatedly re-checks the text in smaller and smaller segments (via nested recursion) and calls your tokenizer each time to measure token length. On a very large document, that can become extremely expensive – it might encode overlapping slices of the text many times in a deep recursion loop.
+    parent_splitter = RecursiveCharacterTextSplitter(chunk_size=2000, length_function=length_function)
+    child_splitter = RecursiveCharacterTextSplitter(chunk_size=250, length_function=length_function)
+    retriever = ParentDocumentRetriever(
+        vectorstore=vectorstore,
+        docstore=docstore,
+        child_splitter=child_splitter,
+        parent_splitter=parent_splitter
+    )
+    await retriever.aadd_documents(docs)
+
+    chat_prompt = ChatPromptTemplate.from_messages(
+        [("system", "You're a helpful assistant"), ("human", "{input}")]
+    )
+    chat_bot = ChatBot(config=chat_bot_config)
+    chain = chat_prompt | chat_bot    
+
+    config = RunnableConfig(
+        tags=[
+            "chat_bot_run_test",
+            f"uuid_${message_metadata['uuid']}",
+            f"conversation_id_${message_metadata['uuid']}",
+        ],
+        metadata={"vector_metadata": [metadata]},
+        configurable={"retrieval_mode": "similarity"},
+    )
+
+    ai_content = ""
+    streaming_resp = []
+    async for chunk in chain.astream(
+        {
+            "input": "What did he mean that we never have to go higher than quadratics?"
+        },
+        config=config,
+    ):
+        print(f"Custom event ${chunk.content}")
+        ai_content += chunk.content
+        streaming_resp.append(chunk)
+
+    print(f'AI CONTENT {ai_content}')
+    assert "21" in ai_content.lower() 
 
 # @pytest.mark.asyncio
 # async def test_multi_doc_prompt(
