@@ -738,6 +738,8 @@ async def test_calculus_book_doc_prompt(
     from ...gwblue_document_loaders.loaders.extended_pypdf_loader import ExtendedPyPDFLoader
     from ...gwblue_document_loaders.parsers.base64_blob_parser import Base64BlobParser
     
+    from langchain_text_splitters import CharacterTextSplitter 
+
     loader = ExtendedPyPDFLoader(
         calculus_book1_path,
         extract_images=True,
