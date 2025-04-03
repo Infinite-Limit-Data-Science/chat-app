@@ -9,23 +9,19 @@ from typing import (
     TypedDict,
 )
 from abc import ABC, abstractmethod
-import itertools
 from redis.client import Redis
 from langchain_redis import RedisConfig
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
+from langchain_core.stores import BaseStore
 from pydantic import BaseModel, ConfigDict
 from ..gwblue_text_splitters.mixed_content_text_splitter import MixedContentTextSplitter
 from ..gwblue_vectorstores.redis.config import VectorStoreSchema
 from ..gwblue_vectorstores.redis.multimodal_vectorstore import MultiModalVectorStore
-from ..gwblue_huggingface.huggingface_transformer_tokenizers import (
-    get_tokenizer_by_prefix,
-)
-
-_VECTOR_TTL_30_DAYS = 3600 * 24 * 30
+from ..gwblue_vectorstores.redis.docstore import RedisDocStore
+from ..gwblue_retrievers.streaming_parent_document_retriever import StreamingParentDocumentRetriever
 
 VectorStoreClient: TypeAlias = Union[Redis]
-
 
 class VectorStoreConfig(BaseModel):
     client: Optional[VectorStoreClient] = None
@@ -53,23 +49,27 @@ class DocumentIngestor(ABC):
         embeddings: Embeddings,
         metadata: Dict[str, Any],
         vector_config: VectorStoreConfig,
-        embeddings_config: EmbeddingsConfig,
+        add_to_docstore: bool = True,
+        docstore: BaseStore = None,
     ):
         self._file = file
         self.embeddings = embeddings
         self.metadata = metadata
-        self.local_tokenizer = get_tokenizer_by_prefix(embeddings_config.model)
 
         config = RedisConfig(
             **{
                 "redis_client": vector_config.client,
                 "metadata_schema": vector_config.metadata_schema,
-                "embedding_dimensions": self.local_tokenizer.vector_dimension_length,
+                "embedding_dimensions": self.embeddings.tokenizer.vector_dimension_length,
                 **VectorStoreSchema().model_dump(),
             }
         )
+        self.vectorstore = MultiModalVectorStore(self.embeddings, config=config)
 
-        self.vector_store = MultiModalVectorStore(self.embeddings, config=config)
+        self.add_to_docstore = add_to_docstore
+        self.docstore = docstore
+        if self.add_to_docstore and not self.docstore:
+            self.docstore = RedisDocStore(vector_config.client) 
 
     def inspect(documents: Iterator[Document]):
         import itertools
@@ -81,43 +81,72 @@ class DocumentIngestor(ABC):
     @abstractmethod
     def load(self) -> Iterator[Document]: ...
 
-    def chunk(
-        self,
-        docs: Iterator[Document],
-    ) -> Iterator[Document]:
-        overlap_sampler = list(
-            map(pow, itertools.repeat(0.05, times=4), itertools.count())
-        )
 
-        sequence_length = round(self.local_tokenizer.sequence_length_forward_pass, -2)
-        overlap = int(sequence_length * overlap_sampler[1])
+    def chunk_strategy(self, documents: Iterator[Document]) -> Iterator[Document]:
+        mixed_content_splitter = MixedContentTextSplitter(metadata=self.metadata)
 
-        encode_fn = lambda text: self.local_tokenizer.tokenizer.encode(
-            text, 
-            add_special_tokens=False
-        )
+        for chunk in mixed_content_splitter.split_documents(documents):
+            yield chunk
 
-        decode_fn = lambda token_ids: self.local_tokenizer.tokenizer.decode(
-            token_ids, 
-            skip_special_tokens=True
-        )
-
-        mixed_content_splitter = MixedContentTextSplitter(
-            encode_fn=encode_fn,
-            decode_fn=decode_fn,
-            chunk_size=sequence_length,
-            chunk_overlap=overlap,
+    def inheritable_chunk_strategy(self, documents: Iterator[Document]) -> Iterator[Document]:
+        parent_text_splitter = MixedContentTextSplitter(
+            self.embeddings.tokenizer,
+            chunk_size=2000,
             metadata=self.metadata,
         )
 
-        for chunk in mixed_content_splitter.split_documents_stream(docs):
-            yield chunk
+        return parent_text_splitter.split_documents(documents)
 
-    async def embed(self, chunks: Iterator[Document]) -> List[str]:
-        requests = self.local_tokenizer.max_batch_tokens_forward_pass // self.local_tokenizer.sequence_length_forward_pass
-        return await self.vector_store.aadd_batch_with_ttl(
-            chunks, ttl_seconds=_VECTOR_TTL_30_DAYS, max_requests=requests
+    def chunk(
+        self,
+        documents: Iterator[Document],
+    ) -> Iterator[Document]:
+        if self.add_to_docstore:
+            return self.inheritable_chunk_strategy(documents)
+        else:
+            return self.chunk_strategy(documents)
+
+    async def embed_strategy(
+        self, 
+        documents: Iterator[Document], 
+        requests: int
+    ) -> List[str]:
+        return await self.vectorstore.aadd_batch(
+            documents, max_requests=requests
         )
+    
+    async def inheritable_embed_strategy(
+        self, 
+        documents: Iterator[Document], 
+        requests: int
+    ) -> List[str]:
+        child_text_splitter = MixedContentTextSplitter(
+            self.embeddings.tokenizer,
+            chunk_size=250,
+            metadata=self.metadata,
+        )
+
+        retriever = StreamingParentDocumentRetriever(
+            vectorstore=self.vectorstore,
+            docstore=self.docstore,
+            child_splitter=child_text_splitter,   
+        )
+
+        return await retriever.aadd_document_batch(
+            documents=documents,
+            max_requests=requests
+        )
+
+    async def embed(self, documents: Iterator[Document]) -> List[str]:
+        requests = (
+            self.embeddings.tokenizer.max_batch_tokens_forward_pass
+            // self.embeddings.tokenizer.sequence_length_forward_pass
+        )
+        
+        if self.add_to_docstore:
+            return await self.inheritable_embed_strategy(documents, requests)
+        else:
+            return await self.embed_strategy(documents, requests)
 
     async def ingest(self) -> List[str]:
         """Template Method"""

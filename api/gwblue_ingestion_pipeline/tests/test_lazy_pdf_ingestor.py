@@ -10,13 +10,6 @@ from redis.client import Redis
 from redis.connection import ConnectionPool
 from ..lazy_pdf_ingestor import LazyPdfIngestor
 from ...gwblue_huggingface import HuggingFaceEmbeddings
-from ...gwblue_chat_bot.chat_bot_config import (
-    LLMConfig,
-    EmbeddingsConfig,
-    RedisVectorStoreConfig,
-    MongoMessageHistoryConfig,
-    ChatBotConfig,
-)
 
 def _model_config(model_type: str, model_name: str) -> str:
     models = json.loads(os.environ[model_type])
@@ -40,64 +33,6 @@ def redis_client() -> Redis:
     return redis_client
 
 @pytest.fixture
-def chat_bot_config(redis_client: Redis) -> ChatBotConfig:
-    config = _model_config("MODELS", "meta-llama/Llama-3.2-11B-Vision-Instruct")
-    llm_config = LLMConfig(
-        **{
-            "model": config["name"],
-            "endpoint": config["url"],
-            "token": os.environ["TEST_AUTH_TOKEN"],
-            "parameters": {"temperature": 0.8},
-            "provider": config["provider"],
-        }
-    )
-
-    config = _model_config("MODELS", "meta-llama/Llama-Guard-3-8B")
-    guardrails_config = LLMConfig(
-        **{
-            "model": config["name"],
-            "endpoint": config["url"],
-            "token": os.environ["TEST_AUTH_TOKEN"],
-            "parameters": {"temperature": 0},
-            "provider": config["provider"],
-        }
-    )
-
-    config = _model_config("EMBEDDING_MODELS", "TIGER-Lab/VLM2Vec-Full")
-    embeddings_config = EmbeddingsConfig(
-        **{
-            "model": config["name"],
-            "endpoint": config["url"],
-            "token": os.environ["TEST_AUTH_TOKEN"],
-            "max_batch_tokens": 32768,
-            "provider": config["provider"],
-        }
-    )
-
-    metadata_schema = json.loads(os.environ["VECTOR_STORE_SCHEMA"])
-    vectorstore_config = RedisVectorStoreConfig(
-        **{
-            "client": redis_client,
-            "metadata_schema": metadata_schema,
-        }
-    )
-
-    message_history_config = MongoMessageHistoryConfig(
-        name=os.environ["DATABASE_NAME"],
-        url=os.environ["MONGODB_URL"],
-        collection_name="messages",
-        session_id_key="conversation_id",
-    )
-
-    return ChatBotConfig(
-        llm=llm_config,
-        embeddings=embeddings_config,
-        guardrails=guardrails_config,
-        vectorstore=vectorstore_config,
-        message_history=message_history_config,
-    )
-
-@pytest.fixture
 def embeddings() -> HuggingFaceEmbeddings:
     config = _model_config("EMBEDDING_MODELS", "TIGER-Lab/VLM2Vec-Full")
 
@@ -117,14 +52,13 @@ def calculus_book1_path() -> Path:
 @pytest.fixture
 def message_metadata() -> Dict[str, Any]:
     return {
-        "uuid": str(ObjectId()),
+        "uuid": str(uuid4()),
         "conversation_id": str(uuid4()),
     }
 
 @pytest.mark.asyncio
-async def test_pdf_embed(
+async def test_calculus_book_embed(
     embeddings: HuggingFaceEmbeddings,
-    chat_bot_config: ChatBotConfig,
     message_metadata: Dict[str, Any],
     calculus_book1_path: Path,
 ):
@@ -138,7 +72,6 @@ async def test_pdf_embed(
         embeddings=embeddings,
         metadata=metadata,
         vector_config=chat_bot_config.vectorstore,
-        embeddings_config=chat_bot_config.embeddings,
     )
 
     start_time = time.perf_counter()
@@ -149,3 +82,11 @@ async def test_pdf_embed(
     print(f"Ingestion took {elapsed:.2f} seconds")
 
     assert len(ids) > 0
+
+@pytest.mark.asyncio
+async def test_calculus_book_inheritable_embed(
+    embeddings: HuggingFaceEmbeddings,
+    message_metadata: Dict[str, Any],
+    calculus_book1_path: Path,
+):
+    ...
