@@ -2,12 +2,12 @@ import re
 from typing import List, Callable, Dict, Any, Iterator
 from langchain_core.documents import Document
 from pathlib import Path
-
 from transformers import (
     PreTrainedTokenizerBase,
     PreTrainedTokenizer,
     PreTrainedTokenizerFast,
 )
+from .streaming_text_splitter import StreamingTextSplitter
 """
 CharacterTextSplitter drawbacks:
 - Simply delimits by separater, with option of adding delimiter to beginning or ending of chunk
@@ -110,7 +110,7 @@ def _adaptive_token_boundary_stream(
         yield tokenizer.decode(chunk_ids)
         start_idx = best_boundary
 
-class MixedContentTextSplitter:
+class MixedContentTextSplitter(StreamingTextSplitter):
     def __init__(
         self,
         tokenizer: PreTrainedTokenizerBase,

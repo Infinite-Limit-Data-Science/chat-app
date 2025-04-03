@@ -5,11 +5,16 @@ from typing import (
     Iterable,
     Iterator, 
     AsyncIterator,
+    Optional,
 )
 import asyncio
 from langchain_core.documents import Document
 from langchain_redis import RedisVectorStore
 from redisvl.redis.utils import array_to_buffer
+from langchain_core.embeddings import Embeddings
+from langchain_redis.config import RedisConfig
+
+_DEFAULT_TTL = 3600 * 24 * 30
 
 I = TypeVar("I")
 
@@ -34,6 +39,10 @@ class MultiModalVectorStore(RedisVectorStore):
     FT.INFO user_conversations
     FT.DROPINDEX user_conversations DD
     """
+    def __init__(
+        self, embeddings: Embeddings, config: Optional[RedisConfig] = None, **kwargs
+    ):
+        super().__init__(embeddings=embeddings, config=config, ttl=_DEFAULT_TTL, **kwargs)
 
     def _split_docs_for_multi_modal(
         self, documents: list[Document]
@@ -74,51 +83,15 @@ class MultiModalVectorStore(RedisVectorStore):
 
         return text_ids + image_ids
 
-    async def aadd_documents_with_ttl(
+    async def aadd_batch(
         self,
         documents: Iterator[Document],
         *,
-        ttl_seconds: int,
-        max_requests: int,
-        **kwargs: Any,
-    ) -> List[str]:
-        """
-        Example:
-        > EXISTS user_conversations:a2c8a48073ee4a429b6910b1cfefb9f4
-        (integer) 1
-        > TTL user_conversations:a2c8a48073ee4a429b6910b1cfefb9f4
-        (integer) 2591813
-        """
-        redis_client = self.config.redis()
-
-        semaphore = asyncio.Semaphore(max_requests)
-
-        async def process_document(document: Document):
-            async with semaphore:
-                batch_ids = await self._process_batch(
-                    [document], ttl_seconds, redis_client, **kwargs
-                )
-                return batch_ids
-
-        tasks = [
-            asyncio.create_task(process_document(document)) for document in documents
-        ]
-        results = await asyncio.gather(*tasks)
-        document_ids = [doc_id for batch_ids in results for doc_id in batch_ids]
-
-        return document_ids
-    
-    async def aadd_batch_with_ttl(
-        self,
-        documents: Iterator[Document],
-        *,
-        ttl_seconds: int,
         max_requests: int,
         batch_size: int = 4,
         **kwargs: Any,
     ) -> List[str]:    
-        semaphore = asyncio.Semaphore(max_requests)
-        redis_client = self.config.redis()
+        semaphore = asyncio.Semaphore(20) # max_requests
 
         tasks = []
         text_batch = []
@@ -133,8 +106,6 @@ class MultiModalVectorStore(RedisVectorStore):
             async def do_embed_text():
                 async with semaphore:
                     doc_ids = await super(MultiModalVectorStore, self).aadd_documents(local_batch, **kwargs)
-                    for doc_id in doc_ids:
-                        await asyncio.to_thread(redis_client.expire, doc_id, ttl_seconds)
                     return doc_ids
 
             tasks.append(asyncio.create_task(do_embed_text()))
@@ -143,8 +114,6 @@ class MultiModalVectorStore(RedisVectorStore):
             async def do_embed_image():
                 async with semaphore:
                     doc_ids = await self._aadd_image_docs([doc], **kwargs)
-                    for doc_id in doc_ids:
-                        await asyncio.to_thread(redis_client.expire, doc_id, ttl_seconds)
                     return doc_ids
 
             tasks.append(asyncio.create_task(do_embed_image()))

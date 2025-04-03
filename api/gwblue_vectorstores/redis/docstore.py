@@ -7,6 +7,9 @@ class RedisDocStore(BaseStore):
     def __init__(self, redis_client):
         self.redis = redis_client
     
+    def set(self, doc_id: str, doc: Document) -> None:
+        self.mset([(doc_id, doc)])
+    
     def mset(self, docs: list[tuple[str, Document]]):
         for (doc_id, doc) in docs:
             self.redis.set(f"docstore:{doc_id}:content", doc.page_content)
