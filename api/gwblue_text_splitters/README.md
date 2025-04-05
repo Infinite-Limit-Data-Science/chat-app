@@ -15,7 +15,7 @@ That hypothesized value $\mu_0$ is what we call the population mean in the null 
 
 We now need to clear up the concept of a population standard deviation. A hypothesized population mean $\mu_0$ is simply the value you’re testing in your null hypothesis: “I assume the true mean is 100” (for instance), and I want to see if my sample data conflict with that assumption. A population standard deviation σ is about the spread (variability) in the population. It can come from completely different sources—large historical data, industry/engineering specs, or repeated past measurements that have established how much the data typically vary. This means: Even if you aren’t sure the true mean is 100 (that’s exactly what you’re testing!), you could still have high confidence that the standard deviation is about 10, because many previous studies or manufacturing records have shown the process always has around 10 hours of variability. Hence, in a z‐test:
 - You bring a hypothesized $\mu_0$ (the population mean you want to test).
-- You also bring a known 𝜎 (from historical/industrial knowledge) that describes how wide the distribution is around whatever the true mean is.
+- You also bring a known population standard deviation 𝜎 (from historical/industrial knowledge) that describes how wide the distribution is around whatever the true mean is.
 They don’t have to come from the same source, and one doesn’t depend on the other. You’re simply saying, “Given we know the standard deviation is about 10 (from large past data), let’s see if new sample data conflict with the claim that $H_0: \mu = \mu_0$.”
 
 In classical stats testing, you may have a population mean (hypothesized mean), a population standard deviation and your own sample mean based on sample data. Why do you need a sample mean in z-tests? You need the sample mean in a z‐test because the whole purpose of the test is to see how far your observed average (from your sample) deviates from the hypothesized population mean $\mu_0$. In other words:
@@ -28,7 +28,7 @@ In classical stats testing, you may have a population mean (hypothesized mean), 
         - σ is the known population standard deviation (from external info).
         - 𝑛 is the sample size.
         - The numerator $\bar{x} - \mu_0$ measures how far your sample is from the hypothesized mean.
-    - A test statistic 𝑧 is essentially a standardized measure of how far your observed data (e.g., a sample mean) deviates from the hypothesis or reference value, measured in units of the standard error. 
+    - A test statistic 𝑧 is essentially a standardized measure of how far your observed data (e.g., a sample mean) deviates from the hypothesis measured in units of the standard error. Is it measured in units of standard error o z-scores? They’re effectively the same concept in this context. A z-score is precisely a measurement of “how many standard deviations (or standard errors) above/below the mean” an observed value is. Hence, for a z-test, being measured in units of the standard error is the same thing as being a z-score.
 - Interpretation:
     - If $\bar{x}$ is very far from $\mu_0$ relative to $\sigma / \sqrt{n}$,  then the z‐value will be large in magnitude, meaning the sample mean is “unusually far” from $\mu_0$ (assuming $H_0$ were true). You might then reject $H_0$.
     - If $\bar{x}$ is close to $\mu_0$, the test statistic will be small, suggesting no strong evidence that the true mean differs from $\mu_0$.
@@ -42,29 +42,100 @@ f_X(x) = \frac{1}{\sigma \sqrt{2\pi}}
 $$
 The normal distribution’s probability density function (PDF) can be understood as follows:
 - Center at the Mean: The highest point of the curve is at x=μ. This reflects that values closest to the mean are the most likely to occur.
-- Symmetry Around the Mean: The expression $(x - \mu)^2$ inside the exponential penalizes deviations from the mean equally on both sides. The distribution is symmetric about its mean.
+- Symmetry Around the Mean: The expression $(x - \mu)^2$ inside the exponential penalizes deviations from the mean equally on both sides (remember squaring a number distributes it equally on both sides forming a parabola). The distribution is symmetric about its mean.
 - Spread Controlled by 𝜎: The term 𝜎 (the standard deviation) appears in both the denominator in front and inside the exponent. A larger σ results in a “wider” curve (since deviations from the mean are less penalized), while a smaller 𝜎 creates a “narrower” curve (deviations from the mean become more sharply penalized).
 - Exponential Decay: The exponential $\exp\!\Bigl(-\frac{(x - \mu)^2}{2\sigma^2}\Bigr)$ ensures that the probability density decreases very quickly as x moves away from μ. Farther values from μ become less probable.
+    - Exponential Decay in plain English: Imagine you have a hill centered at 𝜇. Right at μ, the hill is at its highest point. As you move away from 𝜇, the “height” (which represents the probability density) starts to drop. Because there’s an exponential term, that drop happens very fast: a small increase in (x−μ) leads to a fairly big negative increase inside the exponent, causing the entire expression to shrink dramatically. As a result, values of 𝑥 far from 𝜇 end up with a very small probability density. Essentially, that exponential factor is what gives the normal distribution its characteristic bell shape, ensuring most of the probability mass stays near 𝜇, while the tails drop off sharply. 
 - Normalization by: $\frac{1}{\sigma \sqrt{2\pi}} $: This term ensures that the total area under the curve is 1. 
     - The constant $\sqrt{2\pi}$ appears in many continuous probability distributions.
     - Dividing by σ scales the curve appropriately so that the integral over all real values of 𝑥 equals 1.
-These features work together to create the familiar “bell shape.” Because of the squared term in the exponent, the distribution prioritizes values near μ, while making values far from μ increasingly unlikely, providing a smooth, continuous shape that has no sharp edges or discontinuities.
+The normal distribution can be shown as a smooth, bell-shaped curve on a graph, where the horizontal axis is the value 𝑥 and the vertical axis is the probability density for that 𝑥.
+- The total area under this bell curve is 1, representing 100% of all possible outcomes.
+- The area between any two points on the 𝑥-axis (say between 𝑎 and 𝑏) corresponds to the probability that the random variable takes on a value within that interval [a,b]. 
+In other words, even though the height of the curve at a specific point 𝑥 is not the probability of 𝑥 exactly, the area under the curve over a range gives you the probability of being in that range. This way, the normal distribution curve provides an intuitive picture of where the random variable is “most likely” to fall (around 𝜇) and how quickly likelihood tapers off for values far from 𝜇. 
 
-The standard normal distribution is the special case of the normal distribution with mean μ=0 and standard deviation σ=1. Here is why it is so useful and the intuition behind it:
-- Simplifies Calculations
-    - Any normal distribution can be converted into a standard normal distribution by “standardizing”: $Z = \frac{X - \mu}{\sigma}$.
-    - This lets us work with a single universal table (or function) for probabilities, rather than having a different table for each μ and 𝜎. 
-    - A z-table gives values for the cumulative distribution function (CDF) or for tail probabilities for the standard normal distribution.
-        - Suppose you have a random variable X (like someone’s weight in pounds) that follows a normal distribution with mean μ=100 and standard deviation  σ=5. Now imagine we observe a single person whose weight X=105.
-        - To convert this specific value into a “z-score,” we would do: $Z = \frac{X - \mu}{\sigma} = \frac{105 - 100}{5} = 1$
-        - So the value 105 is exactly 1 standard deviation above the mean in that particular normal distribution.
-        - If you looked up 𝑍=1 in a z-table, you’d see the probability that a standard normal variable is less than or equal to 1 (which is about 0.8413). Translating that back to your specific scenario, it means that roughly 84.13% of people in that population (assuming the model is correct) weigh 105 pounds or less. 
-    - In effect, A z-table is basically a lookup chart that tells you the probability that a standard normal variable Z (which has mean 0 and standard deviation 1) will take on a value up to a specific number.  In other words, if you choose a particular z-value (like 1.25), the table tells you the fraction of the area under the bell curve that lies to the left of 1.25. This fraction is the cumulative probability at that z-value.  
-- Reference Distribution for “Z-Scores”
-    - The value 𝑍 tells you how many standard deviations X is away from the mean.
-    - This makes Z-scores comparable across different scales. For instance, an observation that is “2 standard deviations above the mean” in one dataset corresponds exactly to Z=2 in the standard normal distribution.
-- Foundation for Statistical Inference
-    - Many hypothesis tests and confidence intervals (like z-tests) use the standard normal as a reference for deciding how “extreme” a sample mean is when scaled by its standard error.
+Why are most things in nature normally distributed? Many random processes in nature tend to be influenced by a large number of small, independent factors, each of which adds or subtracts a little from the outcome. By the Central Limit Theorem (CLT), when you sum (or average) enough of these independent random “contributions,” the result tends to approximate a normal distribution, regardless of the underlying distribution of the individual factors.
+
+In simpler terms:
+- Think of height, for example. It’s influenced by hundreds of small genetic and environmental factors. No single factor dominates the outcome; instead, you get many tiny pushes in different directions.
+- The CLT implies that when you add up all these little effects, the distribution of their sum (or average) often becomes bell-shaped.
+- As a result, many measurements or traits in nature—like heights, test scores, measurement errors—are often found to be roughly normal in real data.
+
+The features of the normal distribution formula work together to create the familiar “bell shape.” Because of the squared term in the exponent, the distribution prioritizes values near μ, while making values far from μ increasingly unlikely, providing a smooth, continuous shape that has no sharp edges or discontinuities.
+
+The standard normal distribution is the special case of the normal distribution with mean μ=0 and standard deviation σ=1. The formula is represented as so:
+$$
+Z = \frac{X - \mu}{\sigma}
+$$
+- X is a random variable that follows a normal distribution with mean 𝜇 and standard deviation 𝜎. For example, suppose 𝑋 s the random variable representing the height (in inches) of an adult man in a certain population. We might model 𝑋 as approximately normally distributed with mean 𝜇 = 70 inches and standard deviation 𝜎 = 3 inches. Each individual man in that population has a specific height, but if you randomly select one individual, their height is uncertain—hence, it’s a random variable.
+- Z is then the standardized version of 𝑋, which follows a standard normal distribution (mean 0 and standard deviation 1). **When we talk about standardizing, we’re not literally changing your physical height. Instead, we’re re-expressing your height in terms of how many standard deviations it is above or below the average within a certain population. If your height is 𝑋=73 inches, and the population mean is 𝜇 = 70, and the standard deviation is 𝜎 =3, then:** 
+$$
+Z = \frac{73 - 70}{3} = 1
+$$
+This just means your height is 1 standard deviation above the average. The standardization formula converts a real-world measurement (your height) into a unitless score (the 𝑍-score). It tells us where you stand relative to everyone else, in terms of standard deviations.
+
+**Any normal distribution can be converted into a standard normal distribution by “standardizing”**: $Z = \frac{X - \mu}{\sigma}$. 
+
+The standard normal distribution and its z-scores are extremely important for understanding probabilities in normally distributed data. Here’s why:
+- Universal Reference Point
+    - A z-score (also called a “standard score”) tells you how many standard deviations an observation is above or below the mean.
+    - By standardizing different normal variables, you reduce them to the same “unit,” allowing direct comparisons across different measurements and scales.
+- Simplified Probability Lookups
+    - **Instead of having separate probability tables (or complicated integrals) for every combination of mean 𝜇 and standard deviation 𝜎, you can look up (or calculate) probabilities from a single standard normal table (or function) once you convert your data to z-scores.**
+- Foundation for Many Statistical Methods
+    - Confidence intervals, hypothesis tests (like z-tests), and other inferential procedures often rely on the assumption that a test statistic follows a (standard) normal distribution when sample sizes are large or under ideal conditions.
+    - Mastering z-scores and the standard normal distribution paves the way to understanding these more advanced techniques.
+Overall, z-scores capture the essence of “how far and in what direction an observation is from the mean, measured in standard deviations,” and this unifying perspective underlies much of classical statistics and probability theory.
+
+Standard Normal Distribution and Cumulative Distribution Function (CDF)
+
+As we learned in descriptive statistics, a cumulative distribution function (CDF) for a random variable 𝑋 is a function that, for any number 𝑥, tells you the probability that 𝑋 is less than or equal to 𝑥. Mathematically, it’s written as: 
+$$
+F_X(x) = P\bigl(X \le x\bigr)
+$$
+Here’s what that means in simpler terms:
+- When you plug a value 𝑥 into the CDF, you get the fraction of all possible outcomes that lie up to (and including) 𝑥.
+- Because $F_X(x)$ represents a probability, it is always between 0 and 1.
+- As 𝑥 increases from −∞ to +∞, $F_X(x)$ grows (or at least doesn’t decrease) from 0 up to 1.
+
+Suppose 𝑋 is the random variable representing the height (in inches) of an adult woman in a certain population. Assume 𝑋 is (approximately) normally distributed with a mean of 𝜇=64 inches and a standard deviation of 𝜎=2.5 inches: $X \sim \mathcal{N}(64, 2.5^2)$.
+
+The cumulative distribution function (CDF) of 
+𝑋, denoted by $F_X(x)$, gives the probability that a randomly selected adult woman in this population has a height less than or equal to 𝑥. Symbolically,
+$$
+F_X(x) = P\bigl(X \le x\bigr)
+$$
+
+If you wanted to know what proportion of women in this population are 5'4" (64 inches) or shorter, you would compute:
+$$
+F_X(64) = P\bigl(X \le 64\bigr)
+$$
+
+Because $F_X(x)$ is the area under the normal bell curve from −∞ to 𝑥, it fully describes the distribution—meaning you can use it to find probabilities for any range of heights.
+ 
+Why is CDF useful for z tables? A z-table is essentially a lookup for the cumulative distribution function (CDF) of the standard normal distribution.  In other words, a z-table directly tells you $P(Z \le z)$ for a standard normal variable 𝑍. So, if you want to find the probability that 𝑍 is less than or equal to some value 𝑧, you look up the CDF in the table. **Because the CDF tells us the area under the curve up to a point, it perfectly aligns with what a z-table provides: the proportion (or area) of a standard normal distribution from −∞ up to 𝑧. This is why the CDF concept is at the heart of how z-tables work.** 
+
+Standard Normal Distribution and P-Value
+
+Is the CDF and p-value the same thing in standard normal distribution? No, they’re not the same thing, though they are closely related:
+- The CDF of a standard normal random variable $Z \sim \mathcal{N}(0,1)$ at a point 𝑧 is the probability that 𝑍 is less than or equal to 𝑧. Symbolically:
+$$
+F_Z(z) = P(Z \le z)
+$$
+- A p-value for a test (like a z-test) is the probability of seeing a test statistic at least as extreme as the observed one under the null hypothesis. For a two-sided z-test, for instance:
+$$
+\text{p-value} = 2 \times P\bigl(Z \ge \lvert z_{\text{observed}} \rvert\bigr)
+$$
+where $z_{\text{observed}}$ is the actual computed z-statistic from your data. Remember in a z-test, the observed z-statistic $z_{\text{observed}}$ is computed by taking the difference between the sample mean $\bar{x}$ and the hypothesized population mean $\mu_0$, then dividing by the standard error (which, if 𝜎 is known), is $\frac{\sigma}{\sqrt{n}}$. Symbolically:
+$$
+z_{\text{observed}}  
+= \frac{\bar{x} - \mu_0}{\sigma / \sqrt{n}}
+$$
+**Essentially, the p-value calculation makes use of the CDF (or complementary CDF) to measure how unlikely (under the null hypothesis) the observed result (or something more extreme) is. But the raw CDF simply gives “the probability up to this point,” not specifically the probability of being at least as extreme in both tails.**
+
+  
+
+ 
 - Intuition: Central Position and Unit Spread
     - Because it’s centered at 0, we measure deviations as positive or negative (above or below the mean).
     - Having a standard deviation of 1 means these deviations are in terms of “standard units,” so it’s straightforward to interpret a value like Z=1.96 as being about “1.96 standard deviations above the mean.”
