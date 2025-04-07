@@ -83,7 +83,7 @@ async def test_calculus_book_split_by_500(
 ):
     metadata = {
         **message_metadata,
-        "source": "calculus_book1_path",
+        "source": "CalculusBook1.pdf",
     }
 
     loader = ExtendedPyPDFLoader(

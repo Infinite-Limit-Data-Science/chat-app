@@ -69,7 +69,7 @@ def _adaptive_token_boundary_stream(
     backtrack_window: int = 30,
 ):
     if isinstance(tokenizer, PreTrainedTokenizer):
-        print(f'Using PreTrainedTokenizer, consider using PreTrainedTokenizerFast for offsets.')
+        print("Using PreTrainedTokenizer, consider using PreTrainedTokenizerFast for offsets.")
 
     encoding = tokenizer(
         text,
@@ -78,20 +78,39 @@ def _adaptive_token_boundary_stream(
     )
 
     tokens = encoding.tokens()
-    offsets = encoding.offset_mapping
     input_ids = encoding["input_ids"]
+    offsets = encoding["offset_mapping"]
     n_tokens = len(input_ids)
 
     if n_tokens <= chunk_size:
         yield text
         return
 
+    pending_chunk_ids = None
+
     start_idx = 0
-    while start_idx < n_tokens:
+
+    while True:
         remainder = n_tokens - start_idx
+
         if remainder <= chunk_size:
-            chunk_ids = input_ids[start_idx:n_tokens]
-            yield tokenizer.decode(chunk_ids)
+            final_chunk_ids = input_ids[start_idx : n_tokens]
+
+            if pending_chunk_ids is not None:
+                final_size = len(final_chunk_ids)
+                if final_size < chunk_size:
+                    needed = chunk_size - final_size
+                    can_overlap = len(pending_chunk_ids)
+                    overlap_amount = min(needed, can_overlap)
+
+                    if overlap_amount > 0:
+                        overlap_slice = pending_chunk_ids[-overlap_amount:]
+                        final_chunk_ids = overlap_slice + final_chunk_ids
+
+            if pending_chunk_ids is not None:
+                yield tokenizer.decode(pending_chunk_ids)
+
+            yield tokenizer.decode(final_chunk_ids)
             return
 
         proposed_end = min(start_idx + chunk_size, n_tokens)
@@ -106,9 +125,17 @@ def _adaptive_token_boundary_stream(
                 best_boundary = j
                 break
 
-        chunk_ids = input_ids[start_idx:best_boundary]
-        yield tokenizer.decode(chunk_ids)
+        current_chunk_ids = input_ids[start_idx:best_boundary]
         start_idx = best_boundary
+
+        if pending_chunk_ids is not None:
+            yield tokenizer.decode(pending_chunk_ids)
+
+        pending_chunk_ids = current_chunk_ids
+
+        if start_idx >= n_tokens:
+            yield tokenizer.decode(pending_chunk_ids)
+            return
 
 class MixedContentTextSplitter(StreamingTextSplitter):
     def __init__(

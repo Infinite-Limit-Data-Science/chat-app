@@ -48,7 +48,7 @@ class StreamingParentDocumentRetriever(MultiVectorRetriever):
         
             child_doc_stream: Iterator[Document] = self.child_splitter.split_documents([parent_doc])
 
-            # need to send a batch of chunk streams, not a single chunk
+            # send a batch of child doc chunk streams for given parent
             for child_doc in child_doc_stream:
                 child_doc.metadata[self.id_key] = doc_id         
                 yield child_doc
@@ -81,18 +81,18 @@ class StreamingParentDocumentRetriever(MultiVectorRetriever):
         **kwargs: Any,            
     ) -> List[str]:
         """
-        `aadd_batch_with_ttl` accumulates text chunks up to a certain
-        batch size, flushes them, handles images individually, and 
-        then continues.
+        `MultiModalVectorStore.aadd_batch` accumulates text chunks up 
+        to a certain batch size, flushes them, handles images individually, 
+        and then continues.
 
         When `_split_docs_for_adding` yields child docs for a single
-        parent doc, `aadd_batch_with_ttl` just sees them as a sequence 
+        parent doc, `aadd_batch` just sees them as a sequence 
         of documents. Even if you have multiple text child chunks for 
-        a single parent doc, `aadd_batch_with_ttl` will accumulate them 
+        a single parent doc, `aadd_batch` will accumulate them 
         in its internal batch until the limit is reached (or until it 
         sees an image).
 
-        By the time `aadd_batch_with_ttl` starts reading the stream of 
+        By the time `aadd_batch` starts reading the stream of 
         child docs, each parent doc has already been stored in the docstore 
         (because _split_docs_for_adding sets it there before yielding the 
         child docs).

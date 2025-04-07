@@ -90,7 +90,7 @@ class DocumentIngestor(ABC):
 
     def inheritable_chunk_strategy(self, documents: Iterator[Document]) -> Iterator[Document]:
         parent_text_splitter = MixedContentTextSplitter(
-            self.embeddings.tokenizer,
+            self.embeddings.tokenizer.tokenizer,
             chunk_size=2000,
             metadata=self.metadata,
         )
@@ -121,7 +121,7 @@ class DocumentIngestor(ABC):
         requests: int
     ) -> List[str]:
         child_text_splitter = MixedContentTextSplitter(
-            self.embeddings.tokenizer,
+            self.embeddings.tokenizer.tokenizer,
             chunk_size=250,
             metadata=self.metadata,
         )

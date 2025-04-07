@@ -5,9 +5,9 @@ import time
 import pytest
 from pathlib import Path
 from uuid import uuid4
-from bson import ObjectId
 from redis.client import Redis
 from redis.connection import ConnectionPool
+from ..document_ingestor import VectorStoreConfig
 from ..lazy_pdf_ingestor import LazyPdfIngestor
 from ...gwblue_huggingface import HuggingFaceEmbeddings
 
@@ -56,9 +56,42 @@ def message_metadata() -> Dict[str, Any]:
         "conversation_id": str(uuid4()),
     }
 
+# @pytest.mark.asyncio
+# async def test_calculus_book_embed(
+#     embeddings: HuggingFaceEmbeddings,
+#     redis_client: Redis,    
+#     message_metadata: Dict[str, Any],
+#     calculus_book1_path: Path,
+# ):
+#     metadata = {
+#         **message_metadata,
+#         "source": "CalculusBook1.pdf",
+#     }
+
+#     ingestor = LazyPdfIngestor(
+#         calculus_book1_path,
+#         embeddings=embeddings,
+#         metadata=metadata,
+#         vector_config=VectorStoreConfig(
+#             client=redis_client,
+#             metadata_schema=json.loads(os.environ['VECTOR_STORE_SCHEMA'])
+#         ),
+#         add_to_docstore=False,
+#     )
+
+#     start_time = time.perf_counter()
+#     ids = await ingestor.ingest()
+#     end_time = time.perf_counter()
+
+#     elapsed = end_time - start_time
+#     print(f"Ingestion took {elapsed:.2f} seconds")
+
+#     assert len(ids) > 0
+
 @pytest.mark.asyncio
-async def test_calculus_book_embed(
+async def test_calculus_book_inheritable_embed(
     embeddings: HuggingFaceEmbeddings,
+    redis_client: Redis,    
     message_metadata: Dict[str, Any],
     calculus_book1_path: Path,
 ):
@@ -71,7 +104,11 @@ async def test_calculus_book_embed(
         calculus_book1_path,
         embeddings=embeddings,
         metadata=metadata,
-        vector_config=chat_bot_config.vectorstore,
+        vector_config=VectorStoreConfig(
+            client=redis_client,
+            metadata_schema=json.loads(os.environ['VECTOR_STORE_SCHEMA'])
+        ),
+        add_to_docstore=True,
     )
 
     start_time = time.perf_counter()
@@ -82,11 +119,3 @@ async def test_calculus_book_embed(
     print(f"Ingestion took {elapsed:.2f} seconds")
 
     assert len(ids) > 0
-
-@pytest.mark.asyncio
-async def test_calculus_book_inheritable_embed(
-    embeddings: HuggingFaceEmbeddings,
-    message_metadata: Dict[str, Any],
-    calculus_book1_path: Path,
-):
-    ...
