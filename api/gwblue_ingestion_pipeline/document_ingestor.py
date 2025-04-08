@@ -122,7 +122,7 @@ class DocumentIngestor(ABC):
     ) -> List[str]:
         child_text_splitter = MixedContentTextSplitter(
             self.embeddings.tokenizer.tokenizer,
-            chunk_size=250,
+            chunk_size=150,
             metadata=self.metadata,
         )
 

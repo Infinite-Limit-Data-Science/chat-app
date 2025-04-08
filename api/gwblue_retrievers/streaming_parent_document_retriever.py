@@ -2,11 +2,17 @@ from typing import (
     Iterator,
     List,
     Optional,
+    Tuple,
     Any,
 )
 import uuid
+from collections import defaultdict
 from langchain_core.documents import Document
-from langchain.retrievers import MultiVectorRetriever#, ParentDocumentRetriever
+from langchain.retrievers import MultiVectorRetriever
+from langchain_core.callbacks import (
+    AsyncCallbackManagerForRetrieverRun,
+    CallbackManagerForRetrieverRun,
+)
 from ..gwblue_text_splitters.streaming_text_splitter import StreamingTextSplitter
 
 class StreamingParentDocumentRetriever(MultiVectorRetriever):
@@ -16,7 +22,7 @@ class StreamingParentDocumentRetriever(MultiVectorRetriever):
     TTL user_conversations:01JQX3EE253R2SFT6C94ZGSFBH 
     GET docstore:50c018b8-5c57-4a1d-9c97-92d5d6a89097:content 
     """
-    child_splitter: StreamingTextSplitter
+    child_splitter: StreamingTextSplitter = None
 
     def _split_docs_for_adding(
         self,
@@ -98,4 +104,60 @@ class StreamingParentDocumentRetriever(MultiVectorRetriever):
         child docs).
         """
         doc_stream = self._split_docs_for_adding(documents, add_to_docstore)
-        return await self.vectorstore.aadd_batch(doc_stream, max_requests=max_requests)       
+        return await self.vectorstore.aadd_batch(doc_stream, max_requests=max_requests)
+    
+    def _aggregate_parents(
+        self, child_docs_with_scores: List[Tuple[Document, float]]
+    ) -> List[str]:
+        from collections import defaultdict
+        parent_scores = defaultdict(float)
+        for (child_doc, score) in child_docs_with_scores:
+            parent_id = child_doc.metadata[self.id_key]
+            parent_scores[parent_id] += score
+        
+        sorted_parent_ids = sorted(parent_scores.keys(),
+                                   key=lambda pid: parent_scores[pid],
+                                   reverse=True)
+        return sorted_parent_ids
+
+    def _filter_valid_docs(self, docs: List[Document]) -> List[Document]:
+        return [d for d in docs if d is not None]
+
+    def _get_relevant_documents(
+        self,
+        query: str,
+        *,
+        run_manager: CallbackManagerForRetrieverRun
+    ) -> List[Document]:
+        child_docs_with_distances = self.vectorstore.similarity_search_with_score(
+            query,
+            **self.search_kwargs
+        )
+        
+        child_docs_with_scores = []
+        for doc, distance in child_docs_with_distances:
+            score = 1.0 / (1.0 + distance)
+            child_docs_with_scores.append((doc, score))
+        
+        sorted_parent_ids = self._aggregate_parents(child_docs_with_scores)
+        parent_docs = self.docstore.mget(sorted_parent_ids)
+        return self._filter_valid_docs(parent_docs)
+
+    async def _aget_relevant_documents(
+        self,
+        query: str,
+        *,
+        run_manager: AsyncCallbackManagerForRetrieverRun
+    ) -> List[Document]:
+        child_docs_with_distances = await self.vectorstore.asimilarity_search_with_score(
+            query,
+            **self.search_kwargs
+        )
+        child_docs_with_scores = []
+        for doc, distance in child_docs_with_distances:
+            score = 1.0 / (1.0 + distance)
+            child_docs_with_scores.append((doc, score))
+
+        sorted_parent_ids = self._aggregate_parents(child_docs_with_scores)
+        parent_docs = await self.docstore.amget(sorted_parent_ids)
+        return self._filter_valid_docs(parent_docs)

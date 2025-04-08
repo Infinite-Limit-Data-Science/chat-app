@@ -83,6 +83,9 @@ from .message_history import (
     MongoMessageHistorySchema,
     MongoMessageHistory,
 )
+from ..gwblue_vectorstores.redis.docstore import RedisDocStore
+from ..gwblue_retrievers.streaming_parent_document_retriever import StreamingParentDocumentRetriever
+from .semantic_scaler import Sigmoid
 
 ChatGenerationLike: TypeAlias = (
     ChatGeneration | Iterator[ChatGeneration] | AsyncIterator[ChatGenerationChunk]
@@ -499,11 +502,16 @@ class ChatBot(RunnableSerializable[I, O]):
 
         filter_expression = self.create_filter_expression(metadata)
         search_kwargs = {
-            "k": 20,
+            "k": int(round(Sigmoid.logistic(
+                x=self.chat_model.tokenizer.sequence_length_forward_pass, 
+                L=120, 
+                a=2e-5, 
+                m=60000
+            ))),
             "filter": filter_expression,
         }
-        if state["retrieval_mode"] == "similarity_score_threshold":
-            search_kwargs["score_threshold"] = 0.8
+        # if state["retrieval_mode"] == "similarity_score_threshold":
+        #     search_kwargs["score_threshold"] = 0.8
 
         # TODO: abstract retriever functionality outside of ChatBot
         # retriever = self.vector_store.as_retriever(
@@ -512,21 +520,11 @@ class ChatBot(RunnableSerializable[I, O]):
         #     tags=[f"create_context_aware_chain_{state['route']}"],
         #     metadata=metadata,
         # )
-        from langchain_text_splitters import RecursiveCharacterTextSplitter
-        from langchain.retrievers import ParentDocumentRetriever
-        from ..gwblue_vectorstores.redis.docstore import RedisDocStore
-
-        docstore = RedisDocStore(self.config.vectorstore.client)
-        parent_splitter = RecursiveCharacterTextSplitter(chunk_size=2000)
-        child_splitter = RecursiveCharacterTextSplitter(chunk_size=500)
-        retriever = ParentDocumentRetriever(
+        retriever = StreamingParentDocumentRetriever(
             vectorstore=self.vector_store,
-            docstore=docstore,
-            child_splitter=child_splitter,
-            parent_splitter=parent_splitter
+            docstore=RedisDocStore(self.config.vectorstore.client),
+            search_kwargs=search_kwargs,
         )
-        retriever.search_type = state["retrieval_mode"]
-        retriever.search_kwargs = search_kwargs
 
         history_aware_retriever = self.create_history_aware_retriever(
             retriever,
@@ -591,14 +589,27 @@ class ChatBot(RunnableSerializable[I, O]):
         for index, metadata in enumerate(state["metadata"]):
             filter_expression = self.create_filter_expression(metadata)
             search_kwargs = {
-                "k": 6,
+                "k": int(round(Sigmoid.logistic(
+                    x=self.chat_model.tokenizer.sequence_length_forward_pass, 
+                    L=120, 
+                    a=2e-5, 
+                    m=60000
+                ))),
                 "filter": filter_expression,
             }
-            if state["retrieval_mode"] == "similarity_score_threshold":
-                search_kwargs["score_threshold"] = 0.8
+            # if state["retrieval_mode"] == "similarity_score_threshold":
+            #     search_kwargs["score_threshold"] = 0.8
 
-            retriever = self.vector_store.as_retriever(
-                search_type=state["retrieval_mode"], search_kwargs=search_kwargs
+            # retriever = self.vector_store.as_retriever(
+            #     search_type=state["retrieval_mode"], search_kwargs=search_kwargs
+            # ).with_config(
+            #     tags=[f"create_context_aware_chain_{index}_{state['route']}"],
+            #     metadata=metadata,
+            # )
+            retriever = StreamingParentDocumentRetriever(
+                vectorstore=self.vector_store,
+                docstore=RedisDocStore(self.config.vectorstore.client),
+                search_kwargs=search_kwargs,
             ).with_config(
                 tags=[f"create_context_aware_chain_{index}_{state['route']}"],
                 metadata=metadata,
