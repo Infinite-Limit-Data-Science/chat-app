@@ -1,4 +1,9 @@
-from typing import Optional, Iterator, Sequence
+from typing import (
+    Optional, 
+    Iterator, 
+    Sequence,
+)
+import json
 import asyncio
 from langchain_core.stores import BaseStore
 from langchain_core.documents import Document
@@ -12,7 +17,12 @@ class RedisDocStore(BaseStore):
     
     def mset(self, docs: list[tuple[str, Document]]):
         for (doc_id, doc) in docs:
-            self.redis.set(f"docstore:{doc_id}:content", doc.page_content)
+            obj = {
+                "page_content": doc.page_content,
+                "metadata": doc.metadata
+            }
+            serialized = json.dumps(obj)
+            self.redis.set(f"docstore:{doc_id}", serialized)
 
     async def amset(self, docs: list[tuple[str, Document]]) -> None:
         loop = asyncio.get_running_loop()
@@ -21,8 +31,16 @@ class RedisDocStore(BaseStore):
     def mget(self, ids: list[str]) -> list[Document]:
         docs = []
         for doc_id in ids:
-            content = self.redis.get(f"docstore:{doc_id}:content")
-            doc = Document(page_content=content, metadata={"doc_id": doc_id})
+            raw_val = self.redis.get(f"docstore:{doc_id}")
+            if not raw_val:
+                docs.append(None)
+                continue
+            data = json.loads(raw_val)
+            doc = Document(
+                page_content=data["page_content"],
+                metadata=data["metadata"]
+            )
+            doc.metadata["doc_id"] = doc_id
             docs.append(doc)
         return docs
 

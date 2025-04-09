@@ -410,91 +410,88 @@ def message_metadata(conversation_doc: Dict[str, Any]) -> Dict[str, Any]:
 
 #     assert "too long" in ai_content
 
-@pytest.mark.asyncio
-async def test_teams_to_consider_doc_prompt(
-    embeddings: HuggingFaceEmbeddings,
-    chat_bot_config: ChatBotConfig,
-    message_metadata: Dict[str, Any],
-    conversation_doc: Dict[str, Any],
-    teams_to_consider_word_path: Path,
-):
-    chat_bot_config.message_history.session_id = conversation_doc["_id"]
+# @pytest.mark.asyncio
+# async def test_teams_to_consider_doc_prompt(
+#     embeddings: HuggingFaceEmbeddings,
+#     chat_bot_config: ChatBotConfig,
+#     message_metadata: Dict[str, Any],
+#     conversation_doc: Dict[str, Any],
+#     teams_to_consider_word_path: Path,
+# ):
+#     chat_bot_config.message_history.session_id = conversation_doc["_id"]
 
-    metadata = {
-        **message_metadata,
-        "conversation_id": str(message_metadata["conversation_id"]),
-        "source": "Teams to Consider.docx",
-    }
+#     metadata = {
+#         **message_metadata,
+#         "conversation_id": str(message_metadata["conversation_id"]),
+#         "source": "Teams to Consider.docx",
+#     }
 
-    ingestor = LazyWordIngestor(
-        teams_to_consider_word_path,
-        embeddings=embeddings,
-        metadata=metadata,
-        vector_config=chat_bot_config.vectorstore,
-        add_to_docstore=True,
-    )
-    ids = await ingestor.ingest()
-    print(ids)
+#     ingestor = LazyWordIngestor(
+#         teams_to_consider_word_path,
+#         embeddings=embeddings,
+#         metadata=metadata,
+#         vector_config=chat_bot_config.vectorstore,
+#         add_to_docstore=True,
+#     )
+#     ids = await ingestor.ingest()
+#     print(ids)
 
-    chat_prompt = ChatPromptTemplate.from_messages(
-        [("system", "You're a helpful assistant"), ("human", "{input}")]
-    )
-    chat_bot = ChatBot(config=chat_bot_config)
-    chain = chat_prompt | chat_bot
+#     chat_prompt = ChatPromptTemplate.from_messages(
+#         [("system", "You're a helpful assistant"), ("human", "{input}")]
+#     )
+#     chat_bot = ChatBot(config=chat_bot_config)
+#     chain = chat_prompt | chat_bot
 
-    config = RunnableConfig(
-        tags=[
-            "chat_bot_run_test",
-            f"uuid_${message_metadata['uuid']}",
-            f"conversation_id_${message_metadata['uuid']}",
-        ],
-        metadata={"vector_metadata": [metadata]},
-        configurable={"retrieval_mode": "mmr"},
-    )
+#     config = RunnableConfig(
+#         tags=[
+#             "chat_bot_run_test",
+#             f"uuid_${message_metadata['uuid']}",
+#             f"conversation_id_${message_metadata['uuid']}",
+#         ],
+#         metadata={"vector_metadata": [metadata]},
+#         configurable={"retrieval_mode": "mmr"},
+#     )
 
+#     ai_content = ""
+#     streaming_resp = []
+#     async for chunk in chain.astream(
+#         {
+#             "input": "Who is Himanshu Mehta?"
+#         },
+#         config=config,
+#     ):
+#         print(f"Custom event ${chunk.content}")
+#         ai_content += chunk.content
+#         streaming_resp.append(chunk)
 
-    # ai_content = ""
-    # streaming_resp = []
-    # async for chunk in chain.astream(
-    #     {
-    #         "input": "Who is Himanshu Mehta?"
-    #     },
-    #     config=config,
-    # ):
-    #     print(f"Custom event ${chunk.content}")
-    #     ai_content += chunk.content
-    #     streaming_resp.append(chunk)
+#     assert "himanshu" in ai_content.lower()
 
-    # assert "Himanshu" in ai_content.lower()
+#     ai_content = ""
+#     streaming_resp = []
+#     # THE OTHER POTENTIAL PROBLEM IS YOU MAY HAVE ONLY LIMITED 2024 TOKENS in RESPONSE
+#     async for chunk in chain.astream(
+#         {
+#             "input": "Review the attached MS Word document throughly and list out all the teams listed under the Mandatory Teams section"
+#         },
+#         config=config,
+#     ):
+#         print(f"Custom event ${chunk.content}")
+#         ai_content += chunk.content
+#         streaming_resp.append(chunk)
 
-    # ai_content = ""
-    # streaming_resp = []
-    # # IT SEEMS TEXT IS NOT IN CORRECT ORDER
-    # # THE OTHER POTENTIAL PROBLEM IS YOU MAY HAVE ONLY LIMITED 2024 TOKENS in RESPONSE
-    # async for chunk in chain.astream(
-    #     {
-    #         "input": "Review the attached MS Word document throughly and list out all the teams listed under the Mandatory Teams section"
-    #     },
-    #     config=config,
-    # ):
-    #     print(f"Custom event ${chunk.content}")
-    #     ai_content += chunk.content
-    #     streaming_resp.append(chunk)
+#     assert "guidewell" in ai_content.lower()
 
-    # assert "guidewell" in ai_content.lower()
+#     # add page number search, filename search by metadata
+#     ai_content = ""
+#     streaming_resp = []
+#     async for chunk in chain.astream(
+#         {"input": "how many teams are listed under Teams to Consider"}, config=config
+#     ):
+#         print(f"Custom event ${chunk.content}")
+#         ai_content += chunk.content
+#         streaming_resp.append(chunk)
 
-    # when i return the documents, I need to make sure they are returned in the same order 
-    # they were originally in the documents page number search, filename search by metadata
-    ai_content = ""
-    streaming_resp = []
-    async for chunk in chain.astream(
-        {"input": "how many teams are listed under Teams to Consider"}, config=config
-    ):
-        print(f"Custom event ${chunk.content}")
-        ai_content += chunk.content
-        streaming_resp.append(chunk)
-
-    assert "team" in ai_content
+#     assert "team" in ai_content
 
 # @pytest.mark.asyncio
 # async def test_arag_ignite_doc_prompt(
@@ -553,88 +550,88 @@ async def test_teams_to_consider_doc_prompt(
 
 #     assert "arag" in ai_content.lower() 
 
-# @pytest.mark.asyncio
-# async def test_genesys_contract_doc_prompt(
-#     embeddings: HuggingFaceEmbeddings,
-#     chat_bot_config: ChatBotConfig,
-#     message_metadata: Dict[str, Any],
-#     conversation_doc: Dict[str, Any],
-#     genesys_contract_pdf_path: Path,
-# ):
-#     chat_bot_config.message_history.session_id = conversation_doc["_id"]
+@pytest.mark.asyncio
+async def test_genesys_contract_doc_prompt(
+    embeddings: HuggingFaceEmbeddings,
+    chat_bot_config: ChatBotConfig,
+    message_metadata: Dict[str, Any],
+    conversation_doc: Dict[str, Any],
+    genesys_contract_pdf_path: Path,
+):
+    chat_bot_config.message_history.session_id = conversation_doc["_id"]
 
-#     metadata = {
-#         **message_metadata,
-#         "conversation_id": str(message_metadata["conversation_id"]),
-#         "source": "64654-genesys.pdf",
-#     }
+    metadata = {
+        **message_metadata,
+        "conversation_id": str(message_metadata["conversation_id"]),
+        "source": "64654-genesys.pdf",
+    }
 
-#     ingestor = LazyPdfIngestor(
-#         genesys_contract_pdf_path,
-#         embeddings=embeddings,
-#         metadata=metadata,
-#         vector_config=chat_bot_config.vectorstore,
-#         add_to_docstore=True,
-#     )
-#     ids = await ingestor.ingest()
-#     print(ids)
+    ingestor = LazyPdfIngestor(
+        genesys_contract_pdf_path,
+        embeddings=embeddings,
+        metadata=metadata,
+        vector_config=chat_bot_config.vectorstore,
+        add_to_docstore=True,
+    )
+    ids = await ingestor.ingest()
+    print(ids)
 
-#     chat_prompt = ChatPromptTemplate.from_messages(
-#         [("system", "You're a helpful assistant"), ("human", "{input}")]
-#     )
-#     chat_bot = ChatBot(config=chat_bot_config)
-#     chain = chat_prompt | chat_bot    
+    chat_prompt = ChatPromptTemplate.from_messages(
+        [("system", "You're a helpful assistant"), ("human", "{input}")]
+    )
+    chat_bot = ChatBot(config=chat_bot_config)
+    chain = chat_prompt | chat_bot    
 
-#     config = RunnableConfig(
-#         tags=[
-#             "chat_bot_run_test",
-#             f"uuid_${message_metadata['uuid']}",
-#             f"conversation_id_${message_metadata['uuid']}",
-#         ],
-#         metadata={"vector_metadata": [metadata]},
-#     )
+    config = RunnableConfig(
+        tags=[
+            "chat_bot_run_test",
+            f"uuid_${message_metadata['uuid']}",
+            f"conversation_id_${message_metadata['uuid']}",
+        ],
+        metadata={"vector_metadata": [metadata]},
+    )
 
-#     ai_content = ""
-#     streaming_resp = []
-#     async for chunk in chain.astream(
-#         {
-#             "input": "What is the quote expiration date"
-#         },
-#         config=config,
-#     ):
-#         print(f"Custom event ${chunk.content}")
-#         ai_content += chunk.content
-#         streaming_resp.append(chunk)
+    ai_content = ""
+    streaming_resp = []
+    async for chunk in chain.astream(
+        {
+            "input": "What is the quote expiration date"
+        },
+        config=config,
+    ):
+        print(f"Custom event ${chunk.content}")
+        ai_content += chunk.content
+        streaming_resp.append(chunk)
 
-#     assert "21" in ai_content.lower() 
+    assert "21" in ai_content.lower() 
 
-#     ai_content = ""
-#     streaming_resp = []
-#     async for chunk in chain.astream(
-#         {
-#             "input": "What is the ramp period?"
-#         },
-#         config=config,
-#     ):
-#         print(f"Custom event ${chunk.content}")
-#         ai_content += chunk.content
-#         streaming_resp.append(chunk)
+    ai_content = ""
+    streaming_resp = []
+    async for chunk in chain.astream(
+        {
+            "input": "What is the ramp period?"
+        },
+        config=config,
+    ):
+        print(f"Custom event ${chunk.content}")
+        ai_content += chunk.content
+        streaming_resp.append(chunk)
 
-#     assert "ramp" in ai_content.lower() 
+    assert "ramp" in ai_content.lower() 
 
-#     ai_content = ""
-#     streaming_resp = []
-#     async for chunk in chain.astream(
-#         {
-#             "input": "What is the largest line item by dollar in the document?"
-#         },
-#         config=config,
-#     ):
-#         print(f"Custom event ${chunk.content}")
-#         ai_content += chunk.content
-#         streaming_resp.append(chunk)
+    ai_content = ""
+    streaming_resp = []
+    async for chunk in chain.astream(
+        {
+            "input": "What is the largest line item by dollar in the document?"
+        },
+        config=config,
+    ):
+        print(f"Custom event ${chunk.content}")
+        ai_content += chunk.content
+        streaming_resp.append(chunk)
 
-#     assert "dollar" in ai_content.lower() 
+    assert "dollar" in ai_content.lower() 
 
 # @pytest.mark.asyncio
 # async def test_calculus_book_doc_prompt(

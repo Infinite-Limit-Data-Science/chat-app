@@ -6,6 +6,7 @@ from typing import (
     Any,
 )
 import uuid
+from collections import defaultdict
 from langchain_core.documents import Document
 from langchain.retrievers import MultiVectorRetriever
 from langchain_core.callbacks import (
@@ -107,18 +108,19 @@ class StreamingParentDocumentRetriever(MultiVectorRetriever):
     
     def _aggregate_parents(
         self, child_docs_with_scores: List[Tuple[Document, float]]
-    ) -> List[str]:
-        from collections import defaultdict
+    ) -> Tuple[List[str], dict]:
         parent_scores = defaultdict(float)
         for (child_doc, score) in child_docs_with_scores:
             parent_id = child_doc.metadata[self.id_key]
             parent_scores[parent_id] += score
-        
-        sorted_parent_ids = sorted(parent_scores.keys(),
-                                   key=lambda pid: parent_scores[pid],
-                                   reverse=True)
-        return sorted_parent_ids
 
+        sorted_parent_ids = sorted(
+            parent_scores.keys(),
+            key=lambda pid: parent_scores[pid],
+            reverse=True
+        )
+        return sorted_parent_ids, dict(parent_scores)
+    
     def _filter_valid_docs(self, docs: List[Document]) -> List[Document]:
         return [d for d in docs if d is not None]
 
@@ -132,15 +134,34 @@ class StreamingParentDocumentRetriever(MultiVectorRetriever):
             query,
             **self.search_kwargs
         )
-        
-        child_docs_with_scores = []
+
+        child_docs_with_scores: List[Tuple[Document, float]] = []
         for doc, distance in child_docs_with_distances:
             score = 1.0 / (1.0 + distance)
             child_docs_with_scores.append((doc, score))
-        
-        sorted_parent_ids = self._aggregate_parents(child_docs_with_scores)
+
+        sorted_parent_ids, parent_scores = self._aggregate_parents(child_docs_with_scores)
+
         parent_docs = self.docstore.mget(sorted_parent_ids)
-        return self._filter_valid_docs(parent_docs)
+        parent_docs = self._filter_valid_docs(parent_docs)
+
+        doc_map = {}
+        for pdoc in parent_docs:
+            pid = pdoc.metadata.get(self.id_key)
+            doc_map[pid] = pdoc
+
+        for pid in sorted_parent_ids:
+            if pid in doc_map:
+                doc_map[pid].metadata["aggregated_score"] = parent_scores[pid]
+
+        final_docs = []
+        for pid in sorted_parent_ids:
+            if pid in doc_map:
+                final_docs.append(doc_map[pid])
+
+        final_docs.sort(key=lambda d: d.metadata.get("chunk_index", float('inf')))
+
+        return final_docs
 
     async def _aget_relevant_documents(
         self,
@@ -149,8 +170,12 @@ class StreamingParentDocumentRetriever(MultiVectorRetriever):
         run_manager: AsyncCallbackManagerForRetrieverRun
     ) -> List[Document]:
         """
-        Each child doc has a numeric similarity score
-        _aggregate_parents adds up those child-level scores for all child docs belonging to a given parent.
+        For the top k documents, chunk_index is used to get one full document forward
+        even if that document was not included in the returned chunks. This ensures if
+        important content spills over to next page, a full document chunk will be added.
+
+        A chat bot should take the results and if context length is reached, then trim
+        out documents by worst scores ones first.
         """
         child_docs_with_distances = await self.vectorstore.asimilarity_search_with_score(
             query,
@@ -161,18 +186,26 @@ class StreamingParentDocumentRetriever(MultiVectorRetriever):
             score = 1.0 / (1.0 + distance)
             child_docs_with_scores.append((doc, score))
 
-        # TODO: For the top k documents, use chunk_index to get one full document forward
-        # even if that document was not included in the returned chunks. This ensures if
-        # important content spills over to next page, it will be covered. 
-        # chat bot should take the results and if context length is reached, then trim
-        # out documents by worst scores ones first. But it must also order documents by
-        # chunk index, or should I do the ordering by chunk index in this method? ANd 
-        # pass the scores as document metadata to the chat bot? 
-        sorted_parent_ids = self._aggregate_parents(child_docs_with_scores)
+        sorted_parent_ids, parent_scores = self._aggregate_parents(child_docs_with_scores)
         parent_docs = await self.docstore.amget(sorted_parent_ids)
+        parent_docs = self._filter_valid_docs(parent_docs)
 
-        # for parent_id in sorted_parent_ids:
-        #     doc = parent_docs_map[parent_id]
-        #     doc.metadata["aggregated_score"] = parent_scores[parent_id]
+        doc_map = {}
+        for doc in parent_docs:
+            pid = doc.metadata.get(self.id_key)
+            doc_map[pid] = doc
+        
+        for pid in sorted_parent_ids:
+            if pid in doc_map:
+                doc_map[pid].metadata["aggregated_score"] = parent_scores[pid]
 
-        return self._filter_valid_docs(parent_docs)
+        final_docs = []
+        for pid in sorted_parent_ids:
+            if pid in doc_map:
+                final_docs.append(doc_map[pid])
+
+        # RIGHT NOW CHUNK INDEX IS NOT WORKING FOR PDF DOCUMENTS. FOR THOSE USE PAGE NUMBERS IF THEY ARE AVAILABLE
+        # THEN TEST MULTIDOC COMPARE
+        final_docs.sort(key=lambda d: d.metadata.get("chunk_index", float('inf')))
+
+        return final_docs
