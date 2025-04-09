@@ -6,7 +6,6 @@ from typing import (
     Any,
 )
 import uuid
-from collections import defaultdict
 from langchain_core.documents import Document
 from langchain.retrievers import MultiVectorRetriever
 from langchain_core.callbacks import (
@@ -149,6 +148,10 @@ class StreamingParentDocumentRetriever(MultiVectorRetriever):
         *,
         run_manager: AsyncCallbackManagerForRetrieverRun
     ) -> List[Document]:
+        """
+        Each child doc has a numeric similarity score
+        _aggregate_parents adds up those child-level scores for all child docs belonging to a given parent.
+        """
         child_docs_with_distances = await self.vectorstore.asimilarity_search_with_score(
             query,
             **self.search_kwargs
@@ -158,6 +161,18 @@ class StreamingParentDocumentRetriever(MultiVectorRetriever):
             score = 1.0 / (1.0 + distance)
             child_docs_with_scores.append((doc, score))
 
+        # TODO: For the top k documents, use chunk_index to get one full document forward
+        # even if that document was not included in the returned chunks. This ensures if
+        # important content spills over to next page, it will be covered. 
+        # chat bot should take the results and if context length is reached, then trim
+        # out documents by worst scores ones first. But it must also order documents by
+        # chunk index, or should I do the ordering by chunk index in this method? ANd 
+        # pass the scores as document metadata to the chat bot? 
         sorted_parent_ids = self._aggregate_parents(child_docs_with_scores)
         parent_docs = await self.docstore.amget(sorted_parent_ids)
+
+        # for parent_id in sorted_parent_ids:
+        #     doc = parent_docs_map[parent_id]
+        #     doc.metadata["aggregated_score"] = parent_scores[parent_id]
+
         return self._filter_valid_docs(parent_docs)

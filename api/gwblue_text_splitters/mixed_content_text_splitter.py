@@ -156,12 +156,13 @@ class MixedContentTextSplitter(StreamingTextSplitter):
         docs: Iterator[Document],
     ) -> Iterator[Document]:
         for doc in docs:
+            chunk_index = 0
+
             merged_meta = {**doc.metadata, **self.metadata}
             if "source" in merged_meta:
                 merged_meta["source"] = Path(merged_meta["source"]).name
 
             page_number = merged_meta.get("page_number")
-
             parts = self.img_regex.split(doc.page_content)
 
             for part in parts:
@@ -175,8 +176,13 @@ class MixedContentTextSplitter(StreamingTextSplitter):
 
                     yield Document(
                         page_content=img_src,
-                        metadata={**merged_meta, "chunk_type": "image"},
+                        metadata={
+                            **merged_meta,
+                            "chunk_type": "image",
+                            "chunk_index": chunk_index,
+                        },
                     )
+                    chunk_index += 1
                 else:
                     for text_chunk in _adaptive_token_boundary_stream(
                         part, 
@@ -191,5 +197,10 @@ class MixedContentTextSplitter(StreamingTextSplitter):
 
                         yield Document(
                             page_content=text_chunk,
-                            metadata={**merged_meta, "chunk_type": "text"},
+                            metadata={
+                                **merged_meta,
+                                "chunk_type": "text",
+                                "chunk_index": chunk_index,
+                            },
                         )
+                        chunk_index += 1

@@ -73,8 +73,13 @@ docker container run --gpus all --shm-size 1g -e HUGGING_FACE_HUB_TOKEN=$token -
 
 docker container run --gpus all --shm-size 1g -e HUGGING_FACE_HUB_TOKEN=$token -p 8080:80 -v $volume:/data ghcr.io/huggingface/text-generation-inference:3.0.2 --model-id $model --max-batch-prefill-tokens 36286 --max-input-tokens 36286 --max-total-tokens 38334 --num-shard 4 --quantize bitsandbytes-nf4 --payload-limit 10000000
 
+docker container run --gpus all --shm-size 1g -e HUGGING_FACE_HUB_TOKEN=$token -p 8080:80 -v $volume:/data ghcr.io/huggingface/text-generation-inference:3.0.2 --model-id $model --max-batch-prefill-tokens 128000 --max-input-tokens 128000 --max-total-tokens 131072 --num-shard 4 --quantize bitsandbytes-nf4 --payload-limit 10000000
+
 # for llama guard ONLY:
 docker container run --gpus all --shm-size 1g -e HUGGING_FACE_HUB_TOKEN=$token -p 8072:80 -v $volume:/data ghcr.io/huggingface/text-generation-inference:3.0.2 --model-id $model --max-batch-prefill-tokens 36286 --max-input-tokens 36286 --max-total-tokens 38334 --num-shard 1 --quantize bitsandbytes-nf4
+
+
+
 
 token=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
 model=TIGER-Lab/VLM2Vec-Full
