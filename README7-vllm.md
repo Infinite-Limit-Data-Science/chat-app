@@ -363,6 +363,94 @@ uv pip install vllm
   
 ### OpenAI-Compatible Server
 
+So remember  I have a maximum sequence length per forward pass, e.g. 30k. In the logistic function, I believe L is the upper bounds. which i define as 120 representing 120k tokens. Hence, per retriever we are doing something like this:        
+
+```python
+for index, metadata in enumerate(state["metadata"]):
+            filter_expression = self.create_filter_expression(metadata)
+            search_kwargs = {
+                "k": int(round(Sigmoid.logistic(
+                    x=self.chat_model.tokenizer.sequence_length_forward_pass, 
+                    L=120, 
+                    a=2e-5, 
+                    m=60000
+                ))),
+                "filter": filter_expression,
+            }   
+```
+
+so k is the number of child documents we want to fetch with retriever. Each retriever will pull a chunk at maximum token length of 150. It is not guaranteed to be 150, but that is the max token length that each retriever can pull. So  so if the logistic function returns 47, that is 47 child documents returned, but remember we don't actually load the child documents into the LLM context length. Instead we load the parents. Since many documents share the same parents, that 47 can turn into 10. Each parent document is at most 2000 tokens. It is not guaranteed to be 2000, but that is the max for chunk. Consequently, it is possible to have 20,000 tokens if 10 documents retrieved each 2000 tokens (which of course they are not all going to be 2000 tokens). That 20k is within 30k, but that is only for one retriever. If the user uploaded 4 documents, there will be 4 retrievers, and each may potentially produce a k that leads to 20k returned of parent childs. 20 * 4 is 80 which is above the 30k max. In those situations, it must penalize all retrievers as fairly as possible but of course to get as close to 30k, some will have more tokens then others. Is this where you are going with the hamilton method?
+
+\[ 
+k_i = \mathrm{round}\Bigl(\mathrm{Sigmoid.logistic}(x_i, L, a, m)\Bigr)
+\]
+$k_i =$ original value
+$k_i' =$ updated value
+
+\[
+k_{\text{sum}} = \sum_{i=1}^{N} k_i
+\]
+
+\[
+\text{If } \sum k_i \,\le\, K_{\max}, 
+\quad \text{then define } k_i' = k_i.
+\]
+
+When each retriever estimates a desired number of docs (e.g. 50, 40, 60) but the total (120) exceeds your global limit (say 100), you want to:
+Stay within that overall capacity (120)
+Preserve the relative proportions among the retrievers’ requests as much as possible.
+
+So we divide K sub max by summation of k sub i (which represents the total of all the docs). That division gives you the exact ratio to “shrink” all requests so they sum to K sub max. For example: If each retriever’s request sums to 150, but you can only afford 100 total, the ratio α is 100/150 = 0.666.
+\[
+\text{If } k_{\text{sum}} > K_{\max}, 
+\quad \text{then let } \alpha = \frac{K_{\max}}{\sum k_i}
+\quad 
+\]
+
+Multiplying each original $k_i$ by the same $α$ ensures the relative proportions among them stay the same.
+\[
+k_i' = \alpha \times k_i
+\]
+
+For instance: 
+
+Originally:
+- Retriever A wants 50 (which is $1/3$ of the total 150),
+- Retriever B wants 40 ($4/15$) 
+- Retriever C wants 60 ($2/5$)
+
+After scaling by $𝛼 = 0.666$ where only each retriever can have 66 percent of what it had:
+A wants 33.3 (still $1/3$ of the new total 100),
+B wants 26.6 (still $4/15$),
+C wants 40 (still $2/5$)
+
+Hence they remain in proportion but no longer exceed 100 total.
+
+Then we use the hamilton method:
+\[
+\text{base\_sum} 
+= \sum_{i=1}^{N} \lfloor k_i' \rfloor.
+\]
+Above we get the floors of each proportion. Suppose three retrievers have original $k_1$ = 50, $k_2$ = 40, $k_3$ = 60. Sum is 150, but $K_{\text{max}}$ = 100. Then $α = 100/150 = 0.666.$ So $k_1' = 33.3, k_2' = 26.6, k_3' = 40.0$. Floors:  
+\[
+\lfloor 33.3 \rfloor = 33, 
+\quad
+\lfloor 26.6 \rfloor = 26, 
+\quad
+\lfloor 40.0 \rfloor = 40.
+\]Sum=99, leftover=1.
+
+Remainders: $r_1 = 0.3$, $r_2 = 0.6$, $r_3 = 0.0$. Highest remainder is 0.6 (retriever #2), so it gets the leftover doc. Total is 100, staying under the limit, and each retriever’s share is proportionally fair.
+\[
+\widehat{k}_1 = 33, 
+\quad
+\widehat{k}_2 = 27, 
+\quad
+\widehat{k}_3 = 40.
+\]
+
+
+ 
 LLM can be deployed as a server that implements the OpenAI API protocol. This allows vLLM to be used as a drop-in replacement for applications using OpenAI API. By default, it starts the server at http://localhost:8000. You can specify the address with --host and --port arguments. The server currently hosts one model at a time and implements endpoints such as list models, create chat completion, and create completion endpoints. Run the following command to start the vLLM server with the vlm2vec-full model:
 
 ```shell

@@ -155,9 +155,8 @@ class MixedContentTextSplitter(StreamingTextSplitter):
         self,
         docs: Iterator[Document],
     ) -> Iterator[Document]:
+        chunk_index = 0
         for doc in docs:
-            chunk_index = 0
-
             merged_meta = {**doc.metadata, **self.metadata}
             if "source" in merged_meta:
                 merged_meta["source"] = Path(merged_meta["source"]).name
@@ -184,6 +183,7 @@ class MixedContentTextSplitter(StreamingTextSplitter):
                     )
                     chunk_index += 1
                 else:
+                    # this will be a problem for word docs with a single page with images
                     for text_chunk in _adaptive_token_boundary_stream(
                         part, 
                         tokenizer=self.tokenizer, 

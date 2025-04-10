@@ -17,7 +17,7 @@ from typing import (
     List,
     Tuple,
 )
-import os
+import random
 import json
 from bson import ObjectId
 from collections import defaultdict
@@ -85,7 +85,7 @@ from .message_history import (
 )
 from ..gwblue_vectorstores.redis.docstore import RedisDocStore
 from ..gwblue_retrievers.streaming_parent_document_retriever import StreamingParentDocumentRetriever
-from .semantic_scaler import Sigmoid
+from .semantic_scaler import Sigmoid, hamilton_method
 
 ChatGenerationLike: TypeAlias = (
     ChatGeneration | Iterator[ChatGeneration] | AsyncIterator[ChatGenerationChunk]
@@ -455,7 +455,10 @@ class ChatBot(RunnableSerializable[I, O]):
             content = doc.page_content
             if content.startswith("data:image/"):
                 page_content = format_multimodal_chunks(content)
-                doc = Document(page_content=page_content)
+                if (page_number := doc.metadata.get('page_number')) is not None:
+                    doc = Document(page_content=page_content, metadata={'page_number': page_number})
+                else:
+                    doc = Document(page_content=page_content)
             return format_document(doc, doc_prompt)
 
         def format_docs(inputs: dict) -> str:
@@ -583,29 +586,36 @@ class ChatBot(RunnableSerializable[I, O]):
         )
 
     def create_multicontext_aware_chain(self, state: State) -> Runnable:
+        """
+        Each retriever come up with its own "ideal" number of docs using
+        a Sigmoid logistic function.
+
+        BUt still ensures the total across all retrievers never exceeds the 
+        statistical "critical value" using hamilton algorithm.
+        """
         system_prompt = state["messages"][0].content
+
+        raw_logistic = Sigmoid.logistic(
+            x=self.chat_model.tokenizer.sequence_length_forward_pass,
+            L=120,
+            a=2e-5,
+            m=60000,
+        )
+        K_global = int(round(raw_logistic))
+
+        demands = []
         retrievers = []
 
         for index, metadata in enumerate(state["metadata"]):
+            demands.append(1.0)
+            random_k = random.randint(5, 50)
             filter_expression = self.create_filter_expression(metadata)
+
             search_kwargs = {
-                "k": int(round(Sigmoid.logistic(
-                    x=self.chat_model.tokenizer.sequence_length_forward_pass, 
-                    L=120, 
-                    a=2e-5, 
-                    m=60000
-                ))),
+                "k": random_k,
                 "filter": filter_expression,
             }
-            # if state["retrieval_mode"] == "similarity_score_threshold":
-            #     search_kwargs["score_threshold"] = 0.8
 
-            # retriever = self.vector_store.as_retriever(
-            #     search_type=state["retrieval_mode"], search_kwargs=search_kwargs
-            # ).with_config(
-            #     tags=[f"create_context_aware_chain_{index}_{state['route']}"],
-            #     metadata=metadata,
-            # )
             retriever = StreamingParentDocumentRetriever(
                 vectorstore=self.vector_store,
                 docstore=RedisDocStore(self.config.vectorstore.client),
@@ -615,6 +625,11 @@ class ChatBot(RunnableSerializable[I, O]):
                 metadata=metadata,
             )
             retrievers.append((retriever, metadata))
+
+        final_ks = hamilton_method(demands, K_global)
+
+        for (i, (retriever, meta)) in enumerate(retrievers):
+            retriever.search_kwargs["k"] = final_ks[i]
 
         multi_retriever_chain = self.create_multi_retriever_chain(retrievers, state)
         stuffing_chain = self.create_multi_stuff_chain(state, system_prompt)

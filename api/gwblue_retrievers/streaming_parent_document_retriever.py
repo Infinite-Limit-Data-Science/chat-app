@@ -37,12 +37,6 @@ class StreamingParentDocumentRetriever(MultiVectorRetriever):
             )
         
         for parent_doc in documents:
-            # If it's an "image-only" parent doc, skip storing in docstore since
-            # there is no reason to chunk an image into smaller chunks
-            if parent_doc.metadata.get("chunk_type") == "image":
-                yield parent_doc
-                continue
-
             if self.id_key in parent_doc.metadata:
                 doc_id = parent_doc.metadata[self.id_key]
             else:
@@ -52,6 +46,12 @@ class StreamingParentDocumentRetriever(MultiVectorRetriever):
             if add_to_docstore:
                 self.docstore.set(doc_id, parent_doc)
         
+            # If it's an "image-only" parent doc, skip storing in docstore since
+            # there is no reason to chunk an image into smaller chunks
+            if parent_doc.metadata.get("chunk_type") == "image":
+                yield parent_doc
+                continue
+
             child_doc_stream: Iterator[Document] = self.child_splitter.split_documents([parent_doc])
 
             # send a batch of child doc chunk streams for given parent
@@ -204,8 +204,6 @@ class StreamingParentDocumentRetriever(MultiVectorRetriever):
             if pid in doc_map:
                 final_docs.append(doc_map[pid])
 
-        # RIGHT NOW CHUNK INDEX IS NOT WORKING FOR PDF DOCUMENTS. FOR THOSE USE PAGE NUMBERS IF THEY ARE AVAILABLE
-        # THEN TEST MULTIDOC COMPARE
         final_docs.sort(key=lambda d: d.metadata.get("chunk_index", float('inf')))
 
         return final_docs
