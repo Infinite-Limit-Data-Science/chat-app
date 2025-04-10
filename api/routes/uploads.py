@@ -84,7 +84,7 @@ async def ingest(
                 embeddings=embeddings,
                 metadata=metadata,
                 vector_config=vector_store_config,
-                embeddings_config=embeddings_model_config,
+                add_to_docstore=True,
             )
             ingestors.append(ingestor)
 

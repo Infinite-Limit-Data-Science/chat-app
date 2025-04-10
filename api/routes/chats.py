@@ -40,7 +40,7 @@ async def chat(
             f"conversation_id_{message_metadata['conversation_id']}",
         ],
         metadata={"vector_metadata": vector_metadata},
-        configurable={"retrieval_mode": "mmr"},
+        configurable={},
     )
 
     async def stream_response():
