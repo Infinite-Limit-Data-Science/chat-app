@@ -363,7 +363,7 @@ uv pip install vllm
   
 ### OpenAI-Compatible Server
 
-So remember  I have a maximum sequence length per forward pass, e.g. 30k. In the logistic function, I believe L is the upper bounds. which i define as 120 representing 120k tokens. Hence, per retriever we are doing something like this:        
+So remember  I have a maximum sequence length per forward pass, e.g. 30k. In the logistic function, I believe L is the upper bounds if k (the number of documents you want to return) given the context window, e.g. 30k. which i define as 120 representing 120k tokens. Hence, per retriever we are doing something like this:        
 
 ```python
 for index, metadata in enumerate(state["metadata"]):
